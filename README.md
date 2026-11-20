@@ -2,11 +2,20 @@
 
 Your daily step goal as an 8-bit overworld quest on real streets. Pick a start, choose a loop or an A→B walk, set a goal (10,000 steps by default) and get a pedestrian route within ±5 % of it, with checkpoints along the way, drawn as a pixel-art tile map generated from OpenStreetMap.
 
-Kiroween 2026 entry, **Resurrection** category. *StepQuest is a working name; the display name lives in `src/config/brand.ts`.*
+Kiroween 2026 entry, **Resurrection** category.
 
 ## Status
 
-Phase 1 of 4: route planner and tile map. See `.kiro/specs/step-quest/` for the full plan.
+Phase 2 of 5 done: route planner and tile map, plus GPS tracking and checkpoints. See `.kiro/specs/step-quest/` for the full plan.
+
+## Walking a quest
+
+- **Use my location** sets the start from your phone's GPS (and downloads the map around you if you are outside the loaded area).
+- **Start quest!** follows you on the map. Collect the numbered gems in order (within about 22 m; a bit more when GPS is weak) and reach the flag.
+- The quest is saved on your device, so a reload or a lost signal resumes where you were.
+- **Simulate walk (demo)** moves the walker along the route by itself at up to 120× speed, with optional GPS noise, for testing and demo videos.
+
+**Limitation:** a web app cannot track your position in the background. Tracking only works while the page is open and the screen is on. The app asks the browser to keep the screen awake (Screen Wake Lock) where supported; if you lock the phone, the quest pauses and catches up when you come back. Location also requires HTTPS (GitHub Pages is fine).
 
 ## Run it
 
@@ -18,7 +27,7 @@ npm run lint
 npm run build
 ```
 
-Screenshots: `npm run build && npx vite preview --host 127.0.0.1 --port 4188`, then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots`.
+Screenshots: `npm run build && npx vite preview --host 127.0.0.1 --port 4188`, then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots` (phase 1) or `PHASE2_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase2.mjs` (phase 2).
 
 ## How it works
 

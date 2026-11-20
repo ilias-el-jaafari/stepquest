@@ -24,6 +24,12 @@ inclusion: always
 - `src/routing`: CSR walking graph, A* with per-edge reuse penalties, loop and A→B planners that tune a size parameter until the route lands within ±5 % of the target, evenly spaced checkpoints.
 - `src/render`: original palette, procedural tile painter, hand-drawn sprites, chunked renderer with a lazily painted tile atlas and a 1-px-per-tile overview for far zoom.
 
+## Quest runtime (Phase 2)
+
+- `src/quest`: pure GPS filter, route snapping, quest reducer, storage, simulator; browser adapters for Geolocation (`watchPosition`, high accuracy) and the Screen Wake Lock API.
+- Web apps cannot track in the background with the screen off; never promise it. Keep the screen awake and make every state change resumable.
+- Sounds are placeholder Web Audio square-wave blips (`src/audio/beep.ts`) until the Phase 4 chiptune; the AudioContext is unlocked on the "Start quest" click.
+
 ## Quality bar
 
 - `npm test` (Vitest, happy-dom) and `npm run lint` (Oxlint) must be green and `npm run build` must pass before a phase is called done. Do not start the next phase while the current one is broken.

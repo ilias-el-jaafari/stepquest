@@ -24,20 +24,42 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
   - _Requirements: 5.1, 5.2, 5.3_
 - [x] 10. Screenshots (390×844 and 1280×800) of a 10k loop and an A→B route in `screenshots/phase1/`
 
-## Phase 2 — Walk it
+## Phase 2 — GPS and checkpoints
 
-- [ ] 11. Geolocation start ("use my location") with permission handling and an HTTPS note
-- [ ] 12. Live position on the map, follow mode, walker animation (4-frame, reduced-motion aware)
-- [ ] 13. Checkpoint collection within 20 m, progress bar, finish screen
-- [ ] 14. Run planning in a Web Worker if larger live areas make the UI stutter
+- [x] 11. "Use my location": one-shot high-accuracy fix, start point set, live Overpass area loaded when outside the map; denied / timeout / unavailable / insecure / unsupported / too-inaccurate messages in EN and ES
+  - _Requirements: 6.1, 6.7_
+- [x] 12. GPS noise filter: accuracy gate (50 m), max-speed sanity (7 m/s, reset after 3 agreeing outliers), Kalman smoothing, jitter-proof odometer
+  - _Requirements: 6.2_
+- [x] 13. Route snapping with a progress window (loops that cross themselves), off-route detection with a direction hint
+  - _Requirements: 6.3, 6.6_
+- [x] 14. Active quest: watchPosition source, walker follows the snapped position, camera follow (drag to unfollow), walked trail turns gold
+  - _Requirements: 6.3_
+- [x] 15. Checkpoint collection in route order (22 m radius growing with poor accuracy, max 35 m; "walked past" also counts), pickup sparkle + toast + square-wave beep, finish fanfare
+  - _Requirements: 6.4, 6.5_
+- [x] 16. HUD: next checkpoint, distance and direction, gems collected/total, walked distance, steps (distance ÷ stride), time, pace, GPS status (waiting, weak, lost)
+  - _Requirements: 6.5_
+- [x] 17. Quest complete screen with stats and "New quest"
+  - _Requirements: 6.5_
+- [x] 18. Persistence in localStorage (resume after reload or lost signal, same map restored), Screen Wake Lock with re-acquire on visibility change
+  - _Requirements: 6.8_
+- [x] 19. Walk simulator (speed ×1–×120, optional GPS noise and glitches) for testing and the demo video; resumable
+  - _Requirements: 6.9_
+- [x] 20. Tests: filter, snapping, collection (order, radius, accuracy), off-route, persistence and resume, finish condition, simulated walk end-to-end on the fixture, geolocation and wake-lock adapters, App flows
+- [x] 21. Screenshots of the HUD mid-route, a pickup and the complete screen in `screenshots/phase2/`
 
-## Phase 3 — Sound
+## Phase 3 — Visual polish
 
-- [ ] 15. Original formant speech synthesizer (glottal source + formant filters, phoneme table written by us) with unit tests on generated buffers
-- [ ] 16. Callout scripts in EN/ES (turns, checkpoints, halfway, finish)
-- [ ] 17. Procedural chiptune (square, triangle, noise) with tempo following step cadence
+- [ ] 22. Walker sprites facing four directions with a 2-frame walk cycle (reduced-motion aware)
+- [ ] 23. Tile polish: diagonal street smoothing, more building and park variety, water animation
+- [ ] 24. Run planning in a Web Worker if larger live areas make the UI stutter
 
-## Phase 4 — Polish and submission
+## Phase 4 — Sound
 
-- [ ] 18. Onboarding, final name and logo, PWA manifest
-- [ ] 19. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up
+- [ ] 25. Original formant speech synthesizer (glottal source + formant filters, phoneme table written by us) with unit tests on generated buffers
+- [ ] 26. Callout scripts in EN/ES (turns, checkpoints, halfway, finish)
+- [ ] 27. Procedural chiptune (square, triangle, noise) with tempo following step cadence, replacing the placeholder beeps
+
+## Phase 5 — Submission
+
+- [ ] 28. Onboarding, logo, PWA manifest
+- [ ] 29. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up

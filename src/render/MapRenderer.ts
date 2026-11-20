@@ -1,5 +1,6 @@
 import type { LatLon } from '../geo/geo.ts'
 import type { Route } from '../routing/planner.ts'
+import { cumulativeDistances } from '../routing/checkpoints.ts'
 import { Terrain, TILE_PX, type TileGrid } from '../tiles/grid.ts'
 import { line4 } from '../tiles/rasterize.ts'
 import { P } from './palette.ts'
@@ -15,6 +16,19 @@ const MAX_CHUNKS = 96
 const ATLAS_TILES = 64
 
 export type Markers = { start?: LatLon; end?: LatLon }
+
+/** The parts of a route the renderer draws (planner routes and saved quests both fit). */
+export type RouteShape = Pick<Route, 'points' | 'checkpoints'>
+
+/** Live quest overlay: where the walker is and how far they got. */
+export type QuestOverlay = {
+  player: LatLon | undefined
+  accuracyM: number | undefined
+  collected: number
+  alongM: number
+}
+
+const PICKUP_MS = 900
 
 type AtlasSlot = { page: HTMLCanvasElement; sx: number; sy: number }
 
@@ -62,9 +76,11 @@ export class MapRenderer {
   private readonly chunks = new Map<string, HTMLCanvasElement>()
   private overview: HTMLCanvasElement | undefined
   private readonly spriteCache = new Map<Sprite, HTMLCanvasElement>()
-  private route: Route | undefined
-  private routeCells: { x: number; y: number }[] = []
+  private route: RouteShape | undefined
+  private routeCells: { x: number; y: number; along: number }[] = []
   private markers: Markers = {}
+  private quest: QuestOverlay | undefined
+  private pickups: { point: LatLon; t0: number }[] = []
   private frame = 0
   /** Camera centre in tile units and zoom in CSS px per tile. */
   camX: number
@@ -92,22 +108,43 @@ export class MapRenderer {
     return this.canvas.clientHeight || this.canvas.height
   }
 
-  setRoute(route: Route | undefined): void {
+  setRoute(route: RouteShape | undefined): void {
     this.route = route
     this.routeCells = []
     if (route) {
       const seen = new Set<number>()
+      const cumulative = cumulativeDistances(route.points)
       for (let i = 1; i < route.points.length; i++) {
         const a = this.grid.toTileXY(route.points[i - 1]!)
         const b = this.grid.toTileXY(route.points[i]!)
+        const along = cumulative[i - 1] ?? 0
         line4(a, b, (x, y) => {
           const k = y * this.grid.cols + x
           if (seen.has(k)) return
           seen.add(k)
-          this.routeCells.push({ x, y })
+          this.routeCells.push({ x, y, along })
         })
       }
     }
+    this.requestRender()
+  }
+
+  setQuest(quest: QuestOverlay | undefined): void {
+    this.quest = quest
+    this.requestRender()
+  }
+
+  /** Start the sparkle animation for a collected checkpoint. */
+  pickup(point: LatLon): void {
+    this.pickups.push({ point, t0: performance.now() })
+    this.requestRender()
+  }
+
+  /** Move the camera to a point without changing zoom (follow mode). */
+  follow(p: LatLon): void {
+    const t = this.grid.toTileXY(p)
+    this.camX = t.x
+    this.camY = t.y
     this.requestRender()
   }
 
@@ -320,12 +357,13 @@ export class MapRenderer {
     if (this.routeCells.length) {
       if (this.zoom >= DETAIL_ZOOM) {
         const dot = Math.max(2, Math.round(scale / 4))
+        const walked = this.quest?.alongM ?? -1
         this.routeCells.forEach((c, i) => {
           if (i % 2) return
           const p = toScreen(c.x + 0.5, c.y + 0.5)
           ctx.fillStyle = P.routeShadow
           ctx.fillRect(Math.round(p.x - dot / 2) + Math.max(1, dot / 4), Math.round(p.y - dot / 2) + Math.max(1, dot / 4), dot, dot)
-          ctx.fillStyle = P.route
+          ctx.fillStyle = c.along <= walked ? P.routeGlow : P.route
           ctx.fillRect(Math.round(p.x - dot / 2), Math.round(p.y - dot / 2), dot, dot)
         })
       } else {
@@ -335,9 +373,10 @@ export class MapRenderer {
           const p = toScreen(c.x + 0.5, c.y + 0.5)
           ctx.fillRect(Math.round(p.x - size / 2) + dpr, Math.round(p.y - size / 2) + dpr, size, size)
         }
-        ctx.fillStyle = P.route
+        const walked = this.quest?.alongM ?? -1
         for (const c of this.routeCells) {
           const p = toScreen(c.x + 0.5, c.y + 0.5)
+          ctx.fillStyle = c.along <= walked ? P.routeGlow : P.route
           ctx.fillRect(Math.round(p.x - size / 2), Math.round(p.y - size / 2), size, size)
         }
       }
@@ -358,8 +397,9 @@ export class MapRenderer {
       ctx.font = `${fontPx}px "Press Start 2P", monospace`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
+      const collected = this.quest?.collected ?? 0
       for (const cp of route.checkpoints) {
-        if (cp.isFinish) continue
+        if (cp.isFinish || cp.index <= collected) continue
         const s = drawSprite(CHECKPOINT, cp.point)
         const label = String(cp.index)
         const ly = Math.round(s.y - s.size * 0.95)
@@ -371,9 +411,24 @@ export class MapRenderer {
       const last = route.checkpoints[route.checkpoints.length - 1]
       if (last) drawSprite(FINISH_FLAG, last.point, 0.9)
       const first = route.points[0]
-      if (first) {
-        drawSprite(START_MAT, first, 0.75)
-        drawSprite(PLAYER_DOWN, first, 1)
+      if (first) drawSprite(START_MAT, first, 0.75)
+      const player = this.quest ? this.quest.player : first
+      if (player) {
+        const acc = this.quest?.accuracyM
+        if (acc && acc > 4) {
+          // Pixel-stepped accuracy halo.
+          const t = this.grid.toTileXY(player)
+          const c = toScreen(t.x, t.y)
+          const r = Math.max(4, (acc / this.grid.metresPerTile) * scale)
+          ctx.fillStyle = 'rgba(74, 143, 240, 0.18)'
+          ctx.strokeStyle = 'rgba(44, 95, 184, 0.7)'
+          ctx.lineWidth = Math.max(1, Math.round(dpr))
+          ctx.beginPath()
+          ctx.arc(Math.round(c.x), Math.round(c.y), r, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+        }
+        drawSprite(PLAYER_DOWN, player, 1)
       }
     } else {
       if (this.markers.end) drawSprite(FINISH_FLAG, this.markers.end, 0.9)
@@ -382,5 +437,30 @@ export class MapRenderer {
         drawSprite(PLAYER_DOWN, this.markers.start, 1)
       }
     }
+
+    // Pickup animation: the gem jumps up and bursts into stepped sparkles.
+    const now = typeof performance === 'undefined' ? 0 : performance.now()
+    this.pickups = this.pickups.filter((p) => now - p.t0 < PICKUP_MS)
+    for (const p of this.pickups) {
+      const k = (now - p.t0) / PICKUP_MS
+      const t = this.grid.toTileXY(p.point)
+      const s = toScreen(t.x, t.y)
+      const unit = spriteScale
+      const rise = Math.round(Math.sin(Math.min(1, k * 1.4) * Math.PI) * 14) * unit
+      if (k < 0.6) {
+        const size = 16 * unit
+        ctx.drawImage(this.sprite(CHECKPOINT), Math.round(s.x - size / 2), Math.round(s.y - size - rise), size, size)
+      }
+      const spread = Math.round(k * 18) * unit
+      ctx.fillStyle = Math.floor(k * 10) % 2 ? P.routeGlow : P.white
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2
+        const px = Math.round(s.x + Math.cos(a) * spread)
+        const py = Math.round(s.y - 8 * unit + Math.sin(a) * spread)
+        const d = Math.max(1, Math.round((1 - k) * 3)) * unit
+        ctx.fillRect(px - d / 2, py - d / 2, d, d)
+      }
+    }
+    if (this.pickups.length) this.requestRender()
   }
 }

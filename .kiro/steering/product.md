@@ -4,7 +4,7 @@ inclusion: always
 
 # Product Overview
 
-StepQuest (working name; the display name lives in `APP_NAME` in `src/config/brand.ts`) turns a daily step goal into an 8-bit overworld quest on real streets. It is the Kiroween 2026 entry in the **Resurrection** category by Ilias El Jaafari El Idrissi: it brings back the handheld-RPG overworld (tile maps, auto-tiling, chiptune, formant speech) and points it at a modern habit, walking 10,000 steps.
+StepQuest (the display name lives in `APP_NAME` in `src/config/brand.ts`) turns a daily step goal into an 8-bit overworld quest on real streets. It is the Kiroween 2026 entry in the **Resurrection** category by Ilias El Jaafari El Idrissi: it brings back the handheld-RPG overworld (tile maps, auto-tiling, chiptune, formant speech) and points it at a modern habit, walking 10,000 steps.
 
 ## Who it is for
 
@@ -20,9 +20,10 @@ People who already chase a daily step count and want a reason to walk a new rout
 ## Phases
 
 1. **Route planner and tile map** (this phase): OSM data (bundled Benicalap demo + live Overpass with cache), rasterization to a tile grid, 4/8-bit auto-tiling, an original procedural tileset, loop and A→B routing to a step target, evenly spaced checkpoints, a retro UI in English and Spanish.
-2. **Walk it**: geolocation, live position on the map, checkpoint collection, progress.
-3. **Sound**: an original 80s-style formant speech synthesizer for turn-by-turn and progress callouts (written from scratch; do not port SAM or any other third-party synth), plus a procedural chiptune whose tempo follows walking speed.
-4. **Polish and submission**: onboarding, demo video, write-up.
+2. **GPS and checkpoints**: "use my location", live tracking with noise filtering, checkpoint collection, HUD, quest complete screen, resume after reload, walk simulator for demos.
+3. **Visual polish**: walker animation and tile refinements.
+4. **Sound**: an original 80s-style formant speech synthesizer for turn-by-turn and progress callouts (written from scratch; do not port SAM or any other third-party synth), plus a procedural chiptune whose tempo follows walking speed.
+5. **Submission**: onboarding, demo video, write-up.
 
 ## Non-goals
 

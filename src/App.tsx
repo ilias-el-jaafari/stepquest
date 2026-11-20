@@ -1,17 +1,30 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { APP_NAME } from './config/brand.ts'
-import type { LatLon } from './geo/geo.ts'
+import { bboxContains, type BBox, type LatLon } from './geo/geo.ts'
 import { stepsToMetres } from './geo/steps.ts'
 import { useI18n, type Locale } from './i18n/index.ts'
 import { DEMO_AREA } from './osm/demoArea.ts'
 import { areaForWalk } from './osm/overpass.ts'
 import { STEPS_PER_CHECKPOINT } from './routing/checkpoints.ts'
 import { planRoute, type PlanResult, type RouteMode } from './routing/planner.ts'
+import { locateOnce, type LocationErrorCode } from './quest/geolocation.ts'
+import { createQuest, type AreaRef } from './quest/quest.ts'
+import { loadQuest } from './quest/storage.ts'
 import { MapView } from './ui/MapView.tsx'
+import { QuestScreen } from './ui/QuestScreen.tsx'
+import { useQuestRunner } from './ui/useQuestRunner.ts'
 import { clampSteps, loadSettings, parseCoords, saveSettings, type Settings } from './ui/settings.ts'
 import { loadDemoWorld, useLiveLoader, type World } from './ui/useMapData.ts'
 
 const STEP_PRESETS = [5000, 8000, 10_000, 12_000]
+const SIM_SPEEDS = [1, 5, 20, 60, 120]
+
+type LocateStatus =
+  | { state: 'idle' }
+  | { state: 'locating' }
+  | { state: 'loadingArea' }
+  | { state: 'ok'; accuracy: number; weak: boolean }
+  | { state: 'error'; code: LocationErrorCode; accuracy?: number }
 const WALK_KMH = 4.8
 
 const fmt = (n: number, digits = 4) => n.toFixed(digits)
@@ -29,15 +42,40 @@ export default function App() {
   const [seed, setSeed] = useState(0)
   const [coordsText, setCoordsText] = useState('39.4935, -0.3920')
   const [coordsError, setCoordsError] = useState(false)
+  const [liveBox, setLiveBox] = useState<BBox>()
+  const [locate, setLocate] = useState<LocateStatus>({ state: 'idle' })
+  const [simulate, setSimulate] = useState(false)
+  const [simSpeed, setSimSpeed] = useState(20)
+  const [simNoise, setSimNoise] = useState(true)
+  const [resumed, setResumed] = useState(false)
   const live = useLiveLoader()
+  const runner = useQuestRunner()
+  const liveLoad = live.load
+  const beginQuest = runner.begin
+  const booted = useRef(false)
 
+  // On start-up: resume a saved quest (bringing back its map), else load the demo area.
   useEffect(() => {
-    let alive = true
-    void loadDemoWorld().then((w) => alive && setWorld(w))
-    return () => {
-      alive = false
-    }
-  }, [])
+    if (booted.current) return
+    booted.current = true
+    const saved = loadQuest(Date.now())
+    void (async () => {
+      let w: World | undefined
+      if (saved?.area.kind === 'live') {
+        w = await liveLoad(saved.area.bbox)
+        if (w) {
+          setIsDemo(false)
+          setLiveBox(saved.area.bbox)
+        }
+      }
+      w ??= await loadDemoWorld()
+      setWorld(w)
+      if (saved && (saved.area.kind === 'demo' || !isDemoWorld(w))) {
+        setResumed(true)
+        beginQuest(saved)
+      }
+    })()
+  }, [liveLoad, beginQuest])
 
   useEffect(() => saveSettings(settings), [settings])
 
@@ -79,23 +117,69 @@ export default function App() {
     }, 30)
   }
 
-  const loadLive = async () => {
-    const coords = parseCoords(coordsText)
-    setCoordsError(!coords)
-    if (!coords) return
-    const w = await live.load(areaForWalk(coords, stepsToMetres(settings.targetSteps, settings.strideM)))
-    if (!w) return
+  /** Load the live OSM area around a point and make it the start. */
+  const loadLiveAround = async (coords: LatLon): Promise<boolean> => {
+    const box = areaForWalk(coords, stepsToMetres(settings.targetSteps, settings.strideM))
+    const w = await live.load(box)
+    if (!w) return false
     setWorld(w)
     setIsDemo(false)
+    setLiveBox(box)
     setStart(coords)
     setEnd(undefined)
     setPlacing(settings.mode === 'oneway' ? 'end' : 'start')
     setResult(undefined)
+    return true
+  }
+
+  const loadLive = async () => {
+    const coords = parseCoords(coordsText)
+    setCoordsError(!coords)
+    if (!coords) return
+    await loadLiveAround(coords)
+  }
+
+  const locateMe = async () => {
+    setLocate({ state: 'locating' })
+    const res = await locateOnce()
+    if (!res.ok) {
+      setLocate({ state: 'error', code: res.code, accuracy: res.fix?.accuracy })
+      return
+    }
+    const p = { lat: res.fix.lat, lon: res.fix.lon }
+    setCoordsText(`${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`)
+    if (world && bboxContains(world.data.bbox, p)) {
+      setStart(p)
+      setPlacing(settings.mode === 'oneway' ? 'end' : 'start')
+      setResult(undefined)
+    } else {
+      setLocate({ state: 'loadingArea' })
+      const ok = await loadLiveAround(p)
+      if (!ok) {
+        setLocate({ state: 'idle' })
+        return
+      }
+    }
+    setLocate({ state: 'ok', accuracy: res.fix.accuracy, weak: res.weak })
+  }
+
+  const startQuest = () => {
+    if (!result?.ok) return
+    const area: AreaRef = isDemo || !liveBox ? { kind: 'demo' } : { kind: 'live', bbox: liveBox }
+    const r = result.route
+    setResumed(false)
+    runner.begin(
+      createQuest(
+        { mode: r.mode, points: r.points, distanceM: r.distanceM, steps: r.steps, targetSteps: r.targetSteps, checkpoints: r.checkpoints },
+        { strideM: settings.strideM, area, simulated: simulate, now: Date.now(), sim: simulate ? { timeScale: simSpeed, noiseM: simNoise ? 5 : 0 } : undefined },
+      ),
+    )
   }
 
   const backToDemo = async () => {
     setWorld(await loadDemoWorld())
     setIsDemo(true)
+    setLiveBox(undefined)
     resetPoints()
   }
 
@@ -114,6 +198,24 @@ export default function App() {
   const focusKey = shown ? `route:${shown.nodes.length}:${shown.distanceM}` : `pts:${settings.mode}:${end ? 'e' : ''}:${world ? 'w' : ''}`
 
   const km = (stepsToMetres(settings.targetSteps, settings.strideM) / 1000).toFixed(2)
+
+  if (runner.quest && world) {
+    return (
+      <QuestScreen
+        key={runner.quest.id}
+        grid={world.grid}
+        quest={runner.quest}
+        pickup={runner.pickup}
+        error={runner.error}
+        wakeActive={runner.wakeActive}
+        muted={runner.muted}
+        resumed={resumed}
+        onMute={runner.setMuted}
+        onEnd={runner.end}
+        onUseSim={() => runner.switchToSimulation(simSpeed)}
+      />
+    )
+  }
 
   return (
     <div className="app">
@@ -172,6 +274,12 @@ export default function App() {
                 </>
               )}
             </p>
+            <div className="actions">
+              <button type="button" className="pix-btn" disabled={locate.state === 'locating' || locate.state === 'loadingArea'} onClick={() => void locateMe()}>
+                ◉ {locate.state === 'locating' ? t('loc.locating') : t('loc.use')}
+              </button>
+            </div>
+            <LocateMessage status={locate} />
             {isDemo && (
               <button type="button" className="link-btn" onClick={resetPoints}>
                 {t('place.reset')}
@@ -216,6 +324,37 @@ export default function App() {
 
           <ResultBox result={result} onUseSteps={(steps) => update({ targetSteps: clampSteps(steps) })} />
 
+          {result?.ok && (
+            <div className="box quest-start">
+              <button type="button" className="pix-btn primary big" onClick={startQuest}>
+                ▶ {t('quest.start')}
+              </button>
+              <label className="check">
+                <input type="checkbox" checked={simulate} onChange={(e) => setSimulate(e.target.checked)} />
+                <span>{t('quest.simulate')}</span>
+              </label>
+              {simulate && (
+                <div className="sim-options">
+                  <p className="hint">{t('quest.simulateHint')}</p>
+                  <label className="field inline">
+                    <span className="hint">{t('quest.simSpeed')}</span>
+                    <select value={simSpeed} onChange={(e) => setSimSpeed(Number(e.target.value))} aria-label={t('quest.simSpeed')}>
+                      {SIM_SPEEDS.map((x) => (
+                        <option key={x} value={x}>
+                          {t('quest.simSpeedValue', { x })}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="check">
+                    <input type="checkbox" checked={simNoise} onChange={(e) => setSimNoise(e.target.checked)} />
+                    <span>{t('quest.simNoise')}</span>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="box">
             <h2 className="box-title">{t('data.label')}</h2>
             <p className="hint">{isDemo ? t('data.demo', { name: DEMO_AREA.name }) : t('data.live', { lat: fmt(start.lat), lon: fmt(start.lon) })}</p>
@@ -242,6 +381,28 @@ export default function App() {
       </main>
     </div>
   )
+}
+
+function isDemoWorld(w: World): boolean {
+  return w.data.source === 'fixture'
+}
+
+function LocateMessage({ status }: { status: LocateStatus }) {
+  const { t } = useI18n()
+  switch (status.state) {
+    case 'loadingArea':
+      return <p className="hint">{t('loc.loadingArea')}</p>
+    case 'ok':
+      return <p className={status.weak ? 'msg bad' : 'hint'}>{t(status.weak ? 'loc.weak' : 'loc.found', { m: Math.round(status.accuracy) })}</p>
+    case 'error':
+      return (
+        <p className="msg bad" data-testid="locate-error">
+          {t(`loc.err.${status.code}`, { m: Math.round(status.accuracy ?? 0) })}
+        </p>
+      )
+    default:
+      return null
+  }
 }
 
 function ResultBox({ result, onUseSteps }: { result: PlanResult | undefined; onUseSteps: (steps: number) => void }) {

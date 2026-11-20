@@ -1,13 +1,12 @@
 import { useEffect, useRef } from 'react'
 import type { LatLon } from '../geo/geo.ts'
 import { useI18n } from '../i18n/index.ts'
-import { MapRenderer, type Markers } from '../render/MapRenderer.ts'
-import type { Route } from '../routing/planner.ts'
+import { MapRenderer, type Markers, type QuestOverlay, type RouteShape } from '../render/MapRenderer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 
 type Props = {
   grid: TileGrid
-  route: Route | undefined
+  route: RouteShape | undefined
   markers: Markers
   /** Points to frame when they change (route or markers). */
   focus: LatLon[]
@@ -15,20 +14,30 @@ type Props = {
   onTap: (p: LatLon) => void
   /** Where the walker stands (start point), for the "go to start" button. */
   home: LatLon | undefined
+  /** Active quest overlay (walker position, progress). */
+  quest?: QuestOverlay
+  /** Camera follows the walker. */
+  follow?: boolean
+  /** Bump `n` to play the pickup animation at `point`. */
+  pickup?: { n: number; point: LatLon }
+  /** Called when the user drags the map (so follow mode can switch off). */
+  onUserPan?: () => void
 }
 
 const TAP_SLOP_PX = 8
 
-export function MapView({ grid, route, markers, focus, focusKey, onTap, home }: Props) {
+export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<MapRenderer | undefined>(undefined)
   const onTapRef = useRef(onTap)
   const focusRef = useRef(focus)
+  const onUserPanRef = useRef(onUserPan)
 
   useEffect(() => {
     onTapRef.current = onTap
     focusRef.current = focus
+    onUserPanRef.current = onUserPan
   })
 
   useEffect(() => {
@@ -67,7 +76,10 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home }: 
       pointers.set(e.pointerId, now)
       if (pointers.size === 1) {
         moved += Math.abs(now.x - prev.x) + Math.abs(now.y - prev.y)
-        if (moved > TAP_SLOP_PX) renderer.panBy(now.x - prev.x, now.y - prev.y)
+        if (moved > TAP_SLOP_PX) {
+          renderer.panBy(now.x - prev.x, now.y - prev.y)
+          onUserPanRef.current?.()
+        }
       } else if (pointers.size === 2 && pinchStart > 0) {
         const [a, b] = [...pointers.values()] as [{ x: number; y: number }, { x: number; y: number }]
         const ratio = Math.hypot(a.x - b.x, a.y - b.y) / pinchStart
@@ -115,6 +127,23 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home }: 
   }, [markers, grid])
 
   useEffect(() => {
+    const r = rendererRef.current
+    if (!r) return
+    r.setQuest(quest)
+    if (follow && quest?.player) r.follow(quest.player)
+  }, [quest, follow, grid])
+
+  const pickupN = pickup?.n ?? 0
+  const pickupRef = useRef(pickup)
+  useEffect(() => {
+    pickupRef.current = pickup
+  })
+  useEffect(() => {
+    const p = pickupRef.current
+    if (p && p.n > 0) rendererRef.current?.pickup(p.point)
+  }, [pickupN])
+
+  useEffect(() => {
     const renderer = rendererRef.current
     const points = focusRef.current
     if (!renderer || points.length === 0) return
@@ -124,7 +153,8 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home }: 
 
   const zoom = (dir: 1 | -1) => rendererRef.current?.zoomStep(dir)
   const goHome = () => {
-    if (home) rendererRef.current?.centerOn(home, 32)
+    const target = quest?.player ?? home
+    if (target) rendererRef.current?.centerOn(target, 32)
   }
   const fit = () => {
     const r = rendererRef.current

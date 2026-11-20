@@ -54,6 +54,26 @@ flowchart LR
 - A→B: shortest path first (too short / direct match). Otherwise two detour shapes (one via point off the A–B line, or a two-point "bracket") on both sides and at 3 anchor positions, each tuned the same way.
 - Score: within tolerance first, then least overlap. "Too long" reports the longest route found.
 
+## Active quest (Phase 2)
+
+```mermaid
+flowchart LR
+  GPS[watchPosition] --> Src[LocationSource]
+  Sim[SimWalker + timer] --> Src
+  Src --> Filter[filterFix: accuracy gate, max speed, Kalman]
+  Filter --> Snap[snapToRoute with progress window]
+  Snap --> Reducer[applyFix → QuestState + events]
+  Reducer --> HUD[QuestScreen HUD]
+  Reducer --> Map[MapRenderer quest overlay]
+  Reducer --> Store[(localStorage)]
+  Reducer --> Beep[square-wave beeps]
+```
+
+- `QuestState` is plain JSON (route, stride, area reference, filter state, odometer, progress, collected count, timestamps, simulation settings) so it can be saved after every event and at most once a second otherwise.
+- `applyFix` is a pure reducer; the UI only renders state and reacts to events (`collected`, `finished`, `offRoute`, `backOnRoute`, `rejected`).
+- Time and pace use fix timestamps, so the simulator's warped clock produces realistic stats.
+- The browser cannot track with the screen off; the wake lock keeps the screen on and the saved state covers reloads and gaps.
+
 ## Error handling
 
 - Overpass errors map to `busy`, `rateLimited`, `tooLarge`, `network`, `badResponse`, each with a translated message.
