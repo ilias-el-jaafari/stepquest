@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { APP_NAME } from './src/config/brand.ts'
 
-// Project Pages site; the final repo name is still open, so BASE_PATH can override it.
+// Project Pages site at /stepquest/; the deploy workflow sets BASE_PATH from the repo name.
 export default defineConfig({
   plugins: [
     react(),
