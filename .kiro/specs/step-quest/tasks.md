@@ -51,17 +51,26 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 
 ## Phase 3 — Visual polish
 
-- [ ] 22. Walker sprites facing four directions with a 2-frame walk cycle (reduced-motion aware)
-- [ ] 23. Tile polish: diagonal street smoothing, more building and park variety, water animation
-- [ ] 24. Run planning in a Web Worker if larger live areas make the UI stutter
+- [x] 22. Town layout: building blocks cut into lots (BSP, 4–7 × 4–6 tiles), up to three houses per lot (largest free rectangle, at least 2 × 2), six roof and four wall colours, house / apartment / warehouse styles from the OSM building type, front yards with picket fences or hedges and gates, side gardens, garden trees; cached per grid and painted into the chunk canvases
+- [x] 23. Landmarks from OSM points: hospitals and public health centres (healing-centre building with an original cross sign), metro and train stations, schools, park entrances (gates on paths entering big parks), and supermarkets (one chain gets a green special shop with original basket and leaf signs; the rest a generic shop). No brand names, logos or game-specific designs are drawn
+- [x] 24. Terrain variety: park styles (lawn with flowers, tall grass, sports pitches, playgrounds, woods, farmland, orchards, cemeteries, gardens), squares and plazas, water with a foam shore, fences, hedges and walls from `barrier=*`, building lots as lawn
+- [x] 25. Diagonal streets softened with asphalt corner triangles; footpath corners drawn as quarter rings
+- [x] 26. Route drawn as one continuous band (4-connected cells, staircase corners smoothed) with an outline, centre dots and direction arrows every 6 tiles; walked part turns gold
+- [x] 27. Walker with four facings from its movement (with hysteresis) and a 3-frame walk cycle; tweened between fixes; reduced-motion aware
+- [x] 28. Classic RPG dialogue box (typewriter, blinking marker, tap / Enter to skip or continue, auto-close while walking) for the quest start, each pickup and the finish
+- [x] 29. Fix: proper plural forms in EN and ES for every count (checkpoints, steps, gems), chosen with `Intl.PluralRules`
+- [x] 30. Fix: once the quest is finished, signal and route warnings are hidden and `watchPosition` and the wake lock are released; late fixes are ignored
+- [x] 31. Tests: lot subdivision, largest rectangle, town layout on synthetic and fixture grids, landmark tag mapping and dedupe, way styles, codec v2 (and v1 decoding), diagonal corners, route continuity, arrows and smoothing, walker frames and facing, structure painters, dialogue box, plurals, finished-quest banner and watch stop
+- [x] 32. Before / after screenshots (390×844 in Spanish, 1280×800 in English) in `screenshots/phase3/`
+- [ ] 33. Run planning in a Web Worker if larger live areas make the UI stutter
 
 ## Phase 4 — Sound
 
-- [ ] 25. Original formant speech synthesizer (glottal source + formant filters, phoneme table written by us) with unit tests on generated buffers
-- [ ] 26. Callout scripts in EN/ES (turns, checkpoints, halfway, finish)
-- [ ] 27. Procedural chiptune (square, triangle, noise) with tempo following step cadence, replacing the placeholder beeps
+- [ ] 34. Original formant speech synthesizer (glottal source + formant filters, phoneme table written by us) with unit tests on generated buffers
+- [ ] 35. Callout scripts in EN/ES (turns, checkpoints, halfway, finish)
+- [ ] 36. Procedural chiptune (square, triangle, noise) with tempo following step cadence, replacing the placeholder beeps
 
 ## Phase 5 — Submission
 
-- [ ] 28. Onboarding, logo, PWA manifest
-- [ ] 29. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up
+- [ ] 37. Onboarding, logo, PWA manifest
+- [ ] 38. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up

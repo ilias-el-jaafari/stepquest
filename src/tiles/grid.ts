@@ -1,4 +1,5 @@
 import { LocalProjection, type BBox, type LatLon } from '../geo/geo.ts'
+import type { Poi } from '../osm/types.ts'
 
 /** Pixel size of one tile in the tileset (classic 16×16 console tiles). */
 export const TILE_PX = 16
@@ -14,6 +15,8 @@ export const Layer = {
   path: 16,
   /** Marked crossing: only these turn road tiles into zebra crossings. */
   crossing: 32,
+  /** Paved square or pedestrian area (drawn as plaza paving). */
+  plaza: 64,
 } as const
 export type LayerName = keyof typeof Layer
 
@@ -26,7 +29,18 @@ export const Terrain = {
   road: 4,
   path: 5,
   crossing: 6,
+  plaza: 7,
 } as const
+
+/** Park styles stored per tile in TileGrid.style (index into this list). */
+export const PARK_STYLES = ['park', 'garden', 'grass', 'pitch', 'playground', 'wood', 'farmland', 'orchard', 'cemetery'] as const
+export type ParkStyleName = (typeof PARK_STYLES)[number]
+
+/** Building styles stored per building tile in TileGrid.style. */
+export const BUILDING_STYLES = ['block', 'house', 'industrial'] as const
+
+/** Barrier kinds stored per tile in TileGrid.barrier (0 = none). */
+export const BARRIERS = ['', 'fence', 'hedge', 'wall'] as const
 export type TerrainId = (typeof Terrain)[keyof typeof Terrain]
 
 export class TileGrid {
@@ -39,6 +53,12 @@ export class TileGrid {
   readonly layers: Uint8Array
   /** Resolved terrain per tile, filled by resolveTerrain(). */
   readonly terrain: Uint8Array
+  /** Park style (park tiles) or building style (building tiles), see PARK_STYLES / BUILDING_STYLES. */
+  readonly style: Uint8Array
+  /** Fence, hedge or wall line through the tile, see BARRIERS. */
+  readonly barrier: Uint8Array
+  /** Landmark points from the map data. */
+  pois: Poi[] = []
 
   constructor(bbox: BBox, metresPerTile = DEFAULT_METRES_PER_TILE) {
     this.bbox = bbox
@@ -50,6 +70,12 @@ export class TileGrid {
     this.rows = Math.max(1, Math.ceil(se.y / metresPerTile))
     this.layers = new Uint8Array(this.cols * this.rows)
     this.terrain = new Uint8Array(this.cols * this.rows)
+    this.style = new Uint8Array(this.cols * this.rows)
+    this.barrier = new Uint8Array(this.cols * this.rows)
+  }
+
+  set(arr: Uint8Array, tx: number, ty: number, value: number): void {
+    if (this.inBounds(tx, ty)) arr[this.index(tx, ty)] = value
   }
 
   inBounds(tx: number, ty: number): boolean {
@@ -101,6 +127,7 @@ export function resolveLayers(bits: number): TerrainId {
   if (road && (bits & Layer.crossing) !== 0) return Terrain.crossing
   if (road) return Terrain.road
   if (path) return Terrain.path
+  if (bits & Layer.plaza) return Terrain.plaza
   if (bits & Layer.building) return Terrain.building
   if (bits & Layer.water) return Terrain.water
   if (bits & Layer.park) return Terrain.park

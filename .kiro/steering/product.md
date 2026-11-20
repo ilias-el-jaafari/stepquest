@@ -19,9 +19,9 @@ People who already chase a daily step count and want a reason to walk a new rout
 
 ## Phases
 
-1. **Route planner and tile map** (this phase): OSM data (bundled Benicalap demo + live Overpass with cache), rasterization to a tile grid, 4/8-bit auto-tiling, an original procedural tileset, loop and A→B routing to a step target, evenly spaced checkpoints, a retro UI in English and Spanish.
+1. **Route planner and tile map**: OSM data (bundled Benicalap demo + live Overpass with cache), rasterization to a tile grid, 4/8-bit auto-tiling, an original procedural tileset, loop and A→B routing to a step target, evenly spaced checkpoints, a retro UI in English and Spanish.
 2. **GPS and checkpoints**: "use my location", live tracking with noise filtering, checkpoint collection, HUD, quest complete screen, resume after reload, walk simulator for demos.
-3. **Visual polish**: walker animation and tile refinements.
+3. **Visual polish**: a town of small houses and gardens, landmark buildings from OSM (health centres, stations, schools, park gates, supermarkets; generic original designs, no brands), parks, water and squares, softened diagonal streets, a continuous route path with arrows, a walking character with four facings, and RPG dialogue boxes.
 4. **Sound**: an original 80s-style formant speech synthesizer for turn-by-turn and progress callouts (written from scratch; do not port SAM or any other third-party synth), plus a procedural chiptune whose tempo follows walking speed.
 5. **Submission**: onboarding, demo video, write-up.
 

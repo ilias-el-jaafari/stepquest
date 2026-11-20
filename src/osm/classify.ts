@@ -28,10 +28,66 @@ export function classifyWay(tags: Tags): FeatureKind | undefined {
   if (tags.building && tags.building !== 'no') return 'building'
   if (tags.natural === 'water' || tags.water || tags.landuse === 'reservoir' || tags.landuse === 'basin') return 'water'
   if (tags.waterway && WATERWAYS.has(tags.waterway)) return tags.waterway === 'riverbank' ? 'water' : 'waterway'
+  if (tags.place === 'square') return 'path'
   if (tags.leisure && PARK_LEISURE.has(tags.leisure)) return 'park'
   if (tags.landuse && PARK_LANDUSE.has(tags.landuse)) return 'park'
   if (tags.natural && PARK_NATURAL.has(tags.natural)) return 'park'
+  if (tags.barrier && BARRIERS.has(tags.barrier)) return 'barrier'
   return undefined
+}
+
+const BARRIERS = new Set(['fence', 'hedge', 'wall'])
+
+/** Park styles drawn differently (tall grass, flower gardens, sports pitches, woods…). */
+export type ParkStyle = 'park' | 'garden' | 'grass' | 'pitch' | 'playground' | 'wood' | 'farmland' | 'orchard' | 'cemetery'
+
+export function parkStyle(tags: Tags): ParkStyle {
+  switch (tags.leisure) {
+    case 'garden':
+      return 'garden'
+    case 'pitch':
+      return 'pitch'
+    case 'playground':
+      return 'playground'
+  }
+  switch (tags.landuse) {
+    case 'grass':
+    case 'meadow':
+    case 'village_green':
+      return 'grass'
+    case 'farmland':
+    case 'allotments':
+      return 'farmland'
+    case 'orchard':
+      return 'orchard'
+    case 'forest':
+      return 'wood'
+    case 'cemetery':
+      return 'cemetery'
+  }
+  if (tags.natural === 'wood' || tags.natural === 'scrub') return 'wood'
+  if (tags.natural === 'grassland' || tags.natural === 'heath') return 'grass'
+  return 'park'
+}
+
+/** Extra drawing detail for a way (see OsmWay.sub). */
+export function wayStyle(kind: FeatureKind, tags: Tags): string | undefined {
+  switch (kind) {
+    case 'park':
+      return parkStyle(tags)
+    case 'barrier':
+      return tags.barrier
+    case 'path':
+      return tags.place === 'square' || (tags.highway === 'pedestrian' && tags.area === 'yes') ? 'plaza' : undefined
+    case 'building': {
+      const b = tags.building
+      if (b === 'industrial' || b === 'warehouse' || b === 'barn' || b === 'greenhouse' || b === 'roof') return 'industrial'
+      if (b === 'house' || b === 'detached' || b === 'semidetached_house' || b === 'terrace' || b === 'bungalow') return 'house'
+      return undefined
+    }
+    default:
+      return undefined
+  }
 }
 
 /** Whether a pedestrian may legally walk along the way. */
@@ -52,8 +108,8 @@ export function isWalkable(tags: Tags): boolean {
 /** Whether a closed way should be filled as a polygon. */
 export function isArea(kind: FeatureKind, tags: Tags, closed: boolean): boolean {
   if (!closed) return false
-  if (kind === 'road' || kind === 'path') return tags.area === 'yes'
-  return kind !== 'waterway'
+  if (kind === 'road' || kind === 'path') return tags.area === 'yes' || tags.place === 'square'
+  return kind !== 'waterway' && kind !== 'barrier'
 }
 
 /** Footway segments that cross a carriageway (drawn as zebra crossings). */

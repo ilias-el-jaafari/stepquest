@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { haversine } from '../geo/geo.ts'
 import { useI18n } from '../i18n/index.ts'
 import { directionTo } from '../quest/compass.ts'
@@ -6,6 +6,7 @@ import { formatDuration, formatPace, nextCheckpoint, questStats, trackFor, type 
 import { snapToRoute } from '../quest/snap.ts'
 import type { LocationErrorCode } from '../quest/geolocation.ts'
 import type { TileGrid } from '../tiles/grid.ts'
+import { DialogueBox } from './DialogueBox.tsx'
 import { MapView } from './MapView.tsx'
 import type { Pickup } from './useQuestRunner.ts'
 
@@ -35,19 +36,21 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, muted, res
   const [follow, setFollow] = useState(true)
   const [dismissed, setDismissed] = useState(0)
   const [showResumed, setShowResumed] = useState(resumed)
+  // Dialogue boxes: the welcome line (not after a resume) and the finish speech.
+  const [startDone, setStartDone] = useState(resumed || quest.collected > 0)
+  // A quest that was already finished before a reload goes straight to the results.
+  const [finishDone, setFinishDone] = useState(resumed && quest.finishedAt !== undefined)
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
 
-  // The toast shows for the latest pickup until its timer dismisses it.
-  const toast = pickup && pickup.index < pickup.total && pickup.n !== dismissed ? pickup : undefined
-  useEffect(() => {
-    if (!pickup) return
-    const id = setTimeout(() => setDismissed(pickup.n), 1800)
-    return () => clearTimeout(id)
-  }, [pickup])
+  // A pickup dialogue shows for the latest checkpoint until it closes (tap or timer).
+  const pickupShown = pickup && pickup.index < pickup.total && pickup.n !== dismissed ? pickup : undefined
+  const closePickup = useCallback(() => setDismissed(pickup?.n ?? 0), [pickup])
+  const closeStart = useCallback(() => setStartDone(true), [])
+  const closeFinish = useCallback(() => setFinishDone(true), [])
 
   useEffect(() => {
     if (!showResumed) return
@@ -79,7 +82,9 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, muted, res
   }
 
   let message: { text: string; tone: 'warn' | 'bad' } | undefined
-  if (error === 'denied' || error === 'unsupported' || error === 'insecure') message = { text: t(`quest.err.${error}`), tone: 'bad' }
+  // Once the quest is finished, GPS no longer matters: no signal or route warnings.
+  if (quest.finishedAt !== undefined) message = undefined
+  else if (error === 'denied' || error === 'unsupported' || error === 'insecure') message = { text: t(`quest.err.${error}`), tone: 'bad' }
   else if (quest.offRoute && player) {
     const snap = snapToRoute(trackFor(quest.route), player, quest.alongM)
     const dir = directionTo(player, snap.point)
@@ -93,6 +98,34 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, muted, res
     : quest.lastFixAt === undefined
       ? t('quest.waiting')
       : t('quest.gps', { m: Math.round(quest.accuracy ?? 0) })
+
+  const finished = quest.finishedAt !== undefined
+  let dialogue: { key: string; kind: 'start' | 'pickup' | 'finish'; lines: string[]; onDone: () => void; autoCloseMs?: number } | undefined
+  if (finished && !finishDone) {
+    dialogue = {
+      key: 'finish',
+      kind: 'finish',
+      lines: [t('dlg.finish1'), t('dlg.finish2', { steps: stats.steps.toLocaleString(locale), km: fmtDistance(stats.walkedM, locale) })],
+      onDone: closeFinish,
+    }
+  } else if (!finished && pickupShown) {
+    const left = pickupShown.total - pickupShown.index
+    dialogue = {
+      key: `pickup-${pickupShown.n}`,
+      kind: 'pickup',
+      lines: [left <= 1 ? t('dlg.pickupLast', { n: pickupShown.index, total: pickupShown.total }) : t('dlg.pickup', { n: pickupShown.index, total: pickupShown.total, left })],
+      onDone: closePickup,
+      autoCloseMs: 2600,
+    }
+  } else if (!finished && !startDone) {
+    dialogue = {
+      key: 'start',
+      kind: 'start',
+      lines: quest.route.checkpoints.length > 1 ? [t('dlg.start1', { n: quest.route.checkpoints.length - 1 }), t('dlg.start2')] : [t('dlg.startFlag')],
+      onDone: closeStart,
+      autoCloseMs: 5000,
+    }
+  }
 
   const confirmEnd = () => {
     if (quest.finishedAt !== undefined || window.confirm(t('quest.endConfirm'))) onEnd()
@@ -157,11 +190,11 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, muted, res
           )}
         </div>
       )}
-      {showResumed && !message && <div className="hud-msg info">{t('quest.resumed')}</div>}
+      {showResumed && !message && !finished && <div className="hud-msg info">{t('quest.resumed')}</div>}
 
-      {toast && (
-        <div className="pickup-toast" key={toast.n} data-testid="pickup-toast">
-          {t('quest.pickup', { n: toast.index, total: toast.total })}
+      {dialogue && (
+        <div className="dialog-wrap">
+          <DialogueBox key={dialogue.key} kind={dialogue.kind} lines={dialogue.lines} onDone={dialogue.onDone} autoCloseMs={dialogue.autoCloseMs} />
         </div>
       )}
 
@@ -202,7 +235,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, muted, res
         </div>
       </div>
 
-      {quest.finishedAt !== undefined && (
+      {finished && finishDone && (
         <div className="complete" role="dialog" aria-modal="true" data-testid="complete">
           <div className="complete-box">
             <div className="stars" aria-hidden="true">

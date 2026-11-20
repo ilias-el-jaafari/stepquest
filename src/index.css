@@ -663,48 +663,93 @@ input[aria-invalid='true'] {
   border-radius: 4px 0 0 4px;
 }
 
-.pickup-toast {
+.dialog-wrap {
   position: absolute;
-  left: 50%;
-  top: 42%;
-  z-index: 3;
-  transform: translate(-50%, -50%);
-  padding: 10px 14px;
-  font-size: 12px;
-  color: var(--ink);
-  background: var(--gold);
-  border: 4px solid #000;
-  box-shadow: 4px 4px 0 #000;
-  white-space: nowrap;
-  animation: pickup 1.8s steps(12) forwards;
+  left: 8px;
+  right: 8px;
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 112px);
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
 }
 
-@keyframes pickup {
-  0% {
-    transform: translate(-50%, -20%) scale(0.6);
+/* Classic RPG text box: white panel, thick dark frame with a blue inner line. */
+.dialog {
+  position: relative;
+  width: min(460px, 100%);
+  min-height: 64px;
+  padding: 14px 16px 16px;
+  color: var(--ink);
+  background: #fbf7ec;
+  border: 4px solid #1b1a2e;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 0 0 3px #fbf7ec,
+    inset 0 0 0 5px #4a8ff0,
+    4px 4px 0 rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  pointer-events: auto;
+  animation: dialog-in 0.18s steps(3);
+}
+
+.dialog:focus-visible {
+  outline: 3px dashed var(--gold);
+  outline-offset: 3px;
+}
+
+.dialog[data-kind='finish'] {
+  box-shadow:
+    inset 0 0 0 3px #fbf7ec,
+    inset 0 0 0 5px var(--gold),
+    4px 4px 0 rgba(0, 0, 0, 0.6);
+}
+
+.dialog-text {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.9;
+  white-space: pre-wrap;
+}
+
+.dialog-ghost {
+  visibility: hidden;
+}
+
+/* Blinking "more" marker: a pixel triangle drawn with borders (no font glyph needed). */
+.dialog-more {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid #1b1a2e;
+  animation: more 0.7s steps(2) infinite;
+}
+
+.dialog-more.last {
+  border-top-color: #4a8ff0;
+}
+
+@keyframes more {
+  50% {
+    transform: translateY(2px);
+    opacity: 0.4;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    transform: translateY(12px);
     opacity: 0;
   }
-  15% {
-    transform: translate(-50%, -60%) scale(1.15);
-    opacity: 1;
-  }
-  25%,
-  45%,
-  65% {
-    background: #fff;
-  }
-  35%,
-  55%,
-  75% {
-    background: var(--gold);
-  }
-  85% {
-    transform: translate(-50%, -80%) scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(-50%, -110%) scale(1);
-    opacity: 0;
+}
+
+@media (min-width: 900px) {
+  .dialog-text {
+    font-size: 12px;
   }
 }
 
@@ -814,7 +859,8 @@ input[aria-invalid='true'] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pickup-toast,
+  .dialog,
+  .dialog-more,
   .complete-box,
   .stars {
     animation: none;

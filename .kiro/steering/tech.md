@@ -15,7 +15,7 @@ inclusion: always
 
 - OpenStreetMap through the Overpass API (`out geom`, ways only: highways, buildings, parks/green landuse, water, waterways).
 - Polite client (`src/osm/overpass.ts`): cache first (IndexedDB, 7-day TTL), one request at a time, at least 10 s between requests, a size cap, and a fallback endpoint. Browsers send their own Referer and User-Agent; Node scripts must send a descriptive User-Agent with a contact address.
-- The offline demo is a compact, delta-encoded extract of Benicalap, València (`src/data/benicalap.osm.json`, rebuilt with `npm run fixture -- <overpass.json>`). It is ODbL data; keep the attribution.
+- The offline demo is a compact, delta-encoded extract of Benicalap, València (`src/data/benicalap.osm.json`, rebuilt with `npm run fixture -- <out.json> <overpass.json> [more.json ...]`, merging the main `out geom` extract with the barrier/square and landmark (`out tags center`) extracts). It is ODbL data; keep the attribution.
 
 ## Domain logic (pure TypeScript, no DOM)
 

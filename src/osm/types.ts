@@ -1,8 +1,20 @@
 import type { BBox } from '../geo/geo.ts'
 
-export type FeatureKind = 'road' | 'path' | 'building' | 'park' | 'water' | 'waterway'
+export type FeatureKind = 'road' | 'path' | 'building' | 'park' | 'water' | 'waterway' | 'barrier'
 
-export const FEATURE_KINDS: readonly FeatureKind[] = ['road', 'path', 'building', 'park', 'water', 'waterway']
+/** Order matters: the index is stored in the compact codec. Append only. */
+export const FEATURE_KINDS: readonly FeatureKind[] = ['road', 'path', 'building', 'park', 'water', 'waterway', 'barrier']
+
+/**
+ * Special buildings drawn with their own design. `greenMarket` is one supermarket
+ * chain that gets a dedicated green shop design; `market` is any other supermarket.
+ */
+export type LandmarkKind = 'healing' | 'station' | 'school' | 'greenMarket' | 'market'
+
+export const LANDMARK_KINDS: readonly LandmarkKind[] = ['healing', 'station', 'school', 'greenMarket', 'market']
+
+/** A point of interest that becomes a landmark building on the map. */
+export type Poi = { kind: LandmarkKind; lat: number; lon: number }
 
 export type OsmWay = {
   id: number
@@ -17,6 +29,8 @@ export type OsmWay = {
   tunnel: boolean
   /** A marked pedestrian crossing over a road (footway=crossing). */
   crossing: boolean
+  /** Drawing style within the kind: park style, barrier type, building type or 'plaza'. */
+  sub?: string
   /** Indices into OsmData.lat / OsmData.lon. Shared nodes connect ways. */
   nodes: number[]
 }
@@ -26,6 +40,8 @@ export type OsmData = {
   lat: Float64Array
   lon: Float64Array
   ways: OsmWay[]
+  /** Landmark points (supermarkets, health centres, stations, schools). */
+  pois: Poi[]
   source: 'fixture' | 'overpass'
   /** OSM base timestamp (ISO) reported by Overpass. */
   timestamp: string

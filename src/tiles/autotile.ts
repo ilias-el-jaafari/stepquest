@@ -14,7 +14,9 @@ export function connects(self: TerrainId, other: TerrainId | undefined): boolean
   if (self === Terrain.crossing) return other === Terrain.road || other === Terrain.path
   // Footways run up to the kerb, so a path reaches into a neighbouring road
   // (one-way: the road still draws its kerb on that side).
-  if (self === Terrain.path) return other === Terrain.road
+  if (self === Terrain.path) return other === Terrain.road || other === Terrain.plaza
+  // Paths and squares are both paved for walking: no border between them.
+  if (self === Terrain.plaza) return other === Terrain.path
   return false
 }
 

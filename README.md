@@ -6,7 +6,7 @@ Kiroween 2026 entry, **Resurrection** category.
 
 ## Status
 
-Phase 2 of 5 done: route planner and tile map, plus GPS tracking and checkpoints. See `.kiro/specs/step-quest/` for the full plan.
+Phase 3 of 5 done: route planner and tile map, GPS tracking and checkpoints, and the overworld look (houses, landmarks, a continuous route path, a walking character and dialogue boxes). See `.kiro/specs/step-quest/` for the full plan.
 
 ## Walking a quest
 
@@ -27,13 +27,16 @@ npm run lint
 npm run build
 ```
 
-Screenshots: `npm run build && npx vite preview --host 127.0.0.1 --port 4188`, then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots` (phase 1) or `PHASE2_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase2.mjs` (phase 2).
+Screenshots: `npm run build && npx vite preview --host 127.0.0.1 --port 4188`, then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots` (phase 1) `PHASE2_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase2.mjs` (phase 2) or `PHASE3_URL=http://127.0.0.1:4188/stepquest/ PHASE3_TAG=after node scripts/screenshot-phase3.mjs` (phase 3).
+
+Offline map extract: save Overpass responses for the demo area (the main query with `out geom`, plus barriers/squares and landmark points with `out tags center`), then `npm run fixture -- src/data/benicalap.osm.json main.json extra.json poi.json`.
 
 ## How it works
 
 - **Map data**: OpenStreetMap ways from the Overpass API (cached on the device for a week, throttled), or the bundled offline extract of Benicalap, València.
 - **Tiles**: features are rasterized into a grid of 16×16 tiles (about 5 m each) and auto-tiled with 4-bit masks (paths) and 8-bit "blob" masks (roads, buildings, parks, water).
-- **Art**: every tile and sprite is painted procedurally or hand-coded in `src/render/`. No assets from any commercial game.
+- **Town**: building blocks are cut into lots with small houses, gardens and fences; hospitals and health centres, stations, schools, park entrances and supermarkets from OSM get their own special buildings (generic, original designs; no brand names or logos).
+- **Art**: every tile, building and sprite is painted procedurally or hand-coded in `src/render/`. No assets from any commercial game.
 - **Routing**: A* on the walkable OSM network; loops and A→B detours are tuned until they land within ±5 % of the goal, and checkpoints are spaced evenly along the route.
 
 ## Credits and licences

@@ -10,10 +10,11 @@ src/
   geo/                   geodesy helpers and step maths
   osm/                   tag classification, Overpass client, cache, compact codec, demo area
   data/                  bundled OSM extract (ODbL)
-  tiles/                 TileGrid, rasterization, auto-tiling masks
+  tiles/                 TileGrid, rasterization, auto-tiling masks, diagonal smoothing
+  town/                  lots, houses, gardens and landmark placement (town layout)
   routing/               walking graph, A*, loop and A→B planners, checkpoints
-  render/                palette, tile painter, sprites, MapRenderer (canvas)
-  ui/                    React map view, settings, data loading hooks
+  render/                palette, tile painter, structure painters, route path, sprites, MapRenderer (canvas)
+  ui/                    React map view, settings, quest HUD, dialogue box, data loading hooks
   i18n/                  English and Spanish dictionaries
   App.tsx                screen layout and planner wiring
 scripts/                 fixture builder, route probe, screenshot script

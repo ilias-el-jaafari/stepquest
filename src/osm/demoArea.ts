@@ -22,6 +22,13 @@ export function overpassQuery(b: BBox, timeoutS = 60): string {
   way["natural"~"water|wood|scrub|grassland|heath"](${box});
   way["waterway"](${box});
   way["water"](${box});
+  way["barrier"~"^(fence|hedge|wall)$"](${box});
+  way["place"="square"](${box});
+  nw["shop"="supermarket"](${box});
+  nw["amenity"~"^(hospital|clinic|school|college|university|kindergarten)$"](${box});
+  nw["healthcare"~"^(hospital|clinic|centre)$"](${box});
+  nw["railway"~"^(station|halt|subway_entrance)$"](${box});
+  nw["public_transport"="station"](${box});
 );
 out geom qt;`
 }

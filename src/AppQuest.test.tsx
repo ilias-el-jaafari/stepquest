@@ -104,6 +104,77 @@ describe('active quest UI', () => {
     expect(localStorage.getItem(QUEST_STORAGE_KEY)).toBeNull()
   })
 
+  it('shows the finish dialogue, stops watchPosition and hides signal warnings when a real quest ends', async () => {
+    const route = demoQuestRoute()
+    const cps = route.checkpoints
+    const finish = cps[cps.length - 1]!
+    const now = Date.now()
+    let emit: ((pos: unknown) => void) | undefined
+    const clearWatch = vi.fn()
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: {
+        watchPosition: vi.fn((ok: (pos: unknown) => void) => {
+          emit = ok
+          return 7
+        }),
+        clearWatch,
+        getCurrentPosition: vi.fn(),
+      },
+    })
+    saveQuest({
+      ...createQuest(route, { strideM: 0.75, area: { kind: 'demo' }, simulated: false, now: now - 60 * 60_000 }),
+      collected: cps.length - 1,
+      alongM: finish.distanceM - 4,
+      odometer: { anchor: undefined, totalM: finish.distanceM - 4 },
+      // The last fix is old: before finishing, the HUD would warn that the signal is lost.
+      lastFixAt: now - 5 * 60_000,
+      weakSince: now - 5 * 60_000,
+    })
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!host.querySelector('[data-testid="hud"]') && !!emit)
+    expect(host.textContent).toContain('Signal lost')
+    expect(clearWatch).not.toHaveBeenCalled()
+    await act(async () => emit!({ coords: { latitude: finish.point.lat, longitude: finish.point.lon, accuracy: 5 }, timestamp: Date.now() }))
+    await waitFor(() => !!host.querySelector('[data-testid="dialog-finish"]'))
+    expect(clearWatch).toHaveBeenCalledWith(7)
+    expect(host.textContent).not.toContain('Signal lost')
+    expect(host.textContent).not.toContain('Weak GPS')
+    expect(host.querySelector('.hud-msg.warn, .hud-msg.bad')).toBeNull()
+    // A late fix after the end changes nothing.
+    await act(async () => emit!({ coords: { latitude: 0, longitude: 0, accuracy: 5 }, timestamp: Date.now() + 1000 }))
+    // Advance the dialogue until the results screen appears.
+    await waitFor(() => {
+      const box = host.querySelector<HTMLElement>('.dialog')
+      if (box) box.click()
+      return !!host.querySelector('[data-testid="complete"]')
+    })
+    expect(host.querySelector('.hud-msg.warn, .hud-msg.bad')).toBeNull()
+    expect(host.textContent).not.toContain('Signal lost')
+  })
+
+  it('uses singular wording in Spanish for a one-checkpoint quest and shows no lost-signal banner', async () => {
+    localStorage.setItem('stepquest.locale', 'es')
+    const full = demoQuestRoute()
+    const last = full.checkpoints[full.checkpoints.length - 1]!
+    const route = { ...full, checkpoints: [{ ...last, index: 1 }] }
+    const now = Date.now()
+    saveQuest({
+      ...createQuest(route, { strideM: 0.75, area: { kind: 'demo' }, simulated: false, now: now - 10 * 60_000 }),
+      collected: 1,
+      alongM: route.distanceM,
+      odometer: { anchor: undefined, totalM: 445 },
+      finishedAt: now - 3 * 60_000,
+      lastFixAt: now - 3 * 60_000,
+    })
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!host.querySelector('[data-testid="complete"]'))
+    expect(host.textContent).toContain('Has recogido el único checkpoint.')
+    expect(host.textContent).not.toMatch(/los 1 checkpoints/)
+    expect(host.textContent).not.toContain('Señal perdida')
+    expect(host.querySelector('.hud-msg.warn, .hud-msg.bad')).toBeNull()
+  })
+
   it('explains a denied location permission on "Use my location"', async () => {
     Object.defineProperty(navigator, 'geolocation', {
       configurable: true,

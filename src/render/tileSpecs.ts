@@ -1,49 +1,63 @@
-import { gridMask4, gridMask8 } from '../tiles/autotile.ts'
+import { Dir8, gridMask4, gridMask8, reduceMask8 } from '../tiles/autotile.ts'
+import { Corner, diagonalCorners, isRoad } from '../tiles/diagonal.ts'
 import { Terrain, type TileGrid } from '../tiles/grid.ts'
 import { tileHash, type TileSpec } from './tileset.ts'
 
 /**
- * Label each connected building block so a whole block shares one roof colour
- * (per-tile colours would look like a patchwork).
+ * 8-bit mask for a road tile, treating a neighbour's asphalt corner that
+ * covers the shared edge as road (so no kerb is drawn across the street).
  */
-export function roofColours(grid: TileGrid, palette = 5): Uint8Array {
-  const out = new Uint8Array(grid.cols * grid.rows)
-  const seen = new Uint8Array(grid.cols * grid.rows)
-  const stack: number[] = []
-  for (let i = 0; i < out.length; i++) {
-    if (seen[i] || grid.terrain[i] !== Terrain.building) continue
-    const colour = tileHash(i % grid.cols, Math.floor(i / grid.cols)) % palette
-    seen[i] = 1
-    stack.push(i)
-    while (stack.length) {
-      const j = stack.pop()!
-      out[j] = colour
-      const x = j % grid.cols
-      const y = (j - x) / grid.cols
-      const nbrs = [x > 0 ? j - 1 : -1, x < grid.cols - 1 ? j + 1 : -1, y > 0 ? j - grid.cols : -1, y < grid.rows - 1 ? j + grid.cols : -1]
-      for (const k of nbrs) {
-        if (k >= 0 && !seen[k] && grid.terrain[k] === Terrain.building) {
-          seen[k] = 1
-          stack.push(k)
-        }
-      }
-    }
+export function roadMask8(grid: TileGrid, tx: number, ty: number): number {
+  const at = (dx: number, dy: number) => {
+    const x = tx + dx
+    const y = ty + dy
+    if (!grid.inBounds(x, y)) return { road: true, c: 0 }
+    const c = diagonalCorners(grid, x, y)
+    return { road: isRoad(grid.terrainAt(x, y)) || c === -1, c: Math.max(0, c) }
   }
-  return out
+  const N = at(0, -1)
+  const E = at(1, 0)
+  const S = at(0, 1)
+  const W = at(-1, 0)
+  const NE = at(1, -1)
+  const SE = at(1, 1)
+  const SW = at(-1, 1)
+  const NW = at(-1, -1)
+  let m = 0
+  if (N.road || N.c & (Corner.SE | Corner.SW)) m |= Dir8.N
+  if (E.road || E.c & (Corner.SW | Corner.NW)) m |= Dir8.E
+  if (S.road || S.c & (Corner.NE | Corner.NW)) m |= Dir8.S
+  if (W.road || W.c & (Corner.NE | Corner.SE)) m |= Dir8.W
+  if (NE.road || NE.c & Corner.SW) m |= Dir8.NE
+  if (SE.road || SE.c & Corner.NW) m |= Dir8.SE
+  if (SW.road || SW.c & Corner.NE) m |= Dir8.SW
+  if (NW.road || NW.c & Corner.SE) m |= Dir8.NW
+  return reduceMask8(m)
 }
 
-export function tileSpecAt(grid: TileGrid, roofs: Uint8Array, tx: number, ty: number): TileSpec {
-  const terrain = grid.terrainAt(tx, ty) ?? Terrain.ground
-  const isRoad = (x: number, y: number) => {
-    const t = grid.terrainAt(x, y)
-    return t === Terrain.road
-  }
+function barrierMask(grid: TileGrid, tx: number, ty: number, kind: number): number {
+  const same = (x: number, y: number) => grid.inBounds(x, y) && grid.barrier[grid.index(x, y)] === kind
+  return (same(tx, ty - 1) ? 1 : 0) | (same(tx + 1, ty) ? 2 : 0) | (same(tx, ty + 1) ? 4 : 0) | (same(tx - 1, ty) ? 8 : 0)
+}
+
+const BARRIER_ON = new Set<number>([Terrain.ground, Terrain.park, Terrain.plaza])
+
+export function tileSpecAt(grid: TileGrid, tx: number, ty: number): TileSpec {
+  let terrain = grid.terrainAt(tx, ty) ?? Terrain.ground
+  const i = grid.index(tx, ty)
+  const diag = diagonalCorners(grid, tx, ty)
+  if (diag === -1) terrain = Terrain.road
+  const road = terrain === Terrain.road
+  const barrier = BARRIER_ON.has(terrain) ? (grid.barrier[i] ?? 0) : 0
   return {
     terrain,
     m4: gridMask4(grid, tx, ty),
-    m8: gridMask8(grid, tx, ty),
+    m8: road ? roadMask8(grid, tx, ty) : gridMask8(grid, tx, ty),
     variant: tileHash(tx, ty) % 8,
-    roof: roofs[grid.index(tx, ty)] ?? 0,
-    vertical: terrain === Terrain.crossing ? isRoad(tx - 1, ty) || isRoad(tx + 1, ty) : false,
+    vertical: terrain === Terrain.crossing ? isRoad(grid.terrainAt(tx - 1, ty)) || isRoad(grid.terrainAt(tx + 1, ty)) : false,
+    style: terrain === Terrain.park ? (grid.style[i] ?? 0) : 0,
+    barrier,
+    bm4: barrier ? barrierMask(grid, tx, ty, barrier) : 0,
+    diag: diag > 0 ? diag : 0,
   }
 }

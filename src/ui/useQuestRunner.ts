@@ -57,7 +57,8 @@ export function useQuestRunner() {
   const onFix = useCallback(
     (fix: GpsFix) => {
       const current = questRef.current
-      if (!current) return
+      // A finished quest ignores late fixes (the watch is stopped, but one may already be queued).
+      if (!current || current.finishedAt !== undefined) return
       const { state, events } = applyFix(current, fix)
       questRef.current = state
       setError(undefined)
@@ -72,7 +73,9 @@ export function useQuestRunner() {
         if (e.type === 'finished') {
           important = true
           if (!mutedRef.current) play(FANFARE)
+          // Stop watchPosition (and the wake lock) as soon as the quest is complete.
           stopTracking()
+          setError(undefined)
         }
       }
       setQuest(state)
@@ -89,7 +92,9 @@ export function useQuestRunner() {
     (q: QuestState) => {
       stopTracking()
       if (q.finishedAt !== undefined) return
-      stopRef.current = sourceFor(q).start(onFix, (code) => setError(code))
+      stopRef.current = sourceFor(q).start(onFix, (code) => {
+        if (questRef.current?.finishedAt === undefined) setError(code)
+      })
       wakeRef.current = keepScreenOn()
       // The lock resolves asynchronously; reflect it shortly after.
       setTimeout(() => setWakeActive(!!wakeRef.current?.active()), 500)

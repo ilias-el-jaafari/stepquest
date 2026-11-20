@@ -2,11 +2,13 @@ import type { LatLon } from '../geo/geo.ts'
 import type { Route } from '../routing/planner.ts'
 import { cumulativeDistances } from '../routing/checkpoints.ts'
 import { Terrain, TILE_PX, type TileGrid } from '../tiles/grid.ts'
-import { line4 } from '../tiles/rasterize.ts'
+import { townFor, type TownLayout } from '../town/layout.ts'
 import { P } from './palette.ts'
-import { CHECKPOINT, FINISH_FLAG, paintSprite, PLAYER_DOWN, START_MAT, type Sprite } from './sprites.ts'
-import { paintTile, tileKey } from './tileset.ts'
-import { roofColours, tileSpecAt } from './tileSpecs.ts'
+import { ARROW_PATTERNS, chevrons, routeCells, smoothPolyline, type Chevron, type RouteCell } from './routePath.ts'
+import { CHECKPOINT, facingFrom, FINISH_FLAG, paintSprite, START_MAT, walkFrame, WALKER, type Facing, type Sprite } from './sprites.ts'
+import { paintFrontFence, paintGardenPath, paintGardenTree, paintHouse, paintLandmark } from './structures.ts'
+import { paintTile, tileHash, tileKey } from './tileset.ts'
+import { tileSpecAt } from './tileSpecs.ts'
 
 /** Screen pixels per tile. ≥ DETAIL_ZOOM draws real 16×16 tiles; below it, a 1-px-per-tile town map. */
 export const ZOOM_LEVELS = [0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 16, 24, 32, 48] as const
@@ -29,6 +31,10 @@ export type QuestOverlay = {
 }
 
 const PICKUP_MS = 900
+/** How long the walker keeps its walk cycle after the last move. */
+const WALK_HOLD_MS = 1200
+
+const prefersReducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 type AtlasSlot = { page: HTMLCanvasElement; sx: number; sy: number }
 
@@ -71,13 +77,24 @@ class TileAtlas {
 export class MapRenderer {
   readonly grid: TileGrid
   private readonly canvas: HTMLCanvasElement
-  private readonly roofs: Uint8Array
+  private readonly town: TownLayout
+  /** Structures (houses, landmarks) touching each chunk, by chunk key. */
+  private readonly chunkStructures = new Map<string, { houses: number[]; landmarks: number[] }>()
   private readonly atlas = new TileAtlas()
   private readonly chunks = new Map<string, HTMLCanvasElement>()
   private overview: HTMLCanvasElement | undefined
   private readonly spriteCache = new Map<Sprite, HTMLCanvasElement>()
   private route: RouteShape | undefined
-  private routeCells: { x: number; y: number; along: number }[] = []
+  private routeCells: RouteCell[] = []
+  private routeLine: (RouteCell & { cx: number; cy: number })[] = []
+  private routeArrows: Chevron[] = []
+  /** Walker animation: facing, tween between fixes, and when it last moved. */
+  private walker: { facing: Facing; from?: { x: number; y: number }; to?: { x: number; y: number }; t0: number; ms: number; movedAt: number } = {
+    facing: 'down',
+    t0: 0,
+    ms: 0,
+    movedAt: -Infinity,
+  }
   private markers: Markers = {}
   private quest: QuestOverlay | undefined
   private pickups: { point: LatLon; t0: number }[] = []
@@ -90,7 +107,8 @@ export class MapRenderer {
   constructor(canvas: HTMLCanvasElement, grid: TileGrid) {
     this.canvas = canvas
     this.grid = grid
-    this.roofs = roofColours(grid)
+    this.town = townFor(grid)
+    this.indexStructures()
     this.camX = grid.cols / 2
     this.camY = grid.rows / 2
     this.zoom = 16
@@ -110,28 +128,70 @@ export class MapRenderer {
 
   setRoute(route: RouteShape | undefined): void {
     this.route = route
-    this.routeCells = []
-    if (route) {
-      const seen = new Set<number>()
-      const cumulative = cumulativeDistances(route.points)
-      for (let i = 1; i < route.points.length; i++) {
-        const a = this.grid.toTileXY(route.points[i - 1]!)
-        const b = this.grid.toTileXY(route.points[i]!)
-        const along = cumulative[i - 1] ?? 0
-        line4(a, b, (x, y) => {
-          const k = y * this.grid.cols + x
-          if (seen.has(k)) return
-          seen.add(k)
-          this.routeCells.push({ x, y, along })
-        })
-      }
-    }
+    this.routeCells = route ? routeCells(route.points.map((p) => this.grid.toTileXY(p)), cumulativeDistances(route.points)) : []
+    this.routeArrows = chevrons(this.routeCells)
+    this.routeLine = smoothPolyline(this.routeCells)
     this.requestRender()
   }
 
   setQuest(quest: QuestOverlay | undefined): void {
+    const prev = this.quest?.player
     this.quest = quest
+    const next = quest?.player
+    if (next) this.moveWalker(this.grid.toTileXY(next), prev ? this.grid.toTileXY(prev) : undefined)
     this.requestRender()
+  }
+
+  /** Face the way the walker moved and tween to the new spot. */
+  private moveWalker(to: { x: number; y: number }, prev: { x: number; y: number } | undefined): void {
+    const now = typeof performance === 'undefined' ? 0 : performance.now()
+    const w = this.walker
+    const from = prev ? this.walkerPos(now) ?? prev : undefined
+    if (from) {
+      const dx = to.x - from.x
+      const dy = to.y - from.y
+      if (Math.hypot(dx, dy) > 0.05) {
+        w.facing = facingFrom(dx, dy, w.facing)
+        w.movedAt = now
+      }
+    }
+    const reduced = prefersReducedMotion()
+    // Tween over the gap since the last fix (capped), so motion looks continuous.
+    w.ms = reduced || !from ? 0 : Math.max(120, Math.min(900, now - w.t0))
+    w.from = from
+    w.to = to
+    w.t0 = now
+  }
+
+  private walkerPos(now: number): { x: number; y: number } | undefined {
+    const w = this.walker
+    if (!w.to) return undefined
+    if (!w.from || w.ms <= 0) return w.to
+    const k = Math.min(1, (now - w.t0) / w.ms)
+    return { x: w.from.x + (w.to.x - w.from.x) * k, y: w.from.y + (w.to.y - w.from.y) * k }
+  }
+
+  /** Current facing (for tests and the HUD). */
+  get facing(): Facing {
+    return this.walker.facing
+  }
+
+  private indexStructures(): void {
+    const add = (x: number, y: number, w: number, h: number, kind: 'houses' | 'landmarks', index: number) => {
+      for (let cy = Math.floor(y / CHUNK); cy <= Math.floor((y + h - 1) / CHUNK); cy++) {
+        for (let cx = Math.floor(x / CHUNK); cx <= Math.floor((x + w - 1) / CHUNK); cx++) {
+          const key = `${cx},${cy}`
+          let entry = this.chunkStructures.get(key)
+          if (!entry) {
+            entry = { houses: [], landmarks: [] }
+            this.chunkStructures.set(key, entry)
+          }
+          entry[kind].push(index)
+        }
+      }
+    }
+    this.town.houses.forEach((h, i) => add(h.x, h.y, h.w, h.h, 'houses', i))
+    this.town.landmarks.forEach((l, i) => add(l.x, l.y, l.w, l.h, 'landmarks', i))
   }
 
   /** Start the sparkle animation for a collected checkpoint. */
@@ -261,17 +321,42 @@ export class MapRenderer {
         const gx = cx * CHUNK + tx
         const gy = cy * CHUNK + ty
         if (!this.grid.inBounds(gx, gy)) continue
-        const spec = tileSpecAt(this.grid, this.roofs, gx, gy)
+        const spec = tileSpecAt(this.grid, gx, gy)
         const slot = this.atlas.slot(tileKey(spec), (actx, x, y) => paintTile(actx, x, y, spec))
         ctx.drawImage(slot.page, slot.sx, slot.sy, TILE_PX, TILE_PX, tx * TILE_PX, ty * TILE_PX, TILE_PX, TILE_PX)
       }
     }
+    this.paintStructures(ctx, cx, cy)
     this.chunks.set(key, canvas)
     if (this.chunks.size > MAX_CHUNKS) {
       const oldest = this.chunks.keys().next().value
       if (oldest !== undefined) this.chunks.delete(oldest)
     }
     return canvas
+  }
+
+  /** Garden details, houses and landmark buildings over a chunk's tiles (drawn north to south). */
+  private paintStructures(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
+    const town = this.town
+    const x0 = cx * CHUNK
+    const y0 = cy * CHUNK
+    for (let ty = 0; ty < CHUNK; ty++) {
+      for (let tx = 0; tx < CHUNK; tx++) {
+        const gx = x0 + tx
+        const gy = y0 + ty
+        if (!this.grid.inBounds(gx, gy)) continue
+        const i = this.grid.index(gx, gy)
+        if (town.gates.has(i)) paintGardenPath(ctx, tx * TILE_PX, ty * TILE_PX)
+        else if (town.fences.has(i)) paintFrontFence(ctx, tx * TILE_PX, ty * TILE_PX, tileHash(gx >> 3, gy) % 3 === 0)
+        if (town.trees.has(i)) paintGardenTree(ctx, tx * TILE_PX, ty * TILE_PX, tileHash(gx, gy))
+      }
+    }
+    const entry = this.chunkStructures.get(`${cx},${cy}`)
+    if (!entry) return
+    const houses = entry.houses.map((k) => town.houses[k]!).sort((a, b) => a.y - b.y)
+    for (const h of houses) paintHouse(ctx, (h.x - x0) * TILE_PX, (h.y - y0) * TILE_PX, h)
+    const landmarks = entry.landmarks.map((k) => town.landmarks[k]!).sort((a, b) => a.y - b.y)
+    for (const l of landmarks) paintLandmark(ctx, (l.x - x0) * TILE_PX, (l.y - y0) * TILE_PX, l)
   }
 
   private overviewCanvas(): HTMLCanvasElement {
@@ -288,11 +373,21 @@ export class MapRenderer {
       [Terrain.road]: hex(P.overview.road),
       [Terrain.path]: hex(P.overview.path),
       [Terrain.crossing]: hex(P.overview.crossing),
+      [Terrain.plaza]: hex(P.overview.plaza),
+      [Terrain.building]: hex(P.overview.lot),
     }
     const roofRgb = P.roofs.map((r) => hex(r[0]))
+    const landmarkRgb = this.town.landmarks.map((l) => hex(l.kind === 'parkGate' ? P.stone : P.landmarks[l.kind].roof[0]))
     for (let i = 0; i < this.grid.terrain.length; i++) {
       const t = this.grid.terrain[i] ?? 0
-      const rgb = t === Terrain.building ? roofRgb[(this.roofs[i] ?? 0) % roofRgb.length]! : colours[t]!
+      const house = this.town.houseAt[i] ?? -1
+      const landmark = this.town.landmarkAt[i] ?? -1
+      const rgb =
+        landmark >= 0 && t !== Terrain.path
+          ? landmarkRgb[landmark]!
+          : house >= 0
+            ? roofRgb[(this.town.houses[house]?.roof ?? 0) % roofRgb.length]!
+            : colours[t]!
       image.data[i * 4] = rgb[0]!
       image.data[i * 4 + 1] = rgb[1]!
       image.data[i * 4 + 2] = rgb[2]!
@@ -353,34 +448,8 @@ export class MapRenderer {
       ctx.drawImage(this.overviewCanvas(), originX, originY, this.grid.cols * scale, this.grid.rows * scale)
     }
 
-    // Route trail: footprints on tile centres (detail) or solid cells (town map).
-    if (this.routeCells.length) {
-      if (this.zoom >= DETAIL_ZOOM) {
-        const dot = Math.max(2, Math.round(scale / 4))
-        const walked = this.quest?.alongM ?? -1
-        this.routeCells.forEach((c, i) => {
-          if (i % 2) return
-          const p = toScreen(c.x + 0.5, c.y + 0.5)
-          ctx.fillStyle = P.routeShadow
-          ctx.fillRect(Math.round(p.x - dot / 2) + Math.max(1, dot / 4), Math.round(p.y - dot / 2) + Math.max(1, dot / 4), dot, dot)
-          ctx.fillStyle = c.along <= walked ? P.routeGlow : P.route
-          ctx.fillRect(Math.round(p.x - dot / 2), Math.round(p.y - dot / 2), dot, dot)
-        })
-      } else {
-        const size = Math.max(2 * dpr, Math.ceil(scale * 1.6))
-        ctx.fillStyle = P.routeShadow
-        for (const c of this.routeCells) {
-          const p = toScreen(c.x + 0.5, c.y + 0.5)
-          ctx.fillRect(Math.round(p.x - size / 2) + dpr, Math.round(p.y - size / 2) + dpr, size, size)
-        }
-        const walked = this.quest?.alongM ?? -1
-        for (const c of this.routeCells) {
-          const p = toScreen(c.x + 0.5, c.y + 0.5)
-          ctx.fillStyle = c.along <= walked ? P.routeGlow : P.route
-          ctx.fillRect(Math.round(p.x - size / 2), Math.round(p.y - size / 2), size, size)
-        }
-      }
-    }
+    // Route: one continuous band along the tiles (gold where already walked) with direction arrows.
+    if (this.routeCells.length) this.drawRoute(ctx, scale, toScreen, w, h, dpr)
 
     const spriteScale = Math.max(1, Math.round((this.zoom >= 16 ? this.zoom / 16 : 1.5) * dpr))
     const drawSprite = (sprite: Sprite, p: LatLon, anchorY = 0.85) => {
@@ -428,13 +497,13 @@ export class MapRenderer {
           ctx.fill()
           ctx.stroke()
         }
-        drawSprite(PLAYER_DOWN, player, 1)
+        this.drawWalker(ctx, player, toScreen, spriteScale)
       }
     } else {
       if (this.markers.end) drawSprite(FINISH_FLAG, this.markers.end, 0.9)
       if (this.markers.start) {
         drawSprite(START_MAT, this.markers.start, 0.75)
-        drawSprite(PLAYER_DOWN, this.markers.start, 1)
+        this.drawWalker(ctx, this.markers.start, toScreen, spriteScale)
       }
     }
 
@@ -462,5 +531,95 @@ export class MapRenderer {
       }
     }
     if (this.pickups.length) this.requestRender()
+  }
+
+  private drawWalker(ctx: CanvasRenderingContext2D, p: LatLon, toScreen: (x: number, y: number) => { x: number; y: number }, spriteScale: number): void {
+    const now = typeof performance === 'undefined' ? 0 : performance.now()
+    const w = this.walker
+    const target = this.grid.toTileXY(p)
+    // Outside a quest (planning screen) the walker just stands at the start.
+    const pos = this.quest?.player ? (this.walkerPos(now) ?? target) : target
+    const moving = this.quest?.player !== undefined && now - w.movedAt < WALK_HOLD_MS && !prefersReducedMotion()
+    const frames = WALKER[this.quest?.player ? w.facing : 'down']
+    const sprite = frames[walkFrame(now, moving)] ?? frames[0]!
+    const s = toScreen(pos.x, pos.y)
+    const size = 16 * spriteScale
+    ctx.drawImage(this.sprite(sprite), Math.round(s.x - size / 2), Math.round(s.y - size), size, size)
+    const tweening = w.from && w.ms > 0 && now - w.t0 < w.ms
+    if (moving || tweening) this.requestRender()
+  }
+
+  private drawRoute(
+    ctx: CanvasRenderingContext2D,
+    scale: number,
+    toScreen: (x: number, y: number) => { x: number; y: number },
+    w: number,
+    h: number,
+    dpr: number,
+  ): void {
+    const cells = this.routeCells
+    const line = this.routeLine
+    const walked = this.quest?.alongM ?? -1
+    const detail = this.zoom >= DETAIL_ZOOM
+    // One art pixel in device pixels (detail), or a fixed band on the town map.
+    const unit = detail ? Math.max(1, Math.round(scale / 16)) : Math.max(1, Math.round(dpr))
+    const band = detail ? 6 * unit : Math.max(2 * dpr, Math.ceil(scale * 1.6))
+    const margin = scale * 2 + band
+    const visible = (p: { x: number; y: number }) => p.x > -margin && p.y > -margin && p.x < w + margin && p.y < h + margin
+    // Square brush stamped every art pixel along each segment: a pixel-art thick line.
+    const stroke = (width: number, colour: (c: RouteCell) => string, dx = 0, dy = 0) => {
+      for (let i = 1; i < line.length; i++) {
+        const a = line[i - 1]!
+        const b = line[i]!
+        const pa = toScreen(a.cx, a.cy)
+        const pb = toScreen(b.cx, b.cy)
+        if (!visible(pa) && !visible(pb)) continue
+        ctx.fillStyle = colour(a)
+        const steps = Math.max(1, Math.ceil(Math.max(Math.abs(pb.x - pa.x), Math.abs(pb.y - pa.y)) / unit))
+        const straight = pa.x === pb.x || pa.y === pb.y
+        if (straight) {
+          ctx.fillRect(Math.round(Math.min(pa.x, pb.x) - width / 2) + dx, Math.round(Math.min(pa.y, pb.y) - width / 2) + dy, Math.round(Math.abs(pb.x - pa.x) + width), Math.round(Math.abs(pb.y - pa.y) + width))
+          continue
+        }
+        for (let k = 0; k <= steps; k++) {
+          const x = pa.x + ((pb.x - pa.x) * k) / steps
+          const y = pa.y + ((pb.y - pa.y) * k) / steps
+          ctx.fillRect(Math.round((x - width / 2) / unit) * unit + dx, Math.round((y - width / 2) / unit) * unit + dy, width, width)
+        }
+      }
+      if (line.length === 1) {
+        const p = toScreen(line[0]!.cx, line[0]!.cy)
+        ctx.fillStyle = colour(line[0]!)
+        ctx.fillRect(Math.round(p.x - width / 2), Math.round(p.y - width / 2), width, width)
+      }
+    }
+    // Drop shadow, dark outline, then the band (pink ahead, gold behind).
+    stroke(band + 2 * unit, () => 'rgba(27, 26, 46, 0.3)', unit, unit)
+    stroke(band + 2 * unit, () => P.routeShadow)
+    stroke(band, (c) => (c.along <= walked ? P.routeGlow : P.route))
+    if (!detail) return
+    // Centre dots give the band a path-like texture.
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
+    for (let i = 0; i < cells.length; i += 2) {
+      const c = cells[i]!
+      const p = toScreen(c.x + 0.5, c.y + 0.5)
+      if (visible(p) && i % 4 === 0) ctx.fillRect(Math.round(p.x - unit), Math.round(p.y - unit), 2 * unit, 2 * unit)
+    }
+    // Direction arrows.
+    for (const a of this.routeArrows) {
+      const p = toScreen(a.x + 0.5, a.y + 0.5)
+      if (!visible(p)) continue
+      const rows = ARROW_PATTERNS[a.dir]!
+      const ox = Math.round(p.x - 4.5 * unit)
+      const oy = Math.round(p.y - 4.5 * unit)
+      rows.forEach((row, yy) => {
+        for (let xx = 0; xx < row.length; xx++) {
+          const ch = row[xx]
+          if (ch === '.') continue
+          ctx.fillStyle = ch === 'k' ? P.ink : P.white
+          ctx.fillRect(ox + xx * unit, oy + yy * unit, unit, unit)
+        }
+      })
+    }
   }
 }

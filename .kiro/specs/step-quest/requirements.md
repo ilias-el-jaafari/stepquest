@@ -85,6 +85,21 @@ StepQuest turns a step goal into an 8-bit overworld quest on real streets. The u
 8. THE SYSTEM SHALL save the active quest to local storage and resume it after a reload or lost signal (restoring the same map), and SHALL keep the screen on with the Screen Wake Lock API where supported.
 9. THE SYSTEM SHALL offer a "Simulate walk" mode that moves the walker along the route at a chosen speed with optional GPS noise.
 
+### Requirement 6a (Phase 3): Overworld look
+
+**User Story:** As a walker, I want the map to look like a hand-made 8-bit town, so that my real neighbourhood feels like a game world.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL split building footprints into small lots and draw separate houses with varied roof and wall colours, doors, windows, gardens, trees, fences and hedges, using only original pixel art.
+2. THE SYSTEM SHALL draw distinct parks (flowers, tall grass, pitches, woods), water with a shore, and squares, and SHALL soften the steps of diagonal streets.
+3. WHEN the map data has a hospital or public health centre, a metro or train station, a school, a park entrance or a supermarket, THE SYSTEM SHALL draw a matching special building near it. Supermarkets of one chain SHALL get a green special shop; THE SYSTEM SHALL NOT draw any brand name, logo or trademark, nor any design taken from a commercial game.
+4. THE SYSTEM SHALL draw the route as a continuous path with direction arrows, and the walker SHALL face its direction of movement with a walk animation (static when the user prefers reduced motion).
+5. THE SYSTEM SHALL show quest messages (start, pickup, finish) in a retro dialogue box that types out, can be skipped with a tap or key, and closes by itself while walking.
+6. THE SYSTEM SHALL use correct singular and plural forms in English and Spanish for every count.
+7. WHEN the quest is finished, THE SYSTEM SHALL stop location tracking and SHALL NOT show signal or route warnings.
+8. THE SYSTEM SHALL keep panning smooth on phones by painting houses and landmarks into the cached map chunks.
+
 ### Requirement 7 (Phase 4): Sound
 
 1. THE SYSTEM SHALL speak turn-by-turn and progress callouts with an original formant speech synthesizer (no third-party speech code or samples).

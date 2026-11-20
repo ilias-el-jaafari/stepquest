@@ -22,7 +22,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const t = useCallback(
     (key: MessageKey, vars?: Record<string, string | number>) => {
       const table = dictionaries[locale]
-      return interpolate(table[key] ?? en[key] ?? key, vars)
+      return interpolate(table[key] ?? en[key] ?? key, vars, locale)
     },
     [locale],
   )

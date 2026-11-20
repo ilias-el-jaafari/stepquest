@@ -1,5 +1,5 @@
 import type { OsmData, OsmWay } from '../osm/types.ts'
-import { Layer, TileGrid } from './grid.ts'
+import { BARRIERS, BUILDING_STYLES, Layer, PARK_STYLES, TileGrid } from './grid.ts'
 
 export type Pt = { x: number; y: number }
 
@@ -125,22 +125,40 @@ function wayPoints(grid: TileGrid, data: OsmData, way: OsmWay): Pt[] {
 
 /** Rasterize all features into the grid's layer bits, then resolve terrain. */
 export function rasterizeOsm(grid: TileGrid, data: OsmData): TileGrid {
-  const order: Record<OsmWay['kind'], number> = { park: 0, water: 1, waterway: 2, building: 3, road: 4, path: 5 }
-  const ways = [...data.ways].sort((a, b) => order[a.kind] - order[b.kind])
+  const order: Record<OsmWay['kind'], number> = { park: 0, water: 1, waterway: 2, building: 3, road: 4, path: 5, barrier: 6 }
+  // Big parks first so gardens and pitches inside them keep their own style.
+  const parkArea = new Map<OsmWay, number>()
+  for (const way of data.ways) if (way.kind === 'park') parkArea.set(way, polygonArea(wayPoints(grid, data, way)))
+  const ways = [...data.ways].sort((a, b) => order[a.kind] - order[b.kind] || (parkArea.get(b) ?? 0) - (parkArea.get(a) ?? 0))
   for (const way of ways) {
     if (way.tunnel) continue
     const pts = wayPoints(grid, data, way)
     const mark = (bits: number) => (tx: number, ty: number) => grid.add(tx, ty, bits)
     switch (way.kind) {
-      case 'park':
-        fillPolygon(pts, mark(Layer.park))
+      case 'park': {
+        const style = Math.max(0, PARK_STYLES.indexOf((way.sub ?? 'park') as (typeof PARK_STYLES)[number]))
+        fillPolygon(pts, (tx, ty) => {
+          grid.add(tx, ty, Layer.park)
+          grid.set(grid.style, tx, ty, style)
+        })
         break
+      }
+      case 'barrier': {
+        const kind = Math.max(0, BARRIERS.indexOf((way.sub ?? 'fence') as (typeof BARRIERS)[number]))
+        for (let i = 1; i < pts.length; i++) line4(pts[i - 1]!, pts[i]!, (tx, ty) => grid.set(grid.barrier, tx, ty, kind || 1))
+        break
+      }
       case 'water':
         fillPolygon(pts, mark(Layer.water))
         break
-      case 'building':
-        fillPolygon(pts, mark(Layer.building))
+      case 'building': {
+        const style = Math.max(0, BUILDING_STYLES.indexOf((way.sub ?? 'block') as (typeof BUILDING_STYLES)[number]))
+        fillPolygon(pts, (tx, ty) => {
+          grid.add(tx, ty, Layer.building)
+          if (style) grid.set(grid.style, tx, ty, style)
+        })
         break
+      }
       case 'waterway':
         for (let i = 1; i < pts.length; i++) thickSegment(pts[i - 1]!, pts[i]!, 4 / grid.metresPerTile, mark(Layer.water))
         break
@@ -155,7 +173,7 @@ export function rasterizeOsm(grid: TileGrid, data: OsmData): TileGrid {
       }
       case 'path':
         if (way.area) {
-          fillPolygon(pts, mark(Layer.path))
+          fillPolygon(pts, mark(way.sub === 'plaza' ? Layer.plaza : Layer.path))
           break
         }
         for (let i = 1; i < pts.length; i++) line4(pts[i - 1]!, pts[i]!, mark(way.crossing ? Layer.path | Layer.crossing : Layer.path))
@@ -163,7 +181,15 @@ export function rasterizeOsm(grid: TileGrid, data: OsmData): TileGrid {
     }
   }
   grid.resolveTerrain()
+  grid.pois = data.pois ?? []
   return grid
+}
+
+/** Shoelace area in tile units² (absolute). */
+export function polygonArea(points: Pt[]): number {
+  let a = 0
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) a += (points[j]!.x + points[i]!.x) * (points[j]!.y - points[i]!.y)
+  return Math.abs(a / 2)
 }
 
 export function buildTileGrid(data: OsmData, metresPerTile?: number): TileGrid {

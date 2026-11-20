@@ -33,7 +33,7 @@ export function bboxAreaKm2(b: BBox): number {
 /** Round to ~100 m so nearby requests share one cache entry. */
 export function cacheKey(b: BBox): string {
   const r = (v: number) => (Math.round(v * 1000) / 1000).toFixed(3)
-  return `v1:${r(b.south)},${r(b.west)},${r(b.north)},${r(b.east)}`
+  return `v2:${r(b.south)},${r(b.west)},${r(b.north)},${r(b.east)}`
 }
 
 /** Area to download for a walk: big enough for the loop or detour, plus a margin. */

@@ -24,6 +24,26 @@ describe('interpolate', () => {
     expect(interpolate('{n} of {max}', { n: 9, max: 10 })).toBe('9 of 10')
     expect(interpolate('Keep {missing}', {})).toBe('Keep {missing}')
   })
+  it('picks plural forms with the locale rules', () => {
+    const tpl = '{n} {n|checkpoint|checkpoints}'
+    expect(interpolate(tpl, { n: 1 }, 'en')).toBe('1 checkpoint')
+    expect(interpolate(tpl, { n: 0 }, 'en')).toBe('0 checkpoints')
+    expect(interpolate(tpl, { n: 10 }, 'en')).toBe('10 checkpoints')
+    expect(interpolate('{s} {s|paso|pasos}', { s: '1' }, 'es')).toBe('1 paso')
+    // Formatted numbers count by their digits.
+    expect(interpolate('{s} {s|paso|pasos}', { s: '10.000' }, 'es')).toBe('10.000 pasos')
+    expect(interpolate('{n|Has recogido el único checkpoint.|Has recogido los # checkpoints.}', { n: 3 }, 'es')).toBe('Has recogido los 3 checkpoints.')
+  })
+  it('never says "1 checkpoints" or "1 pasos" in either language', () => {
+    for (const [table, locale] of [[en, 'en'], [es, 'es']] as const) {
+      for (const key of Object.keys(table) as MessageKey[]) {
+        const vars = { n: 1, steps: '1', min: '1', max: '2', left: 1, total: 1, km: '1 km', every: 1, value: '1' }
+        const out = interpolate(table[key], vars, locale)
+        expect(out, key).not.toMatch(/\b1 (checkpoints|pasos|steps|gemas|gems)\b/)
+        expect(out, key).not.toMatch(/\blos 1\b/)
+      }
+    }
+  })
 })
 
 describe('detectLocale', () => {
@@ -60,7 +80,7 @@ describe('detectLocale', () => {
 
 describe('placeholders', () => {
   it('uses the same {placeholders} in both languages', () => {
-    const names = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort()
+    const names = (s: string) => [...new Set([...s.matchAll(/\{(\w+)[|}]/g)].map((m) => m[1]))].sort()
     for (const key of Object.keys(en) as MessageKey[]) {
       expect(names(es[key]), key).toEqual(names(en[key]))
     }

@@ -93,7 +93,7 @@ describe('compact codec', () => {
     expect(back.bbox).toEqual(bbox)
   })
   it('rejects unknown versions', () => {
-    expect(() => decodeOsm({ ...encodeOsm(normalizeOverpass(sample, bbox)), v: 2 as 1 })).toThrow()
+    expect(() => decodeOsm({ ...encodeOsm(normalizeOverpass(sample, bbox)), v: 3 as 1 })).toThrow()
   })
 })
 

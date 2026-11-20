@@ -4,7 +4,7 @@ import { Layer, Terrain, TileGrid } from '../tiles/grid.ts'
 import { P } from './palette.ts'
 import { CHECKPOINT, FINISH_FLAG, PLAYER_DOWN, spriteIsValid, START_MAT } from './sprites.ts'
 import { pathCoverage, paintTile, tileHash, tileKey, type TileSpec } from './tileset.ts'
-import { roofColours, tileSpecAt } from './tileSpecs.ts'
+import { tileSpecAt } from './tileSpecs.ts'
 
 /** Records the colour of every pixel painted into one 16×16 tile. */
 class PixelCtx {
@@ -21,7 +21,7 @@ class PixelCtx {
 
 function paint(spec: Partial<TileSpec> & { terrain: TileSpec['terrain'] }) {
   const ctx = new PixelCtx()
-  paintTile(ctx as unknown as CanvasRenderingContext2D, 0, 0, { m4: 0, m8: 255, variant: 7, roof: 0, vertical: false, ...spec })
+  paintTile(ctx as unknown as CanvasRenderingContext2D, 0, 0, { m4: 0, m8: 255, variant: 7, vertical: false, ...spec })
   return ctx
 }
 
@@ -50,11 +50,10 @@ describe('tile painter', () => {
     expect(ctx.at(15, 15)).toBe(P.curb)
     expect(ctx.at(0, 15)).not.toBe(P.curb)
   })
-  it('gives buildings a front wall only on their south side', () => {
-    const southOpen = paint({ terrain: Terrain.building, m8: Dir8.N })
-    expect(southOpen.px.includes(P.wall)).toBe(true)
-    const closed = paint({ terrain: Terrain.building, m8: 255 })
-    expect(closed.px.includes(P.wall)).toBe(false)
+  it('draws building footprints as garden lawn (houses are drawn on top)', () => {
+    const lot = paint({ terrain: Terrain.building, m8: 0 })
+    expect(lot.px.includes(P.lawnA)).toBe(true)
+    expect(lot.px.includes(P.wall)).toBe(false)
   })
   it('extends paths only towards connected neighbours', () => {
     const ew = pathCoverage(Dir4.E | Dir4.W)
@@ -74,9 +73,12 @@ describe('tile painter', () => {
     expect(horizontal.at(14, 2)).toBe(P.white)
   })
   it('keys tiles by everything that changes their pixels', () => {
-    const base: TileSpec = { terrain: Terrain.park, m4: 0, m8: 255, variant: 1, roof: 0, vertical: false }
+    const base: TileSpec = { terrain: Terrain.park, m4: 0, m8: 255, variant: 1, vertical: false }
     expect(tileKey(base)).not.toBe(tileKey({ ...base, m8: 254 }))
     expect(tileKey(base)).not.toBe(tileKey({ ...base, variant: 2 }))
+    expect(tileKey(base)).not.toBe(tileKey({ ...base, style: 2 }))
+    expect(tileKey(base)).not.toBe(tileKey({ ...base, diag: 4 }))
+    expect(tileKey(base)).not.toBe(tileKey({ ...base, barrier: 1, bm4: 10 }))
     expect(tileKey(base)).toBe(tileKey({ ...base }))
   })
   it('hashes tiles deterministically', () => {
@@ -96,15 +98,8 @@ describe('tile specs from a grid', () => {
   grid.add(4, 6, Layer.path)
   grid.resolveTerrain()
 
-  it('gives each building block a single roof colour', () => {
-    const roofs = roofColours(grid)
-    const a = roofs[grid.index(1, 1)]
-    for (let x = 1; x <= 3; x++) for (let y = 1; y <= 2; y++) expect(roofs[grid.index(x, y)]).toBe(a)
-    const b = roofs[grid.index(6, 1)]
-    expect(roofs[grid.index(7, 2)]).toBe(b)
-  })
   it('turns a footway across a road into a vertical zebra crossing', () => {
-    const spec = tileSpecAt(grid, roofColours(grid), 4, 5)
+    const spec = tileSpecAt(grid, 4, 5)
     expect(spec.terrain).toBe(Terrain.crossing)
     expect(spec.vertical).toBe(true)
     expect(spec.m4 & (Dir4.N | Dir4.S)).toBe(Dir4.N | Dir4.S)
