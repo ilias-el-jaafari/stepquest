@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Run unit tests on save",
+      "description": "Re-run the Vitest suite after the agent saves TypeScript source or tests, so a phase never moves on with a red bar.",
+      "trigger": "PostFileSave",
+      "matcher": "src/.*\\.(ts|tsx)$",
+      "timeout": 120,
+      "action": {
+        "type": "command",
+        "command": "npm test"
+      }
+    }
+  ]
+}

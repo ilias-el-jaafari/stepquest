@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Lint TypeScript on save",
+      "description": "Run Oxlint on the project after the agent saves a TypeScript file.",
+      "trigger": "PostFileSave",
+      "matcher": "src/.*\\.(ts|tsx)$",
+      "timeout": 60,
+      "action": {
+        "type": "command",
+        "command": "npm run lint"
+      }
+    }
+  ]
+}
