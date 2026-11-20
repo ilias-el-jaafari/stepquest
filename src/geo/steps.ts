@@ -1,8 +1,8 @@
 export const DEFAULT_STRIDE_M = 0.75
 export const MIN_STRIDE_M = 0.4
 export const MAX_STRIDE_M = 1.2
-export const MIN_STEPS = 500
-export const MAX_STEPS = 40_000
+export const MIN_STEPS = 100
+export const MAX_STEPS = 60_000
 /** Routes count as a match when they land within this fraction of the target. */
 export const TARGET_TOLERANCE = 0.05
 

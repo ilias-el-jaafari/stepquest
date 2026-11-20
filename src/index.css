@@ -284,6 +284,83 @@ input[type='text'] {
   font-size: 8px;
 }
 
+.field-note {
+  min-height: 0;
+  margin: 4px 0 0;
+  font-size: 8px;
+  line-height: 1.5;
+  color: var(--frame-dark);
+}
+
+.field-note:empty {
+  display: none;
+}
+
+.field-note.warn {
+  color: #b0203c;
+}
+
+input[aria-invalid='true'] {
+  border-color: #b0203c;
+}
+
+/* Retro range slider: chunky square thumb on a sunken track; tall touch target on phones. */
+.pix-range {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 32px;
+  margin: 8px 0 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+
+.pix-range::-webkit-slider-runnable-track {
+  height: 10px;
+  border: 3px solid #000;
+  background: #fff;
+  box-shadow: inset 2px 2px 0 #d9d2bd;
+}
+
+.pix-range::-moz-range-track {
+  height: 4px;
+  border: 3px solid #000;
+  background: #fff;
+}
+
+.pix-range::-moz-range-progress {
+  height: 4px;
+  background: var(--gold);
+}
+
+.pix-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 26px;
+  margin-top: -11px;
+  border: 3px solid #000;
+  border-radius: 0;
+  background: var(--gold);
+  box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.pix-range::-moz-range-thumb {
+  width: 16px;
+  height: 20px;
+  border: 3px solid #000;
+  border-radius: 0;
+  background: var(--gold);
+  box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.pix-range:focus-visible {
+  outline: 3px dashed #000;
+  outline-offset: 2px;
+}
+
 .presets {
   display: flex;
   gap: 6px;

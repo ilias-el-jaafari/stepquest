@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { APP_NAME } from './config/brand.ts'
 import { bboxContains, type BBox, type LatLon } from './geo/geo.ts'
-import { stepsToMetres } from './geo/steps.ts'
+import { MAX_STEPS, MAX_STRIDE_M, MIN_STEPS, MIN_STRIDE_M, stepsToMetres } from './geo/steps.ts'
 import { useI18n, type Locale } from './i18n/index.ts'
 import { DEMO_AREA } from './osm/demoArea.ts'
 import { areaForWalk } from './osm/overpass.ts'
@@ -13,6 +13,7 @@ import { loadQuest } from './quest/storage.ts'
 import { MapView } from './ui/MapView.tsx'
 import { QuestScreen } from './ui/QuestScreen.tsx'
 import { useQuestRunner } from './ui/useQuestRunner.ts'
+import { commitSteps, commitStride, formatStride, liveSteps, liveStride, parseStepsText, parseStrideText, SLIDER_MAX, SLIDER_MIN, SLIDER_STEP, sliderValue, type Committed } from './ui/numberInput.ts'
 import { clampSteps, loadSettings, parseCoords, saveSettings, type Settings } from './ui/settings.ts'
 import { loadDemoWorld, useLiveLoader, type World } from './ui/useMapData.ts'
 
@@ -48,6 +49,11 @@ export default function App() {
   const [simSpeed, setSimSpeed] = useState(20)
   const [simNoise, setSimNoise] = useState(true)
   const [resumed, setResumed] = useState(false)
+  // Raw text of the number fields: typed freely, validated on blur, Enter or Plan.
+  const [stepsText, setStepsText] = useState(() => String(settings.targetSteps))
+  const [strideText, setStrideText] = useState(() => formatStride(settings.strideM))
+  const [stepsNote, setStepsNote] = useState<Committed>()
+  const [strideNote, setStrideNote] = useState<Committed>()
   const live = useLiveLoader()
   const runner = useQuestRunner()
   const liveLoad = live.load
@@ -84,6 +90,50 @@ export default function App() {
     setResult(undefined)
   }
 
+  const setSteps = (value: number) => {
+    setStepsText(String(value))
+    setStepsNote(undefined)
+    if (value !== settings.targetSteps) update({ targetSteps: value })
+  }
+
+  const typeSteps = (text: string) => {
+    setStepsText(text)
+    setStepsNote(undefined)
+    const v = liveSteps(text)
+    if (v !== undefined && v !== settings.targetSteps) update({ targetSteps: v })
+  }
+
+  const typeStride = (text: string) => {
+    setStrideText(text)
+    setStrideNote(undefined)
+    const v = liveStride(text)
+    if (v !== undefined && v !== settings.strideM) update({ strideM: v })
+  }
+
+  /** Validate and clamp the typed step goal; returns the value to use. */
+  const commitStepsField = (): number => {
+    const c = commitSteps(stepsText, settings.targetSteps)
+    setStepsText(String(c.value))
+    setStepsNote(c.note ? c : undefined)
+    if (c.value !== settings.targetSteps) update({ targetSteps: c.value })
+    return c.value
+  }
+
+  const commitStrideField = (): number => {
+    const c = commitStride(strideText, settings.strideM)
+    setStrideText(formatStride(c.value))
+    setStrideNote(c.note ? c : undefined)
+    if (c.value !== settings.strideM) update({ strideM: c.value })
+    return c.value
+  }
+
+  const onEnter = (commitField: () => number) => (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      commitField()
+    }
+  }
+
   const setMode = (mode: RouteMode) => {
     update({ mode })
     if (mode === 'loop') setPlacing('start')
@@ -100,13 +150,15 @@ export default function App() {
 
   const plan = (nextSeed = seed) => {
     if (!world) return
+    const targetSteps = commitStepsField()
+    const strideM = commitStrideField()
     setPlanning(true)
     setSeed(nextSeed)
     // Let the button repaint before the (fast but synchronous) search.
     setTimeout(() => {
       const res = planRoute(
         world.graph,
-        { mode: settings.mode, start, end: settings.mode === 'oneway' ? end : undefined, targetSteps: settings.targetSteps, strideM: settings.strideM, seed: nextSeed },
+        { mode: settings.mode, start, end: settings.mode === 'oneway' ? end : undefined, targetSteps, strideM, seed: nextSeed },
         world.data.bbox,
       )
       setResult(res)
@@ -197,6 +249,12 @@ export default function App() {
   }, [shown, start, end, settings.mode])
   const focusKey = shown ? `route:${shown.nodes.length}:${shown.distanceM}` : `pts:${settings.mode}:${end ? 'e' : ''}:${world ? 'w' : ''}`
 
+  const stepsTyped = parseStepsText(stepsText)
+  const stepsOutOfRange = stepsTyped.kind === 'number' && (stepsTyped.value < MIN_STEPS || stepsTyped.value > MAX_STEPS)
+  const strideTyped = parseStrideText(strideText)
+  const strideOutOfRange = strideTyped.kind === 'number' && (strideTyped.value < MIN_STRIDE_M || strideTyped.value > MAX_STRIDE_M)
+  const stepRange = { min: MIN_STEPS.toLocaleString(locale), max: MAX_STEPS.toLocaleString(locale) }
+  const strideRange = { min: MIN_STRIDE_M.toLocaleString(locale), max: MAX_STRIDE_M.toLocaleString(locale) }
   const km = (stepsToMetres(settings.targetSteps, settings.strideM) / 1000).toFixed(2)
 
   if (runner.quest && world) {
@@ -291,13 +349,35 @@ export default function App() {
             <label className="field">
               <span className="box-title">{t('target.label')}</span>
               <span className="input-row">
-                <input type="number" inputMode="numeric" min={500} max={40000} step={500} value={settings.targetSteps} onChange={(e) => update({ targetSteps: clampSteps(Number(e.target.value)) })} />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  name="steps"
+                  aria-invalid={stepsOutOfRange || stepsTyped.kind === 'invalid'}
+                  aria-describedby="steps-note"
+                  value={stepsText}
+                  onChange={(e) => typeSteps(e.target.value)}
+                  onBlur={commitStepsField}
+                  onKeyDown={onEnter(commitStepsField)}
+                />
                 <span className="unit">{t('target.unit')}</span>
               </span>
             </label>
+            <input
+              type="range"
+              className="pix-range"
+              aria-label={t('target.slider')}
+              min={SLIDER_MIN}
+              max={SLIDER_MAX}
+              step={SLIDER_STEP}
+              value={sliderValue(liveSteps(stepsText) ?? settings.targetSteps)}
+              onChange={(e) => setSteps(Number(e.target.value))}
+            />
+            <FieldNote id="steps-note" note={stepsNote} outOfRange={stepsOutOfRange} invalid={stepsTyped.kind === 'invalid'} prefix="target" range={stepRange} format={(v) => v.toLocaleString(locale)} />
             <div className="presets">
               {STEP_PRESETS.map((s) => (
-                <button key={s} type="button" className={`chip ${settings.targetSteps === s ? 'on' : ''}`} onClick={() => update({ targetSteps: s })}>
+                <button key={s} type="button" className={`chip ${settings.targetSteps === s ? 'on' : ''}`} onClick={() => setSteps(s)}>
                   {s / 1000}k
                 </button>
               ))}
@@ -305,10 +385,22 @@ export default function App() {
             <label className="field">
               <span className="box-title">{t('stride.label')}</span>
               <span className="input-row">
-                <input type="number" inputMode="decimal" min={0.4} max={1.2} step={0.01} value={settings.strideM} onChange={(e) => update({ strideM: Number(e.target.value) || 0.75 })} />
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  name="stride"
+                  aria-invalid={strideOutOfRange || strideTyped.kind === 'invalid'}
+                  aria-describedby="stride-note"
+                  value={strideText}
+                  onChange={(e) => typeStride(e.target.value)}
+                  onBlur={commitStrideField}
+                  onKeyDown={onEnter(commitStrideField)}
+                />
                 <span className="unit">{t('stride.unit')}</span>
               </span>
             </label>
+            <FieldNote id="stride-note" note={strideNote} outOfRange={strideOutOfRange} invalid={strideTyped.kind === 'invalid'} prefix="stride" range={strideRange} format={(v) => v.toLocaleString(locale)} />
             <p className="hint">{t('stride.hint', { steps: settings.targetSteps.toLocaleString(locale), km })}</p>
             <div className="actions">
               <button type="button" className="pix-btn primary" disabled={!world || planning || (settings.mode === 'oneway' && !end)} onClick={() => plan(seed)}>
@@ -322,7 +414,7 @@ export default function App() {
             </div>
           </div>
 
-          <ResultBox result={result} onUseSteps={(steps) => update({ targetSteps: clampSteps(steps) })} />
+          <ResultBox result={result} onUseSteps={(steps) => setSteps(clampSteps(steps))} />
 
           {result?.ok && (
             <div className="box quest-start">
@@ -465,5 +557,28 @@ function ResultBox({ result, onUseSteps }: { result: PlanResult | undefined; onU
         </button>
       ) : null}
     </div>
+  )
+}
+
+/** Inline hint under a number field: live range warning while typing, or what blur/Enter/Plan changed. */
+function FieldNote(props: {
+  id: string
+  note?: Committed
+  outOfRange: boolean
+  invalid: boolean
+  prefix: 'target' | 'stride'
+  range: { min: string; max: string }
+  format: (v: number) => string
+}) {
+  const { t } = useI18n()
+  const { note, prefix, range } = props
+  let text: string | undefined
+  if (note?.note === 'invalid') text = t(`${prefix}.invalid`, { value: props.format(note.value) })
+  else if (note) text = t(`${prefix}.adjusted`, { value: props.format(note.value), ...range })
+  else if (props.outOfRange || props.invalid) text = t(`${prefix}.range`, range)
+  return (
+    <p id={props.id} className={`field-note ${note ? 'warn' : ''}`} role="status" aria-live="polite">
+      {text}
+    </p>
   )
 }

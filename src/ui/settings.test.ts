@@ -13,8 +13,8 @@ describe('settings', () => {
   it('sanitizes garbage', () => {
     expect(sanitizeSettings({ mode: 'fly', targetSteps: 'x', strideM: 9 })).toEqual({ ...DEFAULT_SETTINGS, strideM: 1.2 })
     expect(sanitizeSettings(null)).toEqual(DEFAULT_SETTINGS)
-    expect(clampSteps(10)).toBe(500)
-    expect(clampSteps(1e9)).toBe(40_000)
+    expect(clampSteps(10)).toBe(100)
+    expect(clampSteps(1e9)).toBe(60_000)
   })
   it('parses coordinates', () => {
     expect(parseCoords('39.4935, -0.3920')).toEqual({ lat: 39.4935, lon: -0.392 })

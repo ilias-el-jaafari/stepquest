@@ -46,6 +46,8 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
   - _Requirements: 6.9_
 - [x] 20. Tests: filter, snapping, collection (order, radius, accuracy), off-route, persistence and resume, finish condition, simulated walk end-to-end on the fixture, geolocation and wake-lock adapters, App flows
 - [x] 21. Screenshots of the HUD mid-route, a pickup and the complete screen in `screenshots/phase2/`
+- [x] 21a. Fix: step goal and stride fields accept free typing (raw text, validated and clamped only on blur, Enter or Plan, with an inline hint); goal range 100–60,000 steps; retro slider 500–30,000 synced both ways with the field
+  - _Requirements: 5.1_
 
 ## Phase 3 — Visual polish
 
