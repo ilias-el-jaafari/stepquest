@@ -1,9 +1,9 @@
 import type { Locale } from '../i18n/locale.ts'
-import { eventsAt, midiToHz, type Drum, type NoteEvent } from './chiptune.ts'
+import { calmEvents, eventsAt, midiToHz, nextBarStep, type Drum, type NoteEvent } from './chiptune.ts'
 import { scheduleWindow, type ClockState } from './scheduler.ts'
 import { busGains, loadAudioSettings, saveAudioSettings, sliderToGain, type AudioSettings } from './settings.ts'
 import { SFX, type SfxName, type SfxNote } from './sfx.ts'
-import { glideTempo } from './tempo.ts'
+import { glideTempo, MENU_BPM } from './tempo.ts'
 import { renderText } from './voice/synth.ts'
 import { VoiceQueue } from './voiceQueue.ts'
 
@@ -16,13 +16,16 @@ import { VoiceQueue } from './voiceQueue.ts'
  */
 
 export type EngineStatus = 'locked' | 'running' | 'suspended' | 'interrupted' | 'closed'
-export type EngineSnapshot = { settings: AudioSettings; status: EngineStatus; music: 'off' | 'playing' | 'paused'; speaking: boolean }
+export type MusicMode = 'menu' | 'quest'
+export type EngineSnapshot = { settings: AudioSettings; status: EngineStatus; music: 'off' | 'playing' | 'paused'; musicMode: MusicMode; speaking: boolean }
 
 type Ctor = typeof AudioContext
 const VOICE_RATE = 22050
 const LOOKAHEAD_S = 0.15
 const TICK_MS = 25
 const DUCK = 0.3
+/** Seed of the planning-screen tune. */
+const MENU_SEED = 2026
 
 /** Fourier series of a pulse wave with the given duty cycle (the classic 12.5 / 25 / 50 % square voices). */
 export function pulseCoefficients(duty: number, harmonics = 48): { real: Float32Array; imag: Float32Array } {
@@ -62,6 +65,9 @@ export class AudioEngine {
   private lastTick = 0
   private musicState: EngineSnapshot['music'] = 'off'
   private pauseAt = 0
+  private mode: MusicMode = 'quest'
+  /** A new tune waiting for the next bar line (smooth switch between menu and quest). */
+  private pending: { seed: number; atStep: number } | undefined
   // Voice.
   private queue = new VoiceQueue()
   private source: AudioBufferSourceNode | undefined
@@ -72,7 +78,7 @@ export class AudioEngine {
   constructor(settings: AudioSettings = loadAudioSettings(), win: (Window & typeof globalThis) | undefined = typeof window === 'undefined' ? undefined : window) {
     this.settings = settings
     this.win = win
-    this.snapshot = { settings, status: 'locked', music: 'off', speaking: false }
+    this.snapshot = { settings, status: 'locked', music: 'off', musicMode: 'quest', speaking: false }
   }
 
   // ---- state for React (useSyncExternalStore) ----
@@ -86,7 +92,7 @@ export class AudioEngine {
 
   private emit() {
     const status: EngineStatus = !this.ctx ? 'locked' : (this.ctx.state as EngineStatus)
-    this.snapshot = { settings: this.settings, status, music: this.musicState, speaking: !!this.source }
+    this.snapshot = { settings: this.settings, status, music: this.musicState, musicMode: this.mode, speaking: !!this.source }
     for (const fn of this.listeners) fn()
   }
 
@@ -134,10 +140,11 @@ export class AudioEngine {
     const C = this.ctor()
     if (!C) return
     if (!this.ctx) {
-      // Prefer the media "playback" category on iOS so the voice is heard with the ringer switch off.
+      // iOS: the "ambient" audio session mixes with the user's own music or podcast instead of
+      // stopping it, and follows the ringer/silent switch (silent mode mutes the game, like other games).
       const nav = this.win?.navigator as unknown as { audioSession?: { type: string } } | undefined
       try {
-        if (nav?.audioSession) nav.audioSession.type = 'playback'
+        if (nav?.audioSession) nav.audioSession.type = 'ambient'
       } catch {
         // Not supported: keep the default.
       }
@@ -163,6 +170,8 @@ export class AudioEngine {
         if (ctx.state !== 'running' && ctx.state !== 'closed' && this.win?.document.visibilityState === 'visible') void ctx.resume().catch(() => {})
       }
       this.applyGains()
+      // Music asked for before the first tap (planning screen) fades in now.
+      if (this.musicState === 'playing') this.gate(true)
       this.installRecovery()
     }
     const ctx = this.ctx
@@ -331,8 +340,50 @@ export class AudioEngine {
 
   // ---- music ----
 
-  /** Start the chiptune (paused until a walking tempo arrives). */
+  /**
+   * Calm planning-screen music at a steady tempo. Audible once audio is
+   * unlocked by a tap; follows mute and the volume sliders like all music.
+   * If a quest tune is playing it glides down and switches at the next bar.
+   */
+  playMenuMusic(): void {
+    this.mode = 'menu'
+    if (this.musicState === 'playing') {
+      this.switchTune(MENU_SEED)
+      this.targetBpm = MENU_BPM
+    } else {
+      this.seed = MENU_SEED
+      this.pending = undefined
+      this.clock = { nextTime: 0, step: 0 }
+      this.bpm = MENU_BPM
+      this.targetBpm = MENU_BPM
+      this.lastTick = 0
+      this.musicState = 'playing'
+      this.gate(true)
+    }
+    if (!this.timer) this.timer = setInterval(() => this.tick(), TICK_MS)
+    this.emit()
+  }
+
+  private switchTune(seed: number) {
+    if (seed === this.seed && !this.pending) return
+    this.pending = { seed, atStep: nextBarStep(this.clock.step) }
+  }
+
+  /**
+   * Start the quest chiptune, which follows the walking pace (paused until a
+   * walking tempo arrives). Coming from the menu music, it keeps playing at
+   * the calm tempo, changes tune at the next bar and then follows the pace.
+   */
   startMusic(seed: number): void {
+    const fromMenu = this.mode === 'menu' && this.musicState === 'playing'
+    this.mode = 'quest'
+    if (fromMenu) {
+      this.switchTune(seed)
+      if (!this.timer) this.timer = setInterval(() => this.tick(), TICK_MS)
+      this.emit()
+      return
+    }
+    this.pending = undefined
     this.seed = seed
     this.clock = { nextTime: 0, step: 0 }
     this.targetBpm = undefined
@@ -366,6 +417,7 @@ export class AudioEngine {
     this.timer = undefined
     this.musicState = 'off'
     this.targetBpm = undefined
+    this.pending = undefined
     this.gate(false)
     this.emit()
   }
@@ -401,8 +453,14 @@ export class AudioEngine {
     }
     const { steps, state } = scheduleWindow(this.clock, now, LOOKAHEAD_S, this.bpm)
     this.clock = state
+    const calm = this.mode === 'menu'
     for (const s of steps) {
-      const ev = eventsAt(this.seed, s.step)
+      if (this.pending && s.step >= this.pending.atStep) {
+        this.seed = this.pending.seed
+        this.pending = undefined
+      }
+      const raw = eventsAt(this.seed, s.step)
+      const ev = calm ? calmEvents(raw) : raw
       if (ev.lead) this.tone('pulse250', ev.lead, s.time, s.duration, 0.11)
       if (ev.arp) this.tone('pulse125', ev.arp, s.time, s.duration, 0.035)
       if (ev.bass) this.tone('triangle', ev.bass, s.time, s.duration, 0.2)

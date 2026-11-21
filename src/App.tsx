@@ -9,6 +9,7 @@ import { STEPS_PER_CHECKPOINT } from './routing/checkpoints.ts'
 import { planRoute, type PlanResult, type RouteMode } from './routing/planner.ts'
 import { locateOnce, type LocationErrorCode } from './quest/geolocation.ts'
 import { createQuest, type AreaRef } from './quest/quest.ts'
+import { audioEngine } from './audio/engine.ts'
 import { loadQuest } from './quest/storage.ts'
 import { MapView } from './ui/MapView.tsx'
 import { QuestScreen } from './ui/QuestScreen.tsx'
@@ -85,6 +86,15 @@ export default function App() {
   }, [liveLoad, beginQuest])
 
   useEffect(() => saveSettings(settings), [settings])
+
+  // Planning screen: calm music at a steady tempo, starting on the first tap (autoplay rules).
+  const onPlanning = !runner.quest
+  useEffect(() => {
+    if (!onPlanning) return
+    const audio = audioEngine()
+    audio.armUnlock()
+    audio.playMenuMusic()
+  }, [onPlanning])
 
   const update = (patch: Partial<Settings>) => {
     setSettings((s) => ({ ...s, ...patch }))

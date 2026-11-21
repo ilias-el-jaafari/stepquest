@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { BARS_PER_SONG, eventsAt, MAJOR, makeSong, midiToHz, scaleNote, STEPS_PER_BAR, STEPS_PER_SONG, triad } from './chiptune.ts'
+import { BARS_PER_SONG, calmEvents, eventsAt, nextBarStep, MAJOR, makeSong, midiToHz, scaleNote, STEPS_PER_BAR, STEPS_PER_SONG, triad } from './chiptune.ts'
 import { scheduleWindow, stepSeconds } from './scheduler.ts'
 import { AUDIO_STORAGE_KEY, busGains, clampVolume, DEFAULT_AUDIO, LEGACY_MUTE_KEY, loadAudioSettings, sanitizeAudio, saveAudioSettings, sliderToGain } from './settings.ts'
 import { FINISH, GEM, GEM_LAST, sfxDuration, SFX } from './sfx.ts'
-import { cadence, glideTempo, isStale, MAX_BPM, MIN_BPM, PaceTracker, tempoForSpeed } from './tempo.ts'
+import { cadence, glideTempo, isStale, MAX_BPM, MENU_BPM, MIN_BPM, PaceTracker, tempoForSpeed } from './tempo.ts'
 import { VoiceQueue } from './voiceQueue.ts'
 
 class MemStore {
@@ -226,5 +226,36 @@ describe('voice queue', () => {
     expect(q.size).toBe(0)
     q.push({ text: 'old', priority: 1, at: 0 })
     expect(q.next(60_000)).toBeUndefined()
+  })
+})
+
+describe('planning-screen music', () => {
+  it('switches tunes only on a bar line', () => {
+    expect(nextBarStep(0)).toBe(0)
+    expect(nextBarStep(1)).toBe(STEPS_PER_BAR)
+    expect(nextBarStep(STEPS_PER_BAR)).toBe(STEPS_PER_BAR)
+    expect(nextBarStep(STEPS_PER_BAR * 3 + 5)).toBe(STEPS_PER_BAR * 4)
+  })
+
+  it('keeps only melody, bass and a soft kick in the calm arrangement', () => {
+    let kicks = 0
+    let leads = 0
+    for (let step = 0; step < STEPS_PER_SONG; step++) {
+      const raw = eventsAt(7, step)
+      const calm = calmEvents(raw)
+      expect(calm.arp).toBeUndefined()
+      expect(calm.drum === undefined || calm.drum === 'kick').toBe(true)
+      expect(calm.lead).toEqual(raw.lead)
+      expect(calm.bass).toEqual(raw.bass)
+      if (calm.drum) kicks++
+      if (calm.lead) leads++
+    }
+    expect(kicks).toBeGreaterThan(0)
+    expect(leads).toBeGreaterThan(0)
+  })
+
+  it('uses a calm tempo at the slow end of the walking range', () => {
+    expect(MENU_BPM).toBeLessThanOrEqual(MIN_BPM)
+    expect(MENU_BPM).toBeGreaterThanOrEqual(60)
   })
 })

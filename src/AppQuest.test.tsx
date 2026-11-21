@@ -52,6 +52,22 @@ function demoQuestRoute() {
 }
 
 describe('active quest UI', () => {
+  it('asks for calm menu music on the planning screen, then quest music on start', async () => {
+    const { audioEngine } = await import('./audio/engine.ts')
+    const menu = vi.spyOn(audioEngine(), 'playMenuMusic')
+    const quest = vi.spyOn(audioEngine(), 'startMusic')
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!button('Plan quest') && !button('Plan quest')!.disabled)
+    expect(menu).toHaveBeenCalledTimes(1)
+    expect(audioEngine().getSnapshot().musicMode).toBe('menu')
+    await act(async () => button('Plan quest')!.click())
+    await waitFor(() => !!button('Start quest'))
+    await act(async () => button('Start quest')!.click())
+    await waitFor(() => !!host.querySelector('[data-testid="hud"]'))
+    expect(quest).toHaveBeenCalledTimes(1)
+    expect(audioEngine().getSnapshot().musicMode).toBe('quest')
+  })
+
   it('starts a simulated quest and shows the HUD, then moves and saves progress', async () => {
     await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
     await waitFor(() => !!button('Plan quest') && !button('Plan quest')!.disabled)
@@ -85,6 +101,11 @@ describe('active quest UI', () => {
     await waitFor(() => !!host.querySelector('[data-testid="hud"]'))
     expect(say).toHaveBeenCalledTimes(1)
     expect(say.mock.calls[0]![0]).toMatch(/^Quest started! First gem in \d+ meters, [a-z-]+\.$/)
+    // Alerts only: the story dialogue box on screen is not read out.
+    const dialog = host.querySelector('.dialog')
+    expect(dialog).not.toBeNull()
+    await act(async () => new Promise((r) => setTimeout(r, 1500)))
+    expect(say).toHaveBeenCalledTimes(1)
     expect(host.querySelector('.hud-bottom [data-testid="sound-button"]')).not.toBeNull()
     expect(host.textContent).not.toContain('Sound off')
   })
@@ -117,8 +138,13 @@ describe('active quest UI', () => {
     expect(text).toContain('Quest complete!')
     expect(text).toContain('10,080') // 7,560 m / 0.75 m
     expect(text).toContain('1:35:00')
+    const { audioEngine } = await import('./audio/engine.ts')
+    const menu = vi.spyOn(audioEngine(), 'playMenuMusic')
     await act(async () => button('New quest')!.click())
     await waitFor(() => !!button('Plan quest'))
+    // Back on the planning screen the calm menu music takes over.
+    expect(menu).toHaveBeenCalled()
+    expect(audioEngine().getSnapshot().musicMode).toBe('menu')
     expect(localStorage.getItem(QUEST_STORAGE_KEY)).toBeNull()
   })
 

@@ -85,13 +85,24 @@ class FakeContext {
   createPeriodicWave() {
     return {}
   }
+  filters = 0
   createBiquadFilter() {
+    this.filters++
     return Object.assign(new FakeNode(), { type: 'lowpass', frequency: new FakeParam() })
   }
 }
 
-function fakeWindow(): Window & typeof globalThis {
-  return { AudioContext: FakeContext, navigator: {}, document, addEventListener: () => {} } as unknown as Window & typeof globalThis
+function fakeWindow(navigator: object = {}): Window & typeof globalThis {
+  return { AudioContext: FakeContext, navigator, document, addEventListener: () => {} } as unknown as Window & typeof globalThis
+}
+
+function runner(ctx: FakeContext) {
+  return (ms: number) => {
+    for (let i = 0; i < ms / 25; i++) {
+      ctx.currentTime += 0.025
+      vi.advanceTimersByTime(25)
+    }
+  }
 }
 
 beforeEach(() => {
@@ -204,6 +215,81 @@ describe('audio engine', () => {
     expect(ctx.oscillators).toBe(paused)
     engine.stopMusic()
     expect(engine.getSnapshot().music).toBe('off')
+  })
+
+  it('uses the iOS "ambient" audio session (mixes with other audio, follows the silent switch)', () => {
+    const nav = { audioSession: { type: 'auto' } }
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow(nav))
+    expect(nav.audioSession.type).toBe('auto') // nothing before a gesture
+    engine.unlock()
+    expect(nav.audioSession.type).toBe('ambient')
+  })
+
+  it('plays calm, steady menu music on the planning screen, only after a tap', () => {
+    vi.useFakeTimers()
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.armUnlock()
+    engine.playMenuMusic()
+    expect(engine.getSnapshot().music).toBe('playing')
+    expect(engine.getSnapshot().musicMode).toBe('menu')
+    vi.advanceTimersByTime(1000)
+    expect(FakeContext.instances).toHaveLength(0) // no sound, no context before the gesture
+    document.dispatchEvent(new Event('pointerup'))
+    const ctx = FakeContext.instances[0]!
+    const run = runner(ctx)
+    run(4000)
+    expect(ctx.oscillators).toBeGreaterThan(10)
+    expect(engine.tempo).toBe(80) // steady
+    expect(ctx.filters).toBe(0) // calm arrangement: no snare or hi-hat
+    engine.stopMusic()
+  })
+
+  it('switches smoothly from the menu music to pace-following on quest start', () => {
+    vi.useFakeTimers()
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    const run = runner(ctx)
+    engine.playMenuMusic()
+    run(1000)
+    engine.startMusic(42)
+    // Keeps playing (no restart, no silence) at the calm tempo until a pace arrives.
+    expect(engine.getSnapshot().music).toBe('playing')
+    expect(engine.getSnapshot().musicMode).toBe('quest')
+    const before = ctx.oscillators
+    run(1000)
+    expect(ctx.oscillators).toBeGreaterThan(before)
+    expect(engine.tempo).toBe(80)
+    engine.setTempo(120)
+    run(1000)
+    expect(engine.tempo).toBeGreaterThan(80)
+    expect(engine.tempo).toBeLessThan(120) // glides
+    run(20_000)
+    expect(engine.tempo).toBe(120)
+    expect(ctx.filters).toBeGreaterThan(0) // the full quest drum kit is back after the bar line
+    // Back to planning: glides down to the calm tempo again.
+    engine.playMenuMusic()
+    run(20_000)
+    expect(engine.tempo).toBe(80)
+    expect(engine.getSnapshot().music).toBe('playing')
+    engine.stopMusic()
+  })
+
+  it('menu music respects mute and the music volume', () => {
+    vi.useFakeTimers()
+    for (const patch of [{ muted: true }, { music: 0 }, { voiceOnly: true }]) {
+      FakeContext.instances = []
+      const engine = new AudioEngine({ ...DEFAULT_AUDIO, ...patch }, fakeWindow())
+      engine.unlock()
+      const ctx = FakeContext.instances[0]!
+      engine.playMenuMusic()
+      runner(ctx)(2000)
+      expect(ctx.oscillators).toBe(0)
+      engine.updateSettings({ muted: false, music: 0.8, voiceOnly: false })
+      runner(ctx)(2000)
+      expect(ctx.oscillators).toBeGreaterThan(0)
+      engine.stopMusic()
+    }
   })
 
   it('builds band-limited pulse waves and chip-style noise', () => {

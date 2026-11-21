@@ -164,3 +164,17 @@ export function eventsAt(baseSeed: number, step: number): StepEvents {
   }
   return song.steps[((step % STEPS_PER_SONG) + STEPS_PER_SONG) % STEPS_PER_SONG]!
 }
+
+/** First step of the next bar (or this one, if already on a bar line): where songs can switch without a jolt. */
+export function nextBarStep(step: number): number {
+  return Math.ceil(step / STEPS_PER_BAR) * STEPS_PER_BAR
+}
+
+/** The calm planning-screen arrangement: melody and bass, a soft kick, no arpeggio, snare or hi-hat. */
+export function calmEvents(ev: StepEvents): StepEvents {
+  const out: StepEvents = {}
+  if (ev.lead) out.lead = ev.lead
+  if (ev.bass) out.bass = ev.bass
+  if (ev.drum === 'kick') out.drum = 'kick'
+  return out
+}

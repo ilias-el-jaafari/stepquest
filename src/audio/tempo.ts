@@ -6,6 +6,8 @@
 
 export const MIN_BPM = 84
 export const MAX_BPM = 150
+/** Steady, calm tempo for the planning screen (no walking yet). */
+export const MENU_BPM = 80
 /** Below this speed (m/s) the walker counts as standing still. */
 export const STOP_SPEED = 0.35
 

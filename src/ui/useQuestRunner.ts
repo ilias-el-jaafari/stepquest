@@ -162,7 +162,8 @@ export function useQuestRunner() {
   )
 
   const end = useCallback(() => {
-    audioEngine().stopMusic()
+    // Back to the planning screen: the quest tune slows into the calm menu music.
+    audioEngine().playMenuMusic()
     audioEngine().stopVoice()
     plannerRef.current = undefined
     stopTracking()
