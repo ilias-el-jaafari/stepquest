@@ -66,11 +66,17 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 
 ## Phase 4 — Sound
 
-- [ ] 34. Original formant speech synthesizer (glottal source + formant filters, phoneme table written by us) with unit tests on generated buffers
-- [ ] 35. Callout scripts in EN/ES (turns, checkpoints, halfway, finish)
-- [ ] 36. Procedural chiptune (square, triangle, noise) with tempo following step cadence, replacing the placeholder beeps
+- [x] 34. Original formant speech synthesizer: Rosenberg glottal pulse and hiss sources, cascade of formant resonators with gliding targets, our own phoneme table (English ARPAbet set plus Spanish vowels, tap, trill, ñ and jota), stress and a falling pitch contour, pitch snapped to semitones and a 6-bit output for the robot timbre
+- [x] 35. Text to speech: Spanish letter-to-sound rules (stress from accents and the penultimate rule, Castilian c/z), an English pronouncing dictionary covering every word the app says plus letter-rule fallback, numbers in words in EN and ES ("veintiún pasos", "ten thousand sixty five")
+- [x] 36. Callouts in EN and ES with plurals: quest start, each gem (number, total, distance and direction to the next), last gem to the flag, distance marks (500 / 200 / 100 / 50 m), turns 30 m ahead (detected from the route geometry), off route with a direction, back on route, halfway, finish; priority queue with urgent cut-in and stale-phrase dropping; music ducks while the voice speaks
+- [x] 37. Procedural chiptune: seeded songs (A A' B A form, common progressions, motif-based melody on a 25 % pulse, 12.5 % pulse arpeggio, triangle bass, LFSR-noise drums), look-ahead scheduler on the audio clock, tempo of one beat per step from the walking speed (84–150 BPM) with a smooth glide, fade-out and pause when the walker stops or fixes stop arriving
+- [x] 38. Sound effects for gem pickup, last gem, off route and the finish jingle (replacing the placeholder beeps)
+- [x] 39. Sound settings: master, music, voice and effects volumes, mute and voice-only, saved in localStorage (old mute flag migrated); compact sound button and panel in the header and the quest HUD
+- [x] 40. iOS / autoplay: AudioContext created only in a tap, silent unlock buffer, resume after interruptions on the next tap, on returning to the page and on state changes, "tap to turn sound back on" hint in the HUD, media playback audio session where supported
+- [x] 41. Tests: settings persistence and repair, tempo mapping and glide, pace tracker, scheduler, song rules, effects, voice queue, numbers, Spanish and English pronunciation, synthesizer output (bounds, determinism, formant energy), turn detection, callout planner, engine with a fake AudioContext, sound menu, spoken opening line
+- [x] 42. Screenshots of the sound controls in `screenshots/phase4/`
 
 ## Phase 5 — Submission
 
-- [ ] 37. Onboarding, logo, PWA manifest
-- [ ] 38. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up
+- [ ] 43. Onboarding, logo, PWA manifest
+- [ ] 44. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up

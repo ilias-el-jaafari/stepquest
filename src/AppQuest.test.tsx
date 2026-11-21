@@ -2,6 +2,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.tsx'
+import { AudioEngine, setAudioEngineForTests } from './audio/engine.ts'
+import { loadAudioSettings } from './audio/settings.ts'
 import { I18nProvider } from './i18n/index.ts'
 import { DEMO_AREA } from './osm/demoArea.ts'
 import { loadDemoOsm } from './osm/demo.ts'
@@ -21,6 +23,7 @@ beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   localStorage.clear()
   localStorage.setItem('stepquest.locale', 'en')
+  setAudioEngineForTests(new AudioEngine(loadAudioSettings()))
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
@@ -69,6 +72,21 @@ describe('active quest UI', () => {
     // Let the simulator walk for a moment (120× → ~2.5 min of walking per real second).
     await waitFor(() => (loadQuest(Date.now() + 3_600_000)?.odometer.totalM ?? 0) > 50, 8000)
     expect(host.querySelector('[data-testid="walked"]')?.textContent).not.toBe('0 m')
+  })
+
+  it('speaks the opening line on start and has a sound button in the HUD', async () => {
+    const { audioEngine } = await import('./audio/engine.ts')
+    const say = vi.spyOn(audioEngine(), 'say')
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!button('Plan quest') && !button('Plan quest')!.disabled)
+    await act(async () => button('Plan quest')!.click())
+    await waitFor(() => !!button('Start quest'))
+    await act(async () => button('Start quest')!.click())
+    await waitFor(() => !!host.querySelector('[data-testid="hud"]'))
+    expect(say).toHaveBeenCalledTimes(1)
+    expect(say.mock.calls[0]![0]).toMatch(/^Quest started! First gem in \d+ meters, [a-z-]+\.$/)
+    expect(host.querySelector('.hud-bottom [data-testid="sound-button"]')).not.toBeNull()
+    expect(host.textContent).not.toContain('Sound off')
   })
 
   it('resumes a saved quest after a reload', async () => {

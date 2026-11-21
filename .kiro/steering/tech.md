@@ -28,7 +28,12 @@ inclusion: always
 
 - `src/quest`: pure GPS filter, route snapping, quest reducer, storage, simulator; browser adapters for Geolocation (`watchPosition`, high accuracy) and the Screen Wake Lock API.
 - Web apps cannot track in the background with the screen off; never promise it. Keep the screen awake and make every state change resumable.
-- Sounds are placeholder Web Audio square-wave blips (`src/audio/beep.ts`) until the Phase 4 chiptune; the AudioContext is unlocked on the "Start quest" click.
+
+## Sound (Phase 4)
+
+- `src/audio`: everything is synthesized in code with the Web Audio API: the formant voice (`voice/`), the chiptune, the effects. No samples, no third-party speech code (do not port SAM or any other synth).
+- The AudioContext is created only inside a user gesture ("Start quest", the sound button). Keep decision logic pure and testable; only `engine.ts` touches Web Audio.
+- Every spoken phrase lives in `src/i18n` under `voice.*`, with plural forms; English words must be in `EN_LEXICON` (a test checks it).
 
 ## Quality bar
 

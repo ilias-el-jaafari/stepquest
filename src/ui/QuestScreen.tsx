@@ -6,8 +6,10 @@ import { formatDuration, formatPace, nextCheckpoint, questStats, trackFor, type 
 import { snapToRoute } from '../quest/snap.ts'
 import type { LocationErrorCode } from '../quest/geolocation.ts'
 import type { TileGrid } from '../tiles/grid.ts'
+import { useAudio } from '../audio/useAudio.ts'
 import { DialogueBox } from './DialogueBox.tsx'
 import { MapView } from './MapView.tsx'
+import { SoundMenu } from './SoundMenu.tsx'
 import type { Pickup } from './useQuestRunner.ts'
 
 type Props = {
@@ -16,9 +18,7 @@ type Props = {
   pickup: Pickup | undefined
   error: LocationErrorCode | undefined
   wakeActive: boolean
-  muted: boolean
   resumed: boolean
-  onMute: (muted: boolean) => void
   onEnd: () => void
   onUseSim: () => void
 }
@@ -30,8 +30,9 @@ function fmtDistance(m: number, locale: string): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km`
 }
 
-export function QuestScreen({ grid, quest, pickup, error, wakeActive, muted, resumed, onMute, onEnd, onUseSim }: Props) {
+export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, onEnd, onUseSim }: Props) {
   const { t, locale } = useI18n()
+  const { engine, status, settings: sound } = useAudio()
   const [now, setNow] = useState(() => Date.now())
   const [follow, setFollow] = useState(true)
   const [dismissed, setDismissed] = useState(0)
@@ -92,6 +93,9 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, muted, res
   } else if (!quest.simulated && quest.lastFixAt !== undefined && now - quest.lastFixAt > LOST_AFTER_MS) message = { text: t('quest.lost'), tone: 'warn' }
   else if (quest.weakSince !== undefined && now - quest.weakSince > WEAK_AFTER_MS) message = { text: t('quest.weak'), tone: 'warn' }
   else if (error) message = { text: t(`quest.err.${error}`), tone: 'warn' }
+
+  // iOS suspends audio after calls, Siri or a locked screen; a tap brings it back.
+  const soundPaused = quest.finishedAt === undefined && !sound.muted && engine.supported && status !== 'running' && status !== 'closed'
 
   const gps = quest.simulated
     ? t('quest.simBadge', { x: quest.sim?.timeScale ?? 1 })
@@ -191,6 +195,11 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, muted, res
         </div>
       )}
       {showResumed && !message && !finished && <div className="hud-msg info">{t('quest.resumed')}</div>}
+      {soundPaused && !message && (
+        <button type="button" className="hud-msg info sound-resume" onClick={() => engine.unlock()} data-testid="sound-resume">
+          {t('sound.resume')}
+        </button>
+      )}
 
       {dialogue && (
         <div className="dialog-wrap">
@@ -226,9 +235,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, muted, res
               {t('quest.follow')}
             </button>
           )}
-          <button type="button" className="pix-btn small-text" onClick={() => onMute(!muted)}>
-            {muted ? t('quest.unmute') : t('quest.mute')}
-          </button>
+          <SoundMenu placement="up" showLabel={false} />
           <button type="button" className="pix-btn small-text danger" onClick={confirmEnd}>
             {t('quest.end')}
           </button>

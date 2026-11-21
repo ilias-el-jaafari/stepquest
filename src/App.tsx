@@ -12,6 +12,7 @@ import { createQuest, type AreaRef } from './quest/quest.ts'
 import { loadQuest } from './quest/storage.ts'
 import { MapView } from './ui/MapView.tsx'
 import { QuestScreen } from './ui/QuestScreen.tsx'
+import { SoundMenu } from './ui/SoundMenu.tsx'
 import { useQuestRunner } from './ui/useQuestRunner.ts'
 import { commitSteps, commitStride, formatStride, liveSteps, liveStride, parseStepsText, parseStrideText, SLIDER_MAX, SLIDER_MIN, SLIDER_STEP, sliderValue, type Committed } from './ui/numberInput.ts'
 import { clampSteps, loadSettings, parseCoords, saveSettings, type Settings } from './ui/settings.ts'
@@ -78,7 +79,7 @@ export default function App() {
       setWorld(w)
       if (saved && (saved.area.kind === 'demo' || !isDemoWorld(w))) {
         setResumed(true)
-        beginQuest(saved)
+        beginQuest(saved, true)
       }
     })()
   }, [liveLoad, beginQuest])
@@ -266,9 +267,7 @@ export default function App() {
         pickup={runner.pickup}
         error={runner.error}
         wakeActive={runner.wakeActive}
-        muted={runner.muted}
         resumed={resumed}
-        onMute={runner.setMuted}
         onEnd={runner.end}
         onUseSim={() => runner.switchToSimulation(simSpeed)}
       />
@@ -282,13 +281,16 @@ export default function App() {
           <h1 className="logo">{APP_NAME}</h1>
           <p className="tagline">{t('app.tagline')}</p>
         </div>
-        <label className="lang">
-          <span className="sr-only">{t('lang.switchTo')}</span>
-          <select value={locale} onChange={(e) => setLocale(e.target.value as Locale)} aria-label={t('lang.switchTo')}>
-            <option value="es">ES</option>
-            <option value="en">EN</option>
-          </select>
-        </label>
+        <div className="topbar-tools">
+          <SoundMenu placement="down" />
+          <label className="lang">
+            <span className="sr-only">{t('lang.switchTo')}</span>
+            <select value={locale} onChange={(e) => setLocale(e.target.value as Locale)} aria-label={t('lang.switchTo')}>
+              <option value="es">ES</option>
+              <option value="en">EN</option>
+            </select>
+          </label>
+        </div>
       </header>
 
       <main className="layout">

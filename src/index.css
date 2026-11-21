@@ -874,3 +874,134 @@ input[aria-invalid='true'] {
   font-size: 13px;
   line-height: 1;
 }
+
+/* ---- Sound menu (compact: one button and a small panel; can move into an options menu later) ---- */
+.topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sound-menu {
+  position: relative;
+}
+
+.sound-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sound-toggle.is-off {
+  background: #f3d1d4;
+}
+
+.speaker {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.sound-panel {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  width: min(280px, calc(100vw - 24px));
+  padding: 10px 12px 12px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 3px solid #000;
+  box-shadow:
+    inset 0 0 0 3px var(--paper),
+    inset 0 0 0 5px var(--frame),
+    4px 4px 0 rgba(0, 0, 0, 0.6);
+  font-size: 8px;
+}
+
+.sound-menu.down .sound-panel {
+  top: calc(100% + 6px);
+}
+
+.sound-menu.up .sound-panel {
+  bottom: calc(100% + 6px);
+}
+
+.sound-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.sound-toggles .check {
+  margin-top: 4px;
+  font-size: 8px;
+}
+
+.sound-slider {
+  display: grid;
+  grid-template-columns: 62px 1fr 26px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sound-slider .pix-range {
+  height: 28px;
+  margin: 0;
+}
+
+.sound-slider.disabled {
+  opacity: 0.5;
+}
+
+.sound-label {
+  font-size: 7px;
+}
+
+.sound-value {
+  font-size: 7px;
+  text-align: right;
+}
+
+.sound-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.sound-hint {
+  margin: 8px 0 0;
+  font-size: 6px;
+  line-height: 1.7;
+  color: #4b4a66;
+}
+
+button.hud-msg.sound-resume {
+  font: inherit;
+  font-size: 8px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+@media (max-width: 420px) {
+  .topbar .sound-toggle span {
+    display: none;
+  }
+}
+
+/* In the quest HUD the panel spans the bottom bar and sits above the dialogue box. */
+.hud-bottom .sound-menu {
+  position: static;
+}
+
+.hud-bottom .sound-menu.up .sound-panel {
+  left: 0;
+  right: 0;
+  width: auto;
+  bottom: calc(100% + 6px);
+}
+
+.hud-bottom:has(.sound-panel) {
+  z-index: 6;
+}

@@ -6,7 +6,7 @@ Kiroween 2026 entry, **Resurrection** category.
 
 ## Status
 
-Phase 3 of 5 done: route planner and tile map, GPS tracking and checkpoints, and the overworld look (houses, landmarks, a continuous route path, a walking character and dialogue boxes). See `.kiro/specs/step-quest/` for the full plan.
+Phase 4 of 5 done: route planner and tile map, GPS tracking and checkpoints, the overworld look (houses, landmarks, a continuous route path, a walking character and dialogue boxes), and sound (a retro robot voice, chiptune music that follows your pace, sound effects). See `.kiro/specs/step-quest/` for the full plan.
 
 ## Walking a quest
 
@@ -14,6 +14,13 @@ Phase 3 of 5 done: route planner and tile map, GPS tracking and checkpoints, and
 - **Start quest!** follows you on the map. Collect the numbered gems in order (within about 22 m; a bit more when GPS is weak) and reach the flag.
 - The quest is saved on your device, so a reload or a lost signal resumes where you were.
 - **Simulate walk (demo)** moves the walker along the route by itself at up to 120× speed, with optional GPS noise, for testing and demo videos.
+
+## Sound
+
+- A robot voice (our own 1980s-style formant synthesizer, English and Spanish) calls out the start, each gem, the distance to the next one, turns about 30 m ahead, going off route, halfway and the finish.
+- Chiptune music is generated as you walk; its tempo follows your steps and it pauses when you stop.
+- The speaker button (top bar, or the quest's bottom bar) opens the sound panel: master, music, voice and effects volumes, mute and voice only. Settings stay on your device.
+- Browsers only allow sound after a tap: it starts with "Start quest!" (or the sound button). On iPhone, a call or locking the screen can pause it; tap anywhere to bring it back.
 
 **Limitation:** a web app cannot track your position in the background. Tracking only works while the page is open and the screen is on. The app asks the browser to keep the screen awake (Screen Wake Lock) where supported; if you lock the phone, the quest pauses and catches up when you come back. Location also requires HTTPS (GitHub Pages is fine).
 
@@ -27,7 +34,7 @@ npm run lint
 npm run build
 ```
 
-Screenshots: `npm run build && npx vite preview --host 127.0.0.1 --port 4188`, then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots` (phase 1) `PHASE2_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase2.mjs` (phase 2) or `PHASE3_URL=http://127.0.0.1:4188/stepquest/ PHASE3_TAG=after node scripts/screenshot-phase3.mjs` (phase 3).
+Screenshots: `npm run build && npx vite preview --host 127.0.0.1 --port 4188`, then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots` (phase 1) `PHASE2_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase2.mjs` (phase 2) `PHASE3_URL=http://127.0.0.1:4188/stepquest/ PHASE3_TAG=after node scripts/screenshot-phase3.mjs` (phase 3) or `PHASE4_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase4.mjs` (phase 4, also checks that audio runs).
 
 Offline map extract: save Overpass responses for the demo area (the main query with `out geom`, plus barriers/squares and landmark points with `out tags center`), then `npm run fixture -- src/data/benicalap.osm.json main.json extra.json poi.json`.
 
@@ -37,6 +44,7 @@ Offline map extract: save Overpass responses for the demo area (the main query w
 - **Tiles**: features are rasterized into a grid of 16×16 tiles (about 5 m each) and auto-tiled with 4-bit masks (paths) and 8-bit "blob" masks (roads, buildings, parks, water).
 - **Town**: building blocks are cut into lots with small houses, gardens and fences; hospitals and health centres, stations, schools, park entrances and supermarkets from OSM get their own special buildings (generic, original designs; no brand names or logos).
 - **Art**: every tile, building and sprite is painted procedurally or hand-coded in `src/render/`. No assets from any commercial game.
+- **Sound**: the voice, music and effects are synthesized in `src/audio/` with the Web Audio API; there are no audio files.
 - **Routing**: A* on the walkable OSM network; loops and A→B detours are tuned until they land within ±5 % of the goal, and checkpoints are spaced evenly along the route.
 
 ## Credits and licences
