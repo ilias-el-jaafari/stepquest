@@ -159,11 +159,31 @@ describe('formant synthesizer', () => {
     expect(ratio(ee)).toBeGreaterThan(ratio(ah) * 5)
   })
 
-  it('makes /s/ a high hiss', () => {
+  it('makes /s/ a hiss above the voice band', () => {
     const sr = 22050
     const s = renderPhones([{ p: 'S', len: 4 }], { bits: 0 })
     const [a, b] = [Math.floor(s.length * 0.3), Math.floor(s.length * 0.7)]
-    expect(energyAt(s, 5600, sr, a, b)).toBeGreaterThan(energyAt(s, 500, sr, a, b) * 5)
+    expect(energyAt(s, 3500, sr, a, b)).toBeGreaterThan(energyAt(s, 500, sr, a, b) * 3)
+  })
+
+  it('keeps hiss soft: little energy above 5 kHz compared with the old raw voice', () => {
+    const sr = 22050
+    const text = 'Quest started! First gem in 250 meters, south-west.'
+    const soft = renderText(text, 'en')
+    const raw = renderText(text, 'en', { lowpassHz: 0, noiseLevel: 1, bits: 6 })
+    const hf = (x: Float32Array) => [6000, 7000, 8000, 9000].reduce((t, f) => t + energyAt(x, f, sr, 0, x.length), 0)
+    const mid = (x: Float32Array) => [400, 700, 1000, 1300].reduce((t, f) => t + energyAt(x, f, sr, 0, x.length), 0)
+    const ratio = (x: Float32Array) => hf(x) / mid(x)
+    // At least 15 dB less fizz, relative to the voice band.
+    expect(ratio(soft)).toBeLessThan(ratio(raw) / 30)
+  })
+
+  it('does not bit-crush by default (smooth samples, no 6-bit steps)', () => {
+    const x = renderText('Back on route.', 'en')
+    const levels = new Set(Array.from(x, (v) => Math.round(v * 32767)))
+    expect(levels.size).toBeGreaterThan(1000)
+    const crushed = renderText('Back on route.', 'en', { bits: 6 })
+    expect(new Set(Array.from(crushed, (v) => Math.round(v * 32767))).size).toBeLessThanOrEqual(65)
   })
 
   it('renders an empty phrase as silence', () => {

@@ -21,10 +21,15 @@ export type VoiceOptions = {
   bits?: number
   /** Snap the pitch to semitones (sing-song robot). */
   quantizePitch?: boolean
+  /** Low-pass the output at this frequency (Hz) to keep hiss soft; 0 = off. */
+  lowpassHz?: number
+  /** Level of all hiss (fricatives, bursts, aspiration), 0–1. */
+  noiseLevel?: number
   seed?: number
 }
 
-export const VOICE_DEFAULTS: Required<VoiceOptions> = { sampleRate: 22050, pitch: 112, speed: 0.9, bits: 6, quantizePitch: true, seed: 1 }
+/** Voice "D": smooth robot (no pitch steps, no bit crushing), with soft, low-passed hiss. */
+export const VOICE_DEFAULTS: Required<VoiceOptions> = { sampleRate: 22050, pitch: 112, speed: 0.9, bits: 0, quantizePitch: false, lowpassHz: 4200, noiseLevel: 0.5, seed: 1 }
 
 type Segment = {
   ph: Phoneme
@@ -67,6 +72,31 @@ class Resonator {
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 const lerpF = (a: Formants, b: Formants, t: number): Formants => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
+
+/** In-place 2-pole Butterworth low-pass (RBJ biquad). */
+export function lowpass(x: Float32Array, cutoff: number, sr: number): void {
+  const w = (2 * Math.PI * Math.min(cutoff, sr * 0.45)) / sr
+  const alpha = Math.sin(w) / (2 * Math.SQRT1_2)
+  const cos = Math.cos(w)
+  const a0 = 1 + alpha
+  const b0 = (1 - cos) / 2 / a0
+  const b1 = (1 - cos) / a0
+  const a1 = (-2 * cos) / a0
+  const a2 = (1 - alpha) / a0
+  let x1 = 0
+  let x2 = 0
+  let y1 = 0
+  let y2 = 0
+  for (let i = 0; i < x.length; i++) {
+    const v = x[i]!
+    const y = b0 * v + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2
+    x2 = x1
+    x1 = v
+    y2 = y1
+    y1 = y
+    x[i] = y
+  }
+}
 
 /** Rosenberg glottal pulse for a phase 0…1. */
 function glottal(phase: number): number {
@@ -135,12 +165,21 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
   r4.set(3500, 300)
   const rn = new Resonator(sr)
   let seed = o.seed >>> 0 || 1
-  const noise = () => {
+  // White noise, then a one-pole low-pass (about 3 kHz) so the hiss is never a shrill TV static.
+  const kNoise = 1 - Math.exp((-2 * Math.PI * 3000) / sr)
+  let lpNoise = 0
+  const white = () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
     return seed / 2147483648 - 1
   }
+  const noise = () => {
+    lpNoise += (white() - lpNoise) * kNoise
+    return lpNoise * 1.8
+  }
   const smooth = (ms: number) => 1 - Math.exp(-1 / ((ms / 1000) * sr))
   const kAmp = smooth(5)
+  // Hiss fades in and out more slowly than the voice, so consonants never click or spit.
+  const kNoiseAmp = smooth(12)
   const kPitch = smooth(30)
   let aVoice = 0
   let aNoise = 0
@@ -184,8 +223,8 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
       case 'stop': {
         const burst = t >= 0.65
         tv = burst ? ph.voice * 1.4 : ph.voice * 0.5
-        tn = burst ? ph.noise * (1 - (t - 0.65) / 0.35) : 0
-        ta = burst && ph.voice === 0 ? 0.25 * (1 - (t - 0.65) / 0.35) : 0
+        tn = burst ? ph.noise * 0.5 * (1 - (t - 0.65) / 0.35) : 0
+        ta = burst && ph.voice === 0 ? 0.12 * (1 - (t - 0.65) / 0.35) : 0
         break
       }
       case 'aspirate':
@@ -204,8 +243,8 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
     }
     if (ended) tv = tn = ta = 0
     aVoice += (tv - aVoice) * kAmp
-    aNoise += (tn - aNoise) * kAmp
-    aAsp += (ta - aAsp) * kAmp
+    aNoise += (tn * o.noiseLevel - aNoise) * kNoiseAmp
+    aAsp += (ta * o.noiseLevel - aAsp) * kNoiseAmp
 
     // Pitch: gentle fall over the sentence, a lift on stressed vowels, a drop at the end.
     let target = o.pitch * (1.08 - 0.14 * seg.sentencePos)
@@ -223,12 +262,15 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
     const source = dg * aVoice + noise() * aAsp
     let v = r4.run(r3.run(r2.run(r1.run(source))))
     // Hiss through its own band filter, with the DC removed.
-    const hiss = rn.run(noise()) * aNoise * 3
+    const hiss = rn.run(noise()) * aNoise
     v += hiss
     out[n] = v
   }
 
-  // Remove DC, normalize, then quantize for the 8-bit timbre.
+  // Gentle 2-pole low-pass over everything (keeps the robot warm, removes the fizz).
+  if (o.lowpassHz > 0) lowpass(out, o.lowpassHz, sr)
+
+  // Remove DC, normalize, then (optionally) quantize for an 8-bit timbre.
   let mean = 0
   for (let i = 0; i < total; i++) mean += out[i]!
   mean /= total
