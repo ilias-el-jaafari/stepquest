@@ -5,7 +5,7 @@ import { interpolate } from '../../i18n/locale.ts'
 import { englishWord, parsePron, spanishStress, spanishWord, textToPhones, unknownEnglishWords } from './g2p.ts'
 import { spellNumber, spellNumbersInText } from './numbers.ts'
 import { PHONEMES } from './phonemes.ts'
-import { renderPhones, renderText } from './synth.ts'
+import { buildTracks, renderPhones, renderStats, renderText } from './synth.ts'
 
 const syms = (phones: { p: string }[]) => phones.map((p) => p.p).join(' ')
 
@@ -148,34 +148,44 @@ describe('formant synthesizer', () => {
 
   it('puts vowel energy at the right formants', () => {
     const sr = 22050
-    const ee = renderPhones([{ p: 'IY', len: 4 }], { bits: 0 })
-    const ah = renderPhones([{ p: 'AA', len: 4 }], { bits: 0 })
-    const mid = (x: Float32Array) => [Math.floor(x.length * 0.3), Math.floor(x.length * 0.7)] as const
-    const ratio = (x: Float32Array) => {
-      const [a, b] = mid(x)
-      return energyAt(x, 2290, sr, a, b) / energyAt(x, 1090, sr, a, b)
+    const ee = renderPhones([{ p: 'IY', len: 4 }])
+    const ah = renderPhones([{ p: 'AA', len: 4 }])
+    const band = (x: Float32Array, lo: number, hi: number) => {
+      const [a, b] = [Math.floor(x.length * 0.3), Math.floor(x.length * 0.7)]
+      let e = 0
+      for (let f = lo; f <= hi; f += 25) e += energyAt(x, f, sr, a, b)
+      return e
     }
+    const ratio = (x: Float32Array) => band(x, 2100, 2500) / band(x, 900, 1300)
     // "ee" has a high second formant, "ah" a low one.
     expect(ratio(ee)).toBeGreaterThan(ratio(ah) * 5)
   })
 
-  it('makes /s/ a hiss above the voice band', () => {
+  it('makes /s/ a hiss above the voice band and /sh/ a lower one', () => {
     const sr = 22050
-    const s = renderPhones([{ p: 'S', len: 4 }], { bits: 0 })
-    const [a, b] = [Math.floor(s.length * 0.3), Math.floor(s.length * 0.7)]
-    expect(energyAt(s, 3500, sr, a, b)).toBeGreaterThan(energyAt(s, 500, sr, a, b) * 3)
+    const centroid = (x: Float32Array) => {
+      const [a, b] = [Math.floor(x.length * 0.3), Math.floor(x.length * 0.7)]
+      let num = 0
+      let den = 0
+      for (let f = 500; f <= 5000; f += 100) {
+        const e = energyAt(x, f, sr, a, b)
+        num += f * e
+        den += e
+      }
+      return num / den
+    }
+    const s = centroid(renderPhones([{ p: 'S', len: 4 }]))
+    const sh = centroid(renderPhones([{ p: 'SH', len: 4 }]))
+    expect(s).toBeGreaterThan(3500)
+    expect(sh).toBeLessThan(s - 500)
   })
 
-  it('keeps hiss soft: little energy above 5 kHz compared with the old raw voice', () => {
+  it('keeps hiss soft: energy above 6 kHz is at least 30 dB under the voice band', () => {
     const sr = 22050
-    const text = 'Quest started! First gem in 250 meters, south-west.'
-    const soft = renderText(text, 'en')
-    const raw = renderText(text, 'en', { lowpassHz: 0, noiseLevel: 1, bits: 6 })
-    const hf = (x: Float32Array) => [6000, 7000, 8000, 9000].reduce((t, f) => t + energyAt(x, f, sr, 0, x.length), 0)
-    const mid = (x: Float32Array) => [400, 700, 1000, 1300].reduce((t, f) => t + energyAt(x, f, sr, 0, x.length), 0)
-    const ratio = (x: Float32Array) => hf(x) / mid(x)
-    // At least 15 dB less fizz, relative to the voice band.
-    expect(ratio(soft)).toBeLessThan(ratio(raw) / 30)
+    const x = renderText('Quest started! First gem in 250 meters, south-west.', 'en')
+    const hf = [6000, 7000, 8000, 9000].reduce((t, f) => t + energyAt(x, f, sr, 0, x.length), 0)
+    const mid = [400, 700, 1000, 1300].reduce((t, f) => t + energyAt(x, f, sr, 0, x.length), 0)
+    expect(hf / mid).toBeLessThan(1e-3)
   })
 
   it('does not bit-crush by default (smooth samples, no 6-bit steps)', () => {
@@ -189,5 +199,38 @@ describe('formant synthesizer', () => {
   it('renders an empty phrase as silence', () => {
     const x = renderText('', 'en')
     expect(x.every((v) => v === 0)).toBe(true)
+  })
+
+  it('moves every parameter smoothly: no jumps between phonemes', () => {
+    const phones = textToPhones('Te has salido de la ruta. Ve hacia el norte, cuarenta metros.', 'es')
+    const { frames } = buildTracks(phones)
+    const maxStep = (track: Float32Array) => {
+      let m = 0
+      for (let i = 1; i < track.length; i++) m = Math.max(m, Math.abs(track[i]! - track[i - 1]!))
+      return m
+    }
+    // Per millisecond: formants and bandwidths glide, amplitudes cross-fade (≥ 4 ms), pitch drifts.
+    expect(maxStep(frames[0]!)).toBeLessThan(80) // F1
+    expect(maxStep(frames[1]!)).toBeLessThan(150) // F2
+    expect(maxStep(frames[2]!)).toBeLessThan(150) // F3
+    expect(maxStep(frames[7]!)).toBeLessThanOrEqual(0.4) // voicing
+    expect(maxStep(frames[17]!)).toBeLessThan(5) // pitch
+  })
+
+  it('does not drop the voice between words, only at commas and full stops', () => {
+    const { segments } = buildTracks(textToPhones('Gira a la derecha', 'es'))
+    expect(segments.some((s) => s.kind === 'pause')).toBe(false)
+    expect(buildTracks(textToPhones('Hola, gira.', 'es')).segments.filter((s) => s.kind === 'pause').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('never clips: the soft limiter stays (almost) idle', () => {
+    for (const [text, locale] of [
+      ['Quest complete! 10065 steps. Well done!', 'en'],
+      ['¡Misión completada! 10065 pasos. ¡Muy bien!', 'es'],
+    ] as const) {
+      const x = renderText(text, locale)
+      expect(renderStats().limited / x.length).toBeLessThan(0.002)
+      expect(x.every((v) => Math.abs(v) <= 1)).toBe(true)
+    }
   })
 })

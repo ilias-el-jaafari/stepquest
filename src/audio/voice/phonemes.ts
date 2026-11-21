@@ -11,24 +11,36 @@ export type Formants = readonly [number, number, number]
 
 export type Phoneme = {
   kind: PhonemeKind
-  /** Formant targets F1–F3 (Hz). Stops and /h/ borrow the next sound's. */
+  /**
+   * Formant targets F1–F3 (Hz). For consonants these are the "locus" the
+   * neighbouring vowels bend towards. /h/ and pauses borrow their neighbours'.
+   */
   f: Formants
   /** Diphthongs glide to these formants by the end. */
   to?: Formants
   /** Default length in milliseconds. */
   dur: number
-  /** Amplitude of the voiced (buzz) source, 0–1. */
+  /** Amplitude of voicing (the glottal buzz), 0–1. */
   voice: number
-  /** Amplitude of the hiss source, 0–1. */
+  /** Amplitude of frication (fricatives, bursts) or aspiration (/h/), 0–1. */
   noise: number
-  /** Centre and bandwidth of the hiss filter for fricatives and bursts (Hz). */
-  noiseHz?: number
-  noiseBw?: number
+  /**
+   * Shape of the frication noise: gains of the parallel resonators
+   * A2…A6 and the flat bypass AB (as in Klatt's cascade/parallel design).
+   */
+  bank?: Bank
 }
 
+/** Gains for the parallel frication resonators: [A2, A3, A4, A5, A6, AB]. */
+export type Bank = readonly [number, number, number, number, number, number]
+
+/** Klatt-style amplitude in dB (60 = unity) to a linear gain. */
+const dB = (v: number) => (v <= 0 ? 0 : 10 ** ((v - 60) / 20))
+const bank = (a2: number, a3: number, a4: number, a5: number, a6: number, ab: number): Bank => [dB(a2), dB(a3), dB(a4), dB(a5), dB(a6), dB(ab)]
+
 const V = (f1: number, f2: number, f3: number, dur: number, to?: Formants): Phoneme => ({ kind: 'vowel', f: [f1, f2, f3], dur, voice: 1, noise: 0, to })
-const fric = (noiseHz: number, noiseBw: number, noise: number, voice: number, dur: number): Phoneme => ({ kind: 'fricative', f: [400, 1600, 2600], dur, voice, noise, noiseHz, noiseBw })
-const stop = (noiseHz: number, noiseBw: number, voiced: boolean, dur: number): Phoneme => ({ kind: 'stop', f: [400, 1600, 2600], dur, voice: voiced ? 0.3 : 0, noise: voiced ? 0.35 : 0.6, noiseHz, noiseBw })
+const fric = (f: Formants, b: Bank, noise: number, voice: number, dur: number): Phoneme => ({ kind: 'fricative', f, dur, voice, noise, bank: b })
+const stop = (f: Formants, b: Bank, voiced: boolean, dur: number): Phoneme => ({ kind: 'stop', f, dur, voice: voiced ? 0.25 : 0, noise: voiced ? 0.3 : 0.9, bank: b })
 
 export const PHONEMES = {
   // English vowels.
@@ -63,28 +75,29 @@ export const PHONEMES = {
   RX: { kind: 'liquid', f: [450, 1400, 2400], dur: 32, voice: 0.55, noise: 0 },
   RR: { kind: 'liquid', f: [450, 1400, 2400], dur: 95, voice: 0.7, noise: 0 },
   // Nasals.
-  M: { kind: 'nasal', f: [280, 1000, 2200], dur: 70, voice: 0.6, noise: 0 },
-  N: { kind: 'nasal', f: [280, 1600, 2600], dur: 65, voice: 0.6, noise: 0 },
-  NG: { kind: 'nasal', f: [280, 2200, 2700], dur: 70, voice: 0.6, noise: 0 },
-  NY: { kind: 'nasal', f: [280, 2050, 2850], dur: 80, voice: 0.6, noise: 0 },
-  // Fricatives.
-  F: fric(6200, 4500, 0.22, 0, 90),
-  V: fric(5800, 4500, 0.12, 0.45, 60),
-  TH: fric(6000, 5000, 0.2, 0, 85),
-  DH: fric(5000, 4000, 0.1, 0.45, 45),
-  S: fric(5600, 2200, 0.5, 0, 100),
-  Z: fric(5200, 2400, 0.3, 0.4, 80),
-  SH: fric(2800, 1800, 0.5, 0, 100),
-  ZH: fric(2700, 1800, 0.3, 0.4, 80),
-  X: fric(1600, 1600, 0.6, 0, 95),
-  HH: { kind: 'aspirate', f: [500, 1500, 2500], dur: 60, voice: 0, noise: 0.35 },
-  // Stops: closure, then a burst (and the voice bar for voiced ones).
-  P: stop(1200, 2000, false, 80),
-  B: stop(1000, 1800, true, 60),
-  T: stop(4200, 3000, false, 75),
-  D: stop(3800, 3000, true, 55),
-  K: stop(2100, 1500, false, 85),
-  G: stop(2000, 1500, true, 65),
+  M: { kind: 'nasal', f: [280, 1000, 2200], dur: 70, voice: 0.5, noise: 0 },
+  N: { kind: 'nasal', f: [280, 1600, 2600], dur: 65, voice: 0.5, noise: 0 },
+  NG: { kind: 'nasal', f: [280, 2200, 2700], dur: 70, voice: 0.5, noise: 0 },
+  NY: { kind: 'nasal', f: [280, 2050, 2850], dur: 80, voice: 0.5, noise: 0 },
+  // Fricatives. Spectra after Klatt (1980), table III: /s/ is a high
+  // front-cavity resonance, /sh/ lower and wider, /f/ and /th/ nearly flat and weak.
+  F: fric([340, 1100, 2080], bank(0, 0, 0, 0, 0, 48), 0.5, 0, 90),
+  V: fric([220, 1100, 2080], bank(0, 0, 0, 0, 0, 48), 0.3, 0.55, 60),
+  TH: fric([320, 1290, 2540], bank(0, 0, 0, 0, 30, 44), 0.5, 0, 85),
+  DH: fric([270, 1290, 2540], bank(0, 0, 0, 0, 30, 44), 0.25, 0.55, 45),
+  S: fric([320, 1390, 2530], bank(0, 0, 0, 46, 60, 0), 0.8, 0, 100),
+  Z: fric([240, 1390, 2530], bank(0, 0, 0, 46, 60, 0), 0.4, 0.5, 80),
+  SH: fric([300, 1840, 2750], bank(0, 62, 55, 50, 46, 0), 0.8, 0, 100),
+  ZH: fric([300, 1840, 2750], bank(0, 62, 55, 50, 46, 0), 0.4, 0.5, 80),
+  X: fric([320, 1500, 2500], bank(66, 58, 40, 0, 0, 0), 1.2, 0, 100),
+  HH: { kind: 'aspirate', f: [500, 1500, 2500], dur: 60, voice: 0, noise: 0.5 },
+  // Stops: closure (with a low voice bar for voiced ones), then a burst.
+  P: stop([400, 1100, 2150], bank(0, 0, 0, 0, 0, 63), false, 80),
+  B: stop([200, 1100, 2150], bank(0, 0, 0, 0, 0, 63), true, 60),
+  T: stop([400, 1600, 2600], bank(0, 30, 45, 57, 63, 0), false, 75),
+  D: stop([200, 1600, 2600], bank(0, 47, 60, 62, 60, 0), true, 55),
+  K: stop([300, 1990, 2850], bank(0, 53, 43, 45, 45, 0), false, 85),
+  G: stop([200, 1990, 2850], bank(0, 53, 43, 45, 45, 0), true, 65),
   // Silences: between words, at a comma, at the end of a sentence.
   _: { kind: 'pause', f: [500, 1500, 2500], dur: 20, voice: 0, noise: 0 },
   ',': { kind: 'pause', f: [500, 1500, 2500], dur: 170, voice: 0, noise: 0 },
