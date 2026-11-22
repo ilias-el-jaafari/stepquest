@@ -150,6 +150,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
           follow={follow && quest.finishedAt === undefined}
           pickup={pickup}
           onUserPan={() => setFollow(false)}
+          onLocate={() => setFollow(true)}
         />
       </div>
 

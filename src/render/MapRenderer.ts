@@ -5,6 +5,7 @@ import { Terrain, TILE_PX, type TileGrid } from '../tiles/grid.ts'
 import { townFor, type TownLayout } from '../town/layout.ts'
 import { P } from './palette.ts'
 import { hazardStamps, midpoint, NO_ENTRY } from './hazard.ts'
+import { railStamps } from './rails.ts'
 import { ARROW_PATTERNS, chevrons, routeCells, smoothPolyline, type Chevron, type RouteCell } from './routePath.ts'
 import { CHECKPOINT, facingFrom, FINISH_FLAG, paintSprite, START_MAT, walkFrame, WALKER, type Facing, type Sprite } from './sprites.ts'
 import { paintFrontFence, paintGardenPath, paintGardenTree, paintHouse, paintLandmark } from './structures.ts'
@@ -461,6 +462,9 @@ export class MapRenderer {
       ctx.drawImage(this.overviewCanvas(), originX, originY, this.grid.cols * scale, this.grid.rows * scale)
     }
 
+    // Tram, metro and train tracks above ground.
+    if (this.grid.rails.length) this.drawRails(ctx, scale, toScreen, w, h, dpr)
+
     // Avoided streets: hazard tape under the route.
     if (this.avoided.length) this.drawAvoided(ctx, scale, toScreen, w, h, dpr)
 
@@ -563,6 +567,54 @@ export class MapRenderer {
     ctx.drawImage(this.sprite(sprite), Math.round(s.x - size / 2), Math.round(s.y - size), size, size)
     const tweening = w.from && w.ms > 0 && now - w.t0 < w.ms
     if (moving || tweening) this.requestRender()
+  }
+
+  get railCount(): number {
+    return this.grid.rails.length
+  }
+
+  private drawRails(
+    ctx: CanvasRenderingContext2D,
+    scale: number,
+    toScreen: (x: number, y: number) => { x: number; y: number },
+    w: number,
+    h: number,
+    dpr: number,
+  ): void {
+    const detail = this.zoom >= DETAIL_ZOOM
+    const unit = detail ? Math.max(1, Math.round(scale / 16)) : Math.max(1, Math.round(dpr))
+    // Gauge (between the two rails) in art pixels; a bit wider on the town map so it reads.
+    const half = (detail ? 3 : 2) * unit
+    const bed = half * 2 + 3 * unit
+    const sleeperHalf = half + unit
+    const gap = 4 * unit
+    const margin = bed * 2
+    const snap = (v: number) => Math.round(v / unit) * unit
+    // Tracks run on past the loaded area: keep them inside the map.
+    const origin = toScreen(0, 0)
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(origin.x, origin.y, this.grid.cols * scale, this.grid.rows * scale)
+    ctx.clip()
+    for (const line of this.grid.rails) {
+      const pts = line.map((p) => toScreen(p.x + 0.5, p.y + 0.5))
+      if (!pts.some((p) => p.x > -margin && p.y > -margin && p.x < w + margin && p.y < h + margin)) continue
+      const stamps = railStamps(pts, unit, gap)
+      ctx.fillStyle = P.railBed
+      for (const s of stamps) ctx.fillRect(snap(s.x) - Math.round(bed / 2), snap(s.y) - Math.round(bed / 2), bed, bed)
+      ctx.fillStyle = P.railSleeper
+      for (const s of stamps) {
+        if (!s.sleeper) continue
+        for (let o = -sleeperHalf; o <= sleeperHalf; o += unit) ctx.fillRect(snap(s.x + s.nx * o), snap(s.y + s.ny * o), unit, unit)
+      }
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = P.railShade
+        for (const s of stamps) ctx.fillRect(snap(s.x + s.nx * (side * half)), snap(s.y + s.ny * (side * half)) + unit, unit, unit)
+        ctx.fillStyle = P.railSteel
+        for (const s of stamps) ctx.fillRect(snap(s.x + s.nx * (side * half)), snap(s.y + s.ny * (side * half)), unit, unit)
+      }
+    }
+    ctx.restore()
   }
 
   private drawAvoided(

@@ -43,8 +43,12 @@ const AVENUES = new Set(['primary', 'secondary', 'tertiary', 'primary_link', 'se
 export function isAvenue(highway: string | undefined): boolean {
   return highway !== undefined && AVENUES.has(highway)
 }
-/** Night multiplier for a busy avenue with light, sidewalks or shops. */
+/** Night multiplier for a lit (or untagged, so presumed lit) busy avenue. */
 export const AVENUE_NIGHT_BONUS = 0.95
+/** Night multiplier for lit streets. */
+export const LIT_NIGHT = 0.75
+/** Night multiplier for side streets with unknown lighting (probably darker than a lit avenue). */
+export const UNKNOWN_LIT_NIGHT = 1.6
 
 /** Base preference by street type (1 = neutral). */
 function typeFactor(highway: string | undefined, night: boolean): number {
@@ -86,19 +90,26 @@ function typeFactor(highway: string | undefined, night: boolean): number {
 export function safetyFactor(e: EdgeInfo, night: boolean): number {
   let f = typeFactor(e.highway, night)
   const path = e.highway === 'footway' || e.highway === 'path' || e.highway === 'track' || e.highway === 'steps' || e.highway === 'bridleway'
-  if (e.flags & SAFETY_LIT) f *= night ? 0.75 : 0.92
-  else if (e.flags & SAFETY_UNLIT) f *= night ? 2.5 : 1.25
-  // Unknown lighting: city streets are almost always lit; paths often are not.
-  else if (night && path) f *= 1.5
+  const avenue = isAvenue(e.highway)
+  // Lighting is the strongest signal. `lit` is sparsely tagged, so main avenues count as lit unless
+  // tagged lit=no (Spanish main roads are lit), while untagged side streets and paths count as
+  // probably darker than a tagged-lit street: the planner should burn extra steps on lit avenues,
+  // not on dark parallel side streets.
+  const lit = (e.flags & SAFETY_LIT) !== 0 || (avenue && !(e.flags & SAFETY_UNLIT))
+  if (lit) f *= night ? LIT_NIGHT : 0.92
+  else if (e.flags & SAFETY_UNLIT) f *= night ? 3 : 1.3
+  else if (path) f *= night ? 1.8 : 1.1
+  else if (e.highway === 'pedestrian') f *= night ? 1.2 : 1
+  else f *= night ? UNKNOWN_LIT_NIGHT : 1.12
   if (e.flags & SAFETY_SIDEWALK) f *= 0.93
   if (e.flags & SAFETY_ALLEY) f *= night ? 2 : 1.5
   if (e.tunnel || e.flags & SAFETY_COVERED) f *= night ? 3 : 2
   if (e.industrial) f *= night ? 2.2 : 1.5
   // Paths through parks are lovely by day, lonely after dark unless lit.
-  if (night && e.park && path && !(e.flags & SAFETY_LIT)) f *= 1.8
-  // At night a busy avenue with light, sidewalks or shops is slightly preferred, but less
-  // than a lit residential or pedestrian street (AVENUE_NIGHT_BONUS > residential factor).
-  if (night && isAvenue(e.highway) && (e.flags & (SAFETY_LIT | SAFETY_SIDEWALK) || e.lively > 0)) f *= AVENUE_NIGHT_BONUS
+  if (night && e.park && path && !lit) f *= 1.8
+  // At night a lit avenue gets a small bonus, but less than a tagged-lit residential or
+  // pedestrian street (AVENUE_NIGHT_BONUS × 1 > residential factor 0.92).
+  if (night && avenue && lit) f *= AVENUE_NIGHT_BONUS
   if (e.lively >= 3) f *= night ? 0.75 : 0.85
   else if (e.lively >= 1) f *= night ? 0.88 : 0.93
   return Math.min(MAX_FACTOR, Math.max(MIN_FACTOR, f))

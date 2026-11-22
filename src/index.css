@@ -574,6 +574,8 @@ input[aria-invalid='true'] {
   position: absolute;
   left: 8px;
   right: 8px;
+  /* Leaves the map-button column free (same inset as the top HUD). */
+  right: 58px;
   top: calc(max(8px, env(safe-area-inset-top)) + 92px);
   z-index: 2;
   padding: 8px 10px;

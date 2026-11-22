@@ -18,7 +18,23 @@ const PARK_NATURAL = new Set(['wood', 'scrub', 'grassland', 'heath'])
 const WATERWAYS = new Set(['river', 'stream', 'canal', 'ditch', 'drain', 'riverbank'])
 
 /** Map raw OSM tags to the layer we draw, or undefined when we ignore the way. */
+/** Track types drawn as rails and never walked on. */
+const RAIL_TRACKS = new Set(['tram', 'light_rail', 'rail', 'subway', 'narrow_gauge'])
+
+/** A tram, metro or train track (whether above ground or not). */
+export function isRailTrack(tags: Tags): boolean {
+  return tags.railway !== undefined && RAIL_TRACKS.has(tags.railway)
+}
+
+/** Underground track: tunnel=yes/building_passage… (a cutting with tunnel=no stays visible). */
+function isUndergroundTrack(tags: Tags): boolean {
+  if (tags.tunnel !== undefined) return tags.tunnel !== 'no'
+  return Number(tags.layer ?? 0) < 0
+}
+
 export function classifyWay(tags: Tags): FeatureKind | undefined {
+  // Tracks win over any highway tag: they are drawn as rails and are never walkable.
+  if (isRailTrack(tags)) return isUndergroundTrack(tags) ? undefined : 'rail'
   const hw = tags.highway
   if (hw) {
     if (ROAD_HIGHWAYS.has(hw)) return 'road'
@@ -93,7 +109,7 @@ export function wayStyle(kind: FeatureKind, tags: Tags): string | undefined {
 /** Whether a pedestrian may legally walk along the way. */
 export function isWalkable(tags: Tags): boolean {
   const hw = tags.highway
-  if (!hw) return false
+  if (!hw || isRailTrack(tags)) return false
   if (!ROAD_HIGHWAYS.has(hw) && !PATH_HIGHWAYS.has(hw)) return false
   const foot = tags.foot
   if (foot && FOOT_YES.has(foot)) return true
@@ -109,7 +125,7 @@ export function isWalkable(tags: Tags): boolean {
 export function isArea(kind: FeatureKind, tags: Tags, closed: boolean): boolean {
   if (!closed) return false
   if (kind === 'road' || kind === 'path') return tags.area === 'yes' || tags.place === 'square'
-  return kind !== 'waterway' && kind !== 'barrier'
+  return kind !== 'waterway' && kind !== 'barrier' && kind !== 'rail'
 }
 
 /** Footway segments that cross a carriageway (drawn as zebra crossings). */

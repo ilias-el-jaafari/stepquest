@@ -91,6 +91,10 @@ export const P = {
   avoid: '#ffb000',
   avoidBand: '#1b1a2e',
   noEntry: '#d62839',
+  railBed: '#8a8478',
+  railSleeper: '#6b4a2b',
+  railSteel: '#d8dce6',
+  railShade: '#3a3848',
   overview: {
     ground: '#d9eaa5',
     park: '#5eaf48',

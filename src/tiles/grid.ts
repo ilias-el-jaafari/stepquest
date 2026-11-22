@@ -59,6 +59,8 @@ export class TileGrid {
   readonly barrier: Uint8Array
   /** Landmark points from the map data. */
   pois: Poi[] = []
+  /** Above-ground tram, metro and train tracks as tile-coordinate polylines. */
+  rails: { x: number; y: number }[][] = []
 
   constructor(bbox: BBox, metresPerTile = DEFAULT_METRES_PER_TILE) {
     this.bbox = bbox

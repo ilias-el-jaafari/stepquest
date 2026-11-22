@@ -25,7 +25,7 @@ type Props = {
   onUserPan?: () => void
   /** Streets on the avoid list, drawn as hazard tape. */
   avoided?: readonly (readonly LatLon[])[]
-  /** Shows a "use my location" button. */
+  /** Shows a "use my location" button. During a quest it centres on the walker and then calls this. */
   onLocate?: () => void
   locating?: boolean
 }
@@ -166,6 +166,15 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
     const target = quest?.player ?? home
     if (target) rendererRef.current?.centerOn(target, 32)
   }
+  const inQuest = quest !== undefined
+  const locate = () => {
+    if (inQuest) {
+      // Always the walker's current position, never the start point.
+      const r = rendererRef.current
+      if (r && quest.player) r.centerOn(quest.player, Math.max(r.zoom, 32))
+    }
+    onLocate?.()
+  }
   const fit = () => {
     const r = rendererRef.current
     if (r && focusRef.current.length) r.fit(focusRef.current)
@@ -181,14 +190,26 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
         <button type="button" className="pix-btn small" onClick={() => zoom(-1)} aria-label={t('map.zoomOut')}>
           −
         </button>
-        <button type="button" className="pix-btn small" onClick={fit} aria-label={t('map.fit')} title={t('map.fit')}>
-          ◎
-        </button>
-        <button type="button" className="pix-btn small" onClick={goHome} aria-label={t('map.home')} title={t('map.home')}>
-          ⌂
-        </button>
-        {onLocate && (
-          <button type="button" className="pix-btn small" onClick={onLocate} disabled={locating} aria-label={t('loc.use')} title={t('loc.use')} data-testid="map-locate">
+        {!inQuest && (
+          <>
+            <button type="button" className="pix-btn small" onClick={fit} aria-label={t('map.fit')} title={t('map.fit')}>
+              ◎
+            </button>
+            <button type="button" className="pix-btn small" onClick={goHome} aria-label={t('map.home')} title={t('map.home')}>
+              ⌂
+            </button>
+          </>
+        )}
+        {(onLocate || inQuest) && (
+          <button
+            type="button"
+            className="pix-btn small"
+            onClick={locate}
+            disabled={locating}
+            aria-label={inQuest ? t('map.me') : t('loc.use')}
+            title={inQuest ? t('map.me') : t('loc.use')}
+            data-testid="map-locate"
+          >
             <PixelIcon name="locate" size={18} />
           </button>
         )}

@@ -125,7 +125,7 @@ function wayPoints(grid: TileGrid, data: OsmData, way: OsmWay): Pt[] {
 
 /** Rasterize all features into the grid's layer bits, then resolve terrain. */
 export function rasterizeOsm(grid: TileGrid, data: OsmData): TileGrid {
-  const order: Record<OsmWay['kind'], number> = { park: 0, water: 1, waterway: 2, building: 3, road: 4, path: 5, barrier: 6 }
+  const order: Record<OsmWay['kind'], number> = { park: 0, water: 1, waterway: 2, building: 3, road: 4, path: 5, barrier: 6, rail: 7 }
   // Big parks first so gardens and pitches inside them keep their own style.
   const parkArea = new Map<OsmWay, number>()
   for (const way of data.ways) if (way.kind === 'park') parkArea.set(way, polygonArea(wayPoints(grid, data, way)))
@@ -171,6 +171,10 @@ export function rasterizeOsm(grid: TileGrid, data: OsmData): TileGrid {
         for (let i = 1; i < pts.length; i++) thickSegment(pts[i - 1]!, pts[i]!, half, mark(Layer.road))
         break
       }
+      case 'rail':
+        // Drawn as an overlay of sleepers and steel rails (see MapRenderer); never walkable.
+        grid.rails.push(pts)
+        break
       case 'path':
         if (way.area) {
           fillPolygon(pts, mark(way.sub === 'plaza' ? Layer.plaza : Layer.path))

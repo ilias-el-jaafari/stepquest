@@ -1,9 +1,9 @@
 import type { BBox } from '../geo/geo.ts'
 
-export type FeatureKind = 'road' | 'path' | 'building' | 'park' | 'water' | 'waterway' | 'barrier'
+export type FeatureKind = 'road' | 'path' | 'building' | 'park' | 'water' | 'waterway' | 'barrier' | 'rail'
 
 /** Order matters: the index is stored in the compact codec. Append only. */
-export const FEATURE_KINDS: readonly FeatureKind[] = ['road', 'path', 'building', 'park', 'water', 'waterway', 'barrier']
+export const FEATURE_KINDS: readonly FeatureKind[] = ['road', 'path', 'building', 'park', 'water', 'waterway', 'barrier', 'rail']
 
 /**
  * Special buildings drawn with their own design. `greenMarket` is one supermarket
