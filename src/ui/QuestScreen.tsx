@@ -35,6 +35,8 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
   const { engine, status, settings: sound } = useAudio()
   const [now, setNow] = useState(() => Date.now())
   const [follow, setFollow] = useState(true)
+  /** The stats panel starts folded so the map gets the screen. */
+  const [statsOpen, setStatsOpen] = useState(false)
   const [dismissed, setDismissed] = useState(0)
   const [showResumed, setShowResumed] = useState(resumed)
   // Dialogue boxes: the welcome line (not after a resume) and the finish speech.
@@ -208,7 +210,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
         </div>
       )}
 
-      <div className="hud hud-bottom">
+      <div className={`hud hud-bottom ${statsOpen ? '' : 'folded'}`} data-testid="hud-bottom">
         <dl className="hud-stats">
           <div>
             <dt>{t('quest.walked')}</dt>
@@ -236,6 +238,17 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
               {t('quest.follow')}
             </button>
           )}
+          <button
+            type="button"
+            className="pix-btn small-text hud-fold"
+            aria-expanded={statsOpen}
+            aria-label={t(statsOpen ? 'hud.less' : 'hud.more')}
+            title={t(statsOpen ? 'hud.less' : 'hud.more')}
+            onClick={() => setStatsOpen(!statsOpen)}
+            data-testid="hud-fold"
+          >
+            <span className={`chev ${statsOpen ? 'down' : 'up'}`} aria-hidden="true" />
+          </button>
           <SoundMenu placement="up" showLabel={false} />
           <button type="button" className="pix-btn small-text danger" onClick={confirmEnd}>
             {t('quest.end')}

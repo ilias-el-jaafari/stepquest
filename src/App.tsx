@@ -75,6 +75,8 @@ export default function App() {
   /** Location permission not granted yet: offer planning around the walker's position. */
   const [askHere, setAskHere] = useState(false)
   const locateRef = useRef<(w?: World) => Promise<void>>(async () => {})
+  /** On phones the planner folds down to the route line and the start button once a route is ready. */
+  const [plannerOpen, setPlannerOpen] = useState(false)
   const [todaySteps, setTodaySteps] = useState(() => stepsToday(Date.now()))
   // Raw text of the number fields: typed freely, validated on blur, Enter or Plan.
   const [stepsText, setStepsText] = useState(() => String(settings.targetSteps))
@@ -250,6 +252,7 @@ export default function App() {
       setSafePlan(sp)
       setUsingNormal(false)
       setResult(sp.result)
+      setPlannerOpen(false)
       setPlanning(false)
       // On phones the panel sits under the map: bring the map back into view.
       const map = document.querySelector('.map-wrap')
@@ -315,6 +318,7 @@ export default function App() {
     if (!viewCentre) return
     if (await loadLiveAround(viewCentre)) setViewCentre(undefined)
   }
+  const plannerFolded = !!result?.ok && !plannerOpen
   const outsideView = !!world && !!viewCentre && !bboxContains(world.data.bbox, viewCentre)
   const loadingMb = live.status.state === 'loading' ? (live.status.bytes / 1e6).toFixed(1) : undefined
 
@@ -472,60 +476,74 @@ export default function App() {
 
         {/* Map tab: the planner, framed above the tab bar. */}
         <section className="sheet planner" id={panelId('map')} role="tabpanel" aria-labelledby={tabId('map')} hidden={hidden('map')}>
-          <div className="box planner-box">
-            <div className="planner-row">
-              <div className="segmented small" role="radiogroup" aria-label={t('mode.label')}>
-                {(['loop', 'oneway'] as const).map((m) => (
-                  <button key={m} type="button" role="radio" aria-checked={settings.mode === m} className={`pix-btn ${settings.mode === m ? 'on' : ''}`} onClick={() => setMode(m)}>
-                    {t(m === 'loop' ? 'mode.loop' : 'mode.oneway')}
-                  </button>
-                ))}
-              </div>
-              {settings.mode === 'oneway' && (
-                <div className="segmented small" aria-label={t('place.label')}>
-                  {(['start', 'end'] as const).map((p) => (
-                    <button key={p} type="button" className={`pix-btn ${placing === p ? 'on' : ''}`} onClick={() => setPlacing(p)}>
-                      {t(p === 'start' ? 'place.start' : 'place.end')}
+          <div className={`box planner-box ${plannerFolded ? 'folded' : ''}`} data-testid="planner">
+            {result?.ok && (
+              <button
+                type="button"
+                className="pix-btn small-text planner-toggle"
+                aria-expanded={!plannerFolded}
+                aria-controls="planner-edit"
+                onClick={() => setPlannerOpen(!plannerOpen)}
+                data-testid="planner-toggle"
+              >
+                <span className={`chev ${plannerFolded ? 'up' : 'down'}`} aria-hidden="true" /> {plannerFolded ? t('planner.edit') : t('planner.hide')}
+              </button>
+            )}
+            <div className="planner-edit" id="planner-edit">
+              <div className="planner-row">
+                <div className="segmented small" role="radiogroup" aria-label={t('mode.label')}>
+                  {(['loop', 'oneway'] as const).map((m) => (
+                    <button key={m} type="button" role="radio" aria-checked={settings.mode === m} className={`pix-btn ${settings.mode === m ? 'on' : ''}`} onClick={() => setMode(m)}>
+                      {t(m === 'loop' ? 'mode.loop' : 'mode.oneway')}
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
-            <label className="field">
-              <span className="box-title">{t('target.label')}</span>
-              <span className="input-row">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  name="steps"
-                  aria-invalid={stepsOutOfRange || stepsTyped.kind === 'invalid'}
-                  aria-describedby="steps-note"
-                  value={stepsText}
-                  onChange={(e) => typeSteps(e.target.value)}
-                  onBlur={commitStepsField}
-                  onKeyDown={onEnter(commitStepsField)}
-                />
-                <span className="unit">{t('target.unit')}</span>
-              </span>
-            </label>
-            <input
-              type="range"
-              className="pix-range"
-              aria-label={t('target.slider')}
-              min={SLIDER_MIN}
-              max={SLIDER_MAX}
-              step={SLIDER_STEP}
-              value={sliderValue(liveSteps(stepsText) ?? settings.targetSteps)}
-              onChange={(e) => setSteps(Number(e.target.value))}
-            />
-            <FieldNote id="steps-note" note={stepsNote} outOfRange={stepsOutOfRange} invalid={stepsTyped.kind === 'invalid'} prefix="target" range={stepRange} format={(v) => v.toLocaleString(locale)} />
-            <div className="presets">
-              {STEP_PRESETS.map((s) => (
-                <button key={s} type="button" className={`chip ${settings.targetSteps === s ? 'on' : ''}`} onClick={() => setSteps(s)}>
-                  {s / 1000}k
-                </button>
-              ))}
+                {settings.mode === 'oneway' && (
+                  <div className="segmented small" aria-label={t('place.label')}>
+                    {(['start', 'end'] as const).map((p) => (
+                      <button key={p} type="button" className={`pix-btn ${placing === p ? 'on' : ''}`} onClick={() => setPlacing(p)}>
+                        {t(p === 'start' ? 'place.start' : 'place.end')}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <label className="field">
+                <span className="box-title">{t('target.label')}</span>
+                <span className="input-row">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    name="steps"
+                    aria-invalid={stepsOutOfRange || stepsTyped.kind === 'invalid'}
+                    aria-describedby="steps-note"
+                    value={stepsText}
+                    onChange={(e) => typeSteps(e.target.value)}
+                    onBlur={commitStepsField}
+                    onKeyDown={onEnter(commitStepsField)}
+                  />
+                  <span className="unit">{t('target.unit')}</span>
+                </span>
+              </label>
+              <input
+                type="range"
+                className="pix-range"
+                aria-label={t('target.slider')}
+                min={SLIDER_MIN}
+                max={SLIDER_MAX}
+                step={SLIDER_STEP}
+                value={sliderValue(liveSteps(stepsText) ?? settings.targetSteps)}
+                onChange={(e) => setSteps(Number(e.target.value))}
+              />
+              <FieldNote id="steps-note" note={stepsNote} outOfRange={stepsOutOfRange} invalid={stepsTyped.kind === 'invalid'} prefix="target" range={stepRange} format={(v) => v.toLocaleString(locale)} />
+              <div className="presets">
+                {STEP_PRESETS.map((s) => (
+                  <button key={s} type="button" className={`chip ${settings.targetSteps === s ? 'on' : ''}`} onClick={() => setSteps(s)}>
+                    {s / 1000}k
+                  </button>
+                ))}
+              </div>
             </div>
             <LocateMessage status={locate} />
             {shownRoute && (

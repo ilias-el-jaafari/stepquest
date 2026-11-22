@@ -329,4 +329,29 @@ describe('active quest UI', () => {
     expect(details.open).toBe(false)
     expect(details.querySelector('input[type="text"]')).not.toBeNull()
   })
+
+  it('folds the planner to the route line once a route is planned, and folds the quest stats', async () => {
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!button('Plan quest') && !button('Plan quest')!.disabled)
+    expect(host.querySelector('[data-testid="planner-toggle"]')).toBeNull()
+    await act(async () => button('Plan quest')!.click())
+    await waitFor(() => !!button('Start quest'))
+    const planner = host.querySelector('[data-testid="planner"]')!
+    const toggle = host.querySelector<HTMLButtonElement>('[data-testid="planner-toggle"]')!
+    expect(planner.classList.contains('folded')).toBe(true)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle.textContent).toContain('Edit')
+    await act(async () => toggle.click())
+    expect(planner.classList.contains('folded')).toBe(false)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    // Planning again folds it back.
+    await act(async () => button('Plan quest')!.click())
+    await waitFor(() => planner.classList.contains('folded'))
+    await act(async () => button('Start quest')!.click())
+    await waitFor(() => !!host.querySelector('[data-testid="hud-bottom"]'))
+    const hud = host.querySelector('[data-testid="hud-bottom"]')!
+    expect(hud.classList.contains('folded')).toBe(true)
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="hud-fold"]')!.click())
+    expect(hud.classList.contains('folded')).toBe(false)
+  })
 })

@@ -1430,6 +1430,76 @@ button.hud-msg.sound-resume {
   padding: 4px 0 8px;
 }
 
+/* Folding planner (phones): once a route is ready only the route line and the buttons stay. */
+.planner-toggle {
+  float: right;
+  position: relative;
+  z-index: 1;
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 7px;
+}
+
+@media (max-width: 899px) {
+  .planner-box.folded .planner-edit {
+    display: none;
+  }
+  .planner-box.folded .route-line {
+    margin-top: 6px;
+    min-height: 20px;
+  }
+}
+
+@media (min-width: 900px) {
+  .planner-toggle {
+    display: none;
+  }
+}
+
+/* Small pixel chevron (the pixel font has no arrow glyphs at this size). */
+.chev {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-left: 2px solid currentColor;
+  border-top: 2px solid currentColor;
+  transform: rotate(45deg);
+  margin: 2px 4px 0 2px;
+  vertical-align: middle;
+}
+
+.chev.down {
+  transform: rotate(225deg);
+  margin-top: -3px;
+}
+
+/* Quest HUD folded: walked and steps on one row with the buttons. */
+.hud-bottom.folded {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.hud-bottom.folded .hud-stats {
+  flex: 1;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.hud-bottom.folded .hud-stats > div:nth-child(n + 3) {
+  display: none;
+}
+
+.hud-bottom.folded .hud-buttons {
+  margin-top: 0;
+}
+
+.hud-fold {
+  min-width: 32px;
+  padding: 4px 6px;
+}
+
 /* Phones: the presets and the number field are enough; the slider stays on wider screens. */
 @media (max-width: 599px) {
   .planner .pix-range {
