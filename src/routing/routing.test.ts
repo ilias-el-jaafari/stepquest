@@ -237,4 +237,16 @@ describe('robustness across the demo area', () => {
     }
     expect(ok).toBeGreaterThanOrEqual(24)
   })
+  it('hardly ever walks a street twice (loops and A → B detours)', () => {
+    const overlaps: number[] = []
+    for (let i = 0; i < 24; i++) {
+      const mode = i % 2 ? 'loop' : 'oneway'
+      const r = planRoute(graph, { mode, start: inner(), end: inner(), targetSteps: [5000, 9000, 12_000][i % 3]!, strideM: 0.75, seed: i }, area)
+      if (r.ok) overlaps.push(r.route.overlap)
+    }
+    expect(overlaps.length).toBeGreaterThanOrEqual(20)
+    const mean = overlaps.reduce((a, b) => a + b, 0) / overlaps.length
+    expect(mean).toBeLessThan(0.012)
+    expect(Math.max(...overlaps)).toBeLessThan(0.08)
+  })
 })

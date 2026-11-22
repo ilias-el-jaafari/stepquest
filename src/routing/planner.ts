@@ -57,7 +57,10 @@ export type PlanResult =
 export const MAX_SNAP_M = 150
 /** Street networks are longer than straight lines by roughly this factor. */
 const DETOUR_FACTOR = 1.3
-const REUSE_PENALTY = 6
+/** Cost multiplier for a street already used earlier in the walk (strongly avoids repeats). */
+const REUSE_PENALTY = 25
+/** A route repeating at most this share of its length counts as clean. */
+const CLEAN_OVERLAP = 0.04
 
 type Leg = { nodes: number[]; edges: number[]; length: number }
 
@@ -130,8 +133,8 @@ function finish(graph: WalkGraph, req: RouteRequest, joined: Leg, targetM: numbe
 
 /** Lower is better: hitting the ±5 % window first, then little out-and-back walking. */
 function score(route: Route): number {
-  const distance = route.withinTolerance ? Math.abs(route.error) * 0.2 : 1 + Math.abs(route.error)
-  return distance + route.overlap
+  const distance = route.withinTolerance ? Math.abs(route.error) : 1 + Math.abs(route.error)
+  return distance + route.overlap * 2
 }
 
 /**
@@ -155,7 +158,7 @@ function tune(
       continue
     }
     if (!best || score(route) < score(best)) best = route
-    if (route.withinTolerance && route.overlap < 0.15) break
+    if (route.withinTolerance && Math.abs(route.error) < 0.03 && route.overlap < CLEAN_OVERLAP) break
     const ratio = targetM / Math.max(1, route.distanceM)
     size = Math.min(maxSize, Math.max(20, size * (1 + (ratio - 1) * 0.9)))
   }
@@ -196,7 +199,7 @@ export function planLoop(graph: WalkGraph, req: RouteRequest, area: BBox): PlanR
       span,
     )
     if (route && (!best || score(route) < score(best))) best = route
-    if (best && best.withinTolerance && best.overlap < 0.15) break
+    if (best && best.withinTolerance && best.overlap < CLEAN_OVERLAP) break
   }
   if (!best) return { ok: false, reason: 'noMatch' }
   if (best.withinTolerance) return { ok: true, route: best }
@@ -229,7 +232,7 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
   const extra = targetM - direct.length
   const span = Math.max(area.north - area.south, area.east - area.west) * 111_000
   let best: Route | undefined
-  const good = (r: Route | undefined) => !!r && r.withinTolerance && r.overlap < 0.12
+  const good = (r: Route | undefined) => !!r && r.withinTolerance && r.overlap < CLEAN_OVERLAP
   let longest: Route | undefined
   const track = (r: Route | undefined) => {
     if (r && (!longest || r.distanceM > longest.distanceM)) longest = r
