@@ -4,7 +4,7 @@ import { metresToSteps } from '../geo/steps.ts'
 import { SAFETY_ALLEY, SAFETY_COVERED, SAFETY_LIT, SAFETY_SIDEWALK, SAFETY_UNLIT, type OsmData, type OsmWay } from '../osm/types.ts'
 import { WalkGraph } from './graph.ts'
 import { planWithSafety } from './safePlanner.ts'
-import { edgeCosts, MAX_FACTOR, MIN_FACTOR, nearestStreet, normalizeName, routeSafety, safetyContext, safetyFactor, searchStreets, streetNames, type EdgeInfo } from './safety.ts'
+import { AVENUE_NIGHT_BONUS, avoidedPolylines, edgeCosts, isAvenue, MAX_FACTOR, MIN_FACTOR, nearestStreet, normalizeName, routeSafety, safetyContext, safetyFactor, searchStreets, streetNames, type EdgeInfo } from './safety.ts'
 
 const edge = (o: Partial<EdgeInfo> = {}): EdgeInfo => ({ highway: 'residential', flags: 0, tunnel: false, industrial: false, park: false, lively: 0, ...o })
 
@@ -40,6 +40,39 @@ describe('safetyFactor', () => {
     expect(litGain(true)).toBeGreaterThan(litGain(false))
     // Steps are only a small penalty.
     expect(safetyFactor(edge({ highway: 'steps' }), false)).toBeLessThan(1.5)
+  })
+  it('makes busy avenues with light, sidewalks or shops slightly preferred at night only', () => {
+    for (const highway of ['primary', 'secondary', 'tertiary']) {
+      for (const sign of [{ flags: SAFETY_LIT }, { flags: SAFETY_SIDEWALK }, { lively: 1 }]) {
+        const avenue = edge({ highway, ...sign })
+        const plain = edge({ highway: 'unclassified', ...sign })
+        // Neutral by day: exactly what the same signs give any neutral street type.
+        expect(safetyFactor(avenue, false)).toBeCloseTo(safetyFactor(edge({ highway: 'footway', ...sign }), false), 6)
+        expect(safetyFactor(avenue, true)).toBeLessThan(safetyFactor(edge({ highway: 'footway', ...sign }), true))
+        expect(safetyFactor(avenue, true)).toBeLessThan(safetyFactor(plain, true))
+      }
+      // No signs of light or people: no bonus, even at night.
+      expect(safetyFactor(edge({ highway }), true)).toBe(1)
+      expect(safetyFactor(edge({ highway }), false)).toBe(1)
+    }
+    expect(AVENUE_NIGHT_BONUS).toBeGreaterThan(0.9)
+    expect(isAvenue('secondary_link')).toBe(true)
+    expect(isAvenue('residential')).toBe(false)
+  })
+  it('never lets an avenue beat a lit residential or pedestrian street at night', () => {
+    const lit = SAFETY_LIT
+    for (const lively of [0, 1]) {
+      const avenue = safetyFactor(edge({ highway: 'primary', flags: lit, lively }), true)
+      expect(avenue).toBeGreaterThan(safetyFactor(edge({ highway: 'residential', flags: lit, lively }), true))
+      expect(avenue).toBeGreaterThan(safetyFactor(edge({ highway: 'pedestrian', flags: lit, lively }), true))
+    }
+    // With every sign present all streets reach the best factor; the avenue never goes below the others.
+    for (const lively of [0, 1, 3]) {
+      const all = SAFETY_LIT | SAFETY_SIDEWALK
+      const busy = safetyFactor(edge({ highway: 'primary', flags: all, lively }), true)
+      expect(busy).toBeGreaterThanOrEqual(safetyFactor(edge({ highway: 'residential', flags: all, lively }), true))
+      expect(busy).toBeGreaterThanOrEqual(safetyFactor(edge({ highway: 'pedestrian', flags: all, lively }), true))
+    }
   })
   it('stays within the clamp', () => {
     const worst = edge({ highway: 'track', flags: SAFETY_UNLIT | SAFETY_ALLEY | SAFETY_COVERED, tunnel: true, industrial: true, park: true })
@@ -106,6 +139,15 @@ describe('safe routing on a synthetic town', () => {
     expect(nearestStreet(data, { lat: LAT + 0.0001, lon: LON + 0.003 })).toBe('Callejón Oscuro')
     expect(nearestStreet(data, { lat: LAT + 0.0014, lon: LON + 0.003 })).toBe('Calle Mayor')
     expect(nearestStreet(data, { lat: LAT + 0.01, lon: LON + 0.003 })).toBeUndefined()
+  })
+
+  it('returns the geometry of avoided streets for the map', () => {
+    expect(avoidedPolylines(data, [])).toEqual([])
+    const lines = avoidedPolylines(data, ['CALLEJON OSCURO'])
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toHaveLength(7)
+    expect(lines[0]![0]).toEqual(start)
+    expect(avoidedPolylines(data, ['Nowhere Street'])).toEqual([])
   })
 
   it('closes avoided streets and returns no costs when nothing changes', () => {

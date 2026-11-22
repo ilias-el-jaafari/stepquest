@@ -19,6 +19,16 @@ describe('sun', () => {
     expect(isDark(Date.UTC(2026, 10, 22, 20), VALENCIA)).toBe(true)
     expect(sunAltitude(Date.UTC(2026, 5, 21, 12), VALENCIA)).toBeGreaterThan(60)
   })
+  it('night starts exactly at sunset and ends at sunrise', () => {
+    const t = sunTimes(Date.UTC(2026, 10, 22, 12), VALENCIA)!
+    const minute = 60_000
+    expect(isDark(t.sunset - minute, VALENCIA)).toBe(false)
+    expect(isDark(t.sunset + minute, VALENCIA)).toBe(true)
+    expect(isDark(t.sunrise - minute, VALENCIA)).toBe(true)
+    expect(isDark(t.sunrise + minute, VALENCIA)).toBe(false)
+    // Civil twilight is not used: half an hour after sunset is already night.
+    expect(isDark(t.sunset + 30 * minute, VALENCIA)).toBe(true)
+  })
   it('has no sunset during polar night or day', () => {
     expect(sunTimes(Date.UTC(2026, 5, 21, 12), { lat: 80, lon: 0 })).toBeUndefined()
     expect(sunTimes(Date.UTC(2026, 11, 21, 12), { lat: 80, lon: 0 })).toBeUndefined()

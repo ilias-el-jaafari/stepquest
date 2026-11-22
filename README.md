@@ -26,10 +26,10 @@ Phase 4 of 5 done: route planner and tile map, GPS tracking and checkpoints, the
 
 ## Safer routes
 
-- **Safe route** (on by default) prefers streets that are mapped as lit, have sidewalks, are pedestrian or residential, or have shops and cafés nearby, and steers away from back alleys and driveways, tunnels and underpasses, industrial estates and unlit paths or tracks. Steps are only a small penalty. The step goal and its ±5 % tolerance do not change; if no safer route meets it, the app says so and offers the normal route.
-- **After sunset** (computed on the device from the date and position) lighting counts much more, and so do empty parks and industrial areas. This also applies when the walk will end after dark. It can be turned off.
-- **Streets to avoid**: search a street by name or tap it on the map. The list is saved on your device and those streets are never used; if the route is impossible without them, the app plans one anyway and names the streets it had to use.
-- These are proxies from OpenStreetMap tags, not crime data. Lighting is only mapped on part of the streets (about one in eight in the demo area), so "unknown" is treated as neutral.
+- **Safe routes are always on** (a product default, not a setting). They prefer streets that are mapped as lit, have sidewalks, are pedestrian or residential, or have shops and cafés nearby, and steers away from back alleys and driveways, tunnels and underpasses, industrial estates and unlit paths or tracks. Steps are only a small penalty. The step goal and its ±5 % tolerance do not change; if no safer route meets it, the app says so and offers the normal route.
+- **From sunset to sunrise** (computed on the device from the date and position; not civil twilight) lighting counts much more, and so do empty parks and industrial areas, automatically. Busy avenues with lighting, sidewalks or shops get a small night bonus that never beats a lit residential or pedestrian street; by day they are neutral. This also applies when the walk will end after dark.
+- **Streets to avoid**: search a street by name or tap it on the map. The list is saved on your device, the streets are drawn on the map as amber-and-black hazard tape with a "no entry" sign, and they are never used; if the route is impossible without them, the app plans one anyway and names the streets it had to use.
+- These are proxies from OpenStreetMap tags, not crime data. Lighting is only mapped on part of the streets (about one in eight in the demo area), so "unknown" is treated as neutral. The **Info** button in the header explains all this (EN/ES); the main screens do not show safety notes.
 
 ## Run it
 

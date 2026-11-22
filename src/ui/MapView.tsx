@@ -22,11 +22,13 @@ type Props = {
   pickup?: { n: number; point: LatLon }
   /** Called when the user drags the map (so follow mode can switch off). */
   onUserPan?: () => void
+  /** Streets on the avoid list, drawn as hazard tape. */
+  avoided?: readonly (readonly LatLon[])[]
 }
 
 const TAP_SLOP_PX = 8
 
-export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan }: Props) {
+export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<MapRenderer | undefined>(undefined)
@@ -125,6 +127,10 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
   useEffect(() => {
     rendererRef.current?.setMarkers(markers)
   }, [markers, grid])
+
+  useEffect(() => {
+    rendererRef.current?.setAvoided(avoided ?? [])
+  }, [avoided, grid])
 
   useEffect(() => {
     const r = rendererRef.current

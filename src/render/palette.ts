@@ -87,6 +87,10 @@ export const P = {
   route: '#ff4f6d',
   routeShadow: '#8a1f3a',
   routeGlow: '#fff27a',
+  /** Avoided streets: amber hazard tape on a dark band, and red "no entry" signs. */
+  avoid: '#ffb000',
+  avoidBand: '#1b1a2e',
+  noEntry: '#d62839',
   overview: {
     ground: '#d9eaa5',
     park: '#5eaf48',

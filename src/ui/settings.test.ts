@@ -3,16 +3,15 @@ import { clampSteps, DEFAULT_SETTINGS, loadSettings, parseCoords, sanitizeSettin
 
 describe('settings', () => {
   beforeEach(() => localStorage.clear())
-  it('defaults to a safe 10,000-step loop with a 0.75 m stride', () => {
-    expect(loadSettings()).toEqual({ mode: 'loop', targetSteps: 10_000, strideM: 0.75, safeRoute: true, nightAware: true })
+  it('defaults to a 10,000-step loop with a 0.75 m stride', () => {
+    expect(loadSettings()).toEqual({ mode: 'loop', targetSteps: 10_000, strideM: 0.75 })
   })
   it('persists and reloads', () => {
-    saveSettings({ mode: 'oneway', targetSteps: 6000, strideM: 0.7, safeRoute: false, nightAware: false })
-    expect(loadSettings()).toEqual({ mode: 'oneway', targetSteps: 6000, strideM: 0.7, safeRoute: false, nightAware: false })
+    saveSettings({ mode: 'oneway', targetSteps: 6000, strideM: 0.7 })
+    expect(loadSettings()).toEqual({ mode: 'oneway', targetSteps: 6000, strideM: 0.7 })
   })
-  it('keeps safe routing on for settings saved before it existed', () => {
-    expect(sanitizeSettings({ mode: 'loop', targetSteps: 8000, strideM: 0.8 })).toMatchObject({ safeRoute: true, nightAware: true })
-    expect(sanitizeSettings({ safeRoute: 'no' }).safeRoute).toBe(true)
+  it('drops the old safe-route and night switches (always on now)', () => {
+    expect(sanitizeSettings({ mode: 'loop', targetSteps: 8000, strideM: 0.8, safeRoute: false, nightAware: false })).toEqual({ mode: 'loop', targetSteps: 8000, strideM: 0.8 })
   })
   it('sanitizes garbage', () => {
     expect(sanitizeSettings({ mode: 'fly', targetSteps: 'x', strideM: 9 })).toEqual({ ...DEFAULT_SETTINGS, strideM: 1.2 })

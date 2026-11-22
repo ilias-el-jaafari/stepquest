@@ -1007,9 +1007,12 @@ button.hud-msg.sound-resume {
   z-index: 6;
 }
 
-/* Safety box: compact so it can move into a pop-up menu later. */
-.safety .check + .hint {
-  margin-top: -2px;
+/* Streets to avoid: compact so it can move into a pop-up menu later. */
+.hazard-swatch {
+  display: inline-block;
+  vertical-align: middle;
+  image-rendering: pixelated;
+  margin-right: 4px;
 }
 .street-hits,
 .avoid-list {
@@ -1045,6 +1048,50 @@ button.hud-msg.sound-resume {
   min-width: 24px;
   min-height: 24px;
 }
-.safety input[type='search'] {
+.avoid-box input[type='search'] {
   width: 100%;
+}
+
+/* Info / FAQ panel (header). */
+.info-panel {
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+}
+.info-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.info-icon {
+  display: block;
+  image-rendering: pixelated;
+}
+.faq {
+  margin: 4px 0 0;
+}
+.faq dt {
+  margin-top: 10px;
+  color: var(--frame-dark);
+  font-size: 8px;
+  line-height: 1.5;
+}
+.faq dd {
+  margin: 4px 0 0;
+  font-size: 8px;
+  line-height: 1.7;
+}
+@media (max-width: 600px) {
+  .info-label {
+    display: none;
+  }
+  /* The Info button is not at the screen edge on phones: pin the panel to the viewport. */
+  .info-menu.down .info-panel {
+    position: fixed;
+    top: 72px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
 }

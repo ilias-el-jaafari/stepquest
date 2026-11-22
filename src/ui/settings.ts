@@ -6,13 +6,9 @@ export type Settings = {
   mode: RouteMode
   targetSteps: number
   strideM: number
-  /** Safety-weighted routing (on by default). */
-  safeRoute: boolean
-  /** Weigh lighting more when the walk falls after sunset. */
-  nightAware: boolean
 }
 
-export const DEFAULT_SETTINGS: Settings = { mode: 'loop', targetSteps: 10_000, strideM: DEFAULT_STRIDE_M, safeRoute: true, nightAware: true }
+export const DEFAULT_SETTINGS: Settings = { mode: 'loop', targetSteps: 10_000, strideM: DEFAULT_STRIDE_M }
 
 export function clampSteps(steps: number): number {
   if (!Number.isFinite(steps)) return DEFAULT_SETTINGS.targetSteps
@@ -25,8 +21,6 @@ export function sanitizeSettings(raw: unknown): Settings {
     mode: value.mode === 'oneway' ? 'oneway' : 'loop',
     targetSteps: typeof value.targetSteps === 'number' ? clampSteps(value.targetSteps) : DEFAULT_SETTINGS.targetSteps,
     strideM: typeof value.strideM === 'number' ? clampStride(value.strideM) : DEFAULT_SETTINGS.strideM,
-    safeRoute: typeof value.safeRoute === 'boolean' ? value.safeRoute : DEFAULT_SETTINGS.safeRoute,
-    nightAware: typeof value.nightAware === 'boolean' ? value.nightAware : DEFAULT_SETTINGS.nightAware,
   }
 }
 

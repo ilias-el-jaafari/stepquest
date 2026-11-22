@@ -8,10 +8,11 @@ import { areaForWalk } from './osm/overpass.ts'
 import { STEPS_PER_CHECKPOINT } from './routing/checkpoints.ts'
 import { type PlanResult, type RouteMode } from './routing/planner.ts'
 import { planWithSafety, type SafePlan } from './routing/safePlanner.ts'
-import { nearestStreet, streetNames } from './routing/safety.ts'
-import { isDark, sunTimes } from './geo/sun.ts'
+import { avoidedPolylines, nearestStreet, streetNames } from './routing/safety.ts'
+import { isDark } from './geo/sun.ts'
 import { addAvoid, loadAvoid, removeAvoid, saveAvoid } from './ui/avoidList.ts'
-import { SafetyBox } from './ui/SafetyBox.tsx'
+import { AvoidStreetsBox } from './ui/AvoidStreetsBox.tsx'
+import { InfoMenu } from './ui/InfoMenu.tsx'
 import { locateOnce, type LocationErrorCode } from './quest/geolocation.ts'
 import { createQuest, type AreaRef } from './quest/quest.ts'
 import { audioEngine } from './audio/engine.ts'
@@ -209,16 +210,17 @@ export default function App() {
     setSeed(nextSeed)
     // Let the button repaint before the (fast but synchronous) search.
     setTimeout(() => {
-      // Dark at the start or by the (estimated) end of the walk: lighting counts more.
+      // Safe routing is always on. From sunset to sunrise (at the start or by the
+      // estimated end of the walk) lighting counts more, automatically.
       const now = Date.now()
       const walkMs = (stepsToMetres(targetSteps, strideM) / 1000 / WALK_KMH) * 3_600_000
-      const night = settings.safeRoute && settings.nightAware && (isDark(now, start) || isDark(now + walkMs, start))
+      const night = isDark(now, start) || isDark(now + walkMs, start)
       const sp = planWithSafety(
         world.graph,
         world.safety,
         { mode: settings.mode, start, end: settings.mode === 'oneway' ? end : undefined, targetSteps, strideM, seed: nextSeed },
         world.data.bbox,
-        { safe: settings.safeRoute, night, avoid },
+        { safe: true, night, avoid },
       )
       setSafePlan(sp)
       setUsingNormal(false)
@@ -303,10 +305,7 @@ export default function App() {
   }
 
   const [today] = useState(() => Date.now())
-  const sunsetText = useMemo(() => {
-    const times = sunTimes(today, start)
-    return times ? new Date(times.sunset).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) : undefined
-  }, [start, locale, today])
+  const avoidedLines = useMemo(() => (world ? avoidedPolylines(world.data, avoid) : []), [world, avoid])
 
   const shown = result?.ok ? result.route : result?.closest
   const markers = useMemo(() => ({ start, end: settings.mode === 'oneway' ? end : undefined }), [start, end, settings.mode])
@@ -348,6 +347,7 @@ export default function App() {
           <p className="tagline">{t('app.tagline')}</p>
         </div>
         <div className="topbar-tools">
+          <InfoMenu place={start} now={today} />
           <SoundMenu placement="down" />
           <label className="lang">
             <span className="sr-only">{t('lang.switchTo')}</span>
@@ -362,7 +362,7 @@ export default function App() {
       <main className="layout">
         <section className="map-wrap">
           {world ? (
-            <MapView grid={world.grid} route={shown} markers={markers} focus={focus} focusKey={focusKey} onTap={onTap} home={start} />
+            <MapView grid={world.grid} route={shown} markers={markers} focus={focus} focusKey={focusKey} onTap={onTap} home={start} avoided={avoidedLines} />
           ) : (
             <div className="map map-loading">{t('map.loading')}</div>
           )}
@@ -482,11 +482,7 @@ export default function App() {
             </div>
           </div>
 
-          <SafetyBox
-            safeRoute={settings.safeRoute}
-            nightAware={settings.nightAware}
-            onChange={update}
-            sunset={sunsetText}
+          <AvoidStreetsBox
             avoid={avoid}
             onAvoid={(name) => changeAvoid(addAvoid(avoid, name))}
             onUnavoid={(name) => changeAvoid(removeAvoid(avoid, name))}
@@ -680,7 +676,6 @@ function FieldNote(props: {
 
 function SafetyNotice({ plan, usingNormal, onUseNormal }: { plan: SafePlan; usingNormal: boolean; onUseNormal: () => void }) {
   const { t } = useI18n()
-  const pct = (v: number) => Math.round(v * 100)
   const lines: { text: string; ok: boolean }[] = []
   if (usingNormal) lines.push({ text: t('safety.usingNormal'), ok: false })
   else {
@@ -688,8 +683,6 @@ function SafetyNotice({ plan, usingNormal, onUseNormal }: { plan: SafePlan; usin
     if (plan.notice === 'avoidIgnored' && plan.avoidedUsed?.length) {
       lines.push({ text: t('safety.avoidIgnored', { names: plan.avoidedUsed.join(', '), n: plan.avoidedUsed.length }), ok: false })
     }
-    if (plan.safety) lines.push({ text: t('safety.summary', { pref: pct(plan.safety.preferred), lit: pct(plan.safety.lit) }), ok: true })
-    if (plan.night) lines.push({ text: t('safety.dark'), ok: true })
   }
   if (lines.length === 0) return null
   return (

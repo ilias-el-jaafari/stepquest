@@ -38,6 +38,14 @@ export const LIVELY_RADIUS_M = 40
 export const MIN_FACTOR = 0.6
 export const MAX_FACTOR = 6
 
+const AVENUES = new Set(['primary', 'secondary', 'tertiary', 'primary_link', 'secondary_link', 'tertiary_link'])
+/** Busy main roads (primary, secondary, tertiary and their links). */
+export function isAvenue(highway: string | undefined): boolean {
+  return highway !== undefined && AVENUES.has(highway)
+}
+/** Night multiplier for a busy avenue with light, sidewalks or shops. */
+export const AVENUE_NIGHT_BONUS = 0.95
+
 /** Base preference by street type (1 = neutral). */
 function typeFactor(highway: string | undefined, night: boolean): number {
   switch (highway) {
@@ -52,8 +60,9 @@ function typeFactor(highway: string | undefined, night: boolean): number {
     case 'primary_link':
     case 'secondary_link':
     case 'tertiary_link':
-      // Busy avenues are noisy but lit and full of people: neutral by day, good at night.
-      return night ? 0.9 : 1
+      // Busy avenues: neutral by type; a small night bonus is applied in safetyFactor
+      // when they show signs of light and people (lit, sidewalks or shops).
+      return 1
     case 'footway':
       return 1
     case 'unclassified':
@@ -87,6 +96,9 @@ export function safetyFactor(e: EdgeInfo, night: boolean): number {
   if (e.industrial) f *= night ? 2.2 : 1.5
   // Paths through parks are lovely by day, lonely after dark unless lit.
   if (night && e.park && path && !(e.flags & SAFETY_LIT)) f *= 1.8
+  // At night a busy avenue with light, sidewalks or shops is slightly preferred, but less
+  // than a lit residential or pedestrian street (AVENUE_NIGHT_BONUS > residential factor).
+  if (night && isAvenue(e.highway) && (e.flags & (SAFETY_LIT | SAFETY_SIDEWALK) || e.lively > 0)) f *= AVENUE_NIGHT_BONUS
   if (e.lively >= 3) f *= night ? 0.75 : 0.85
   else if (e.lively >= 1) f *= night ? 0.88 : 0.93
   return Math.min(MAX_FACTOR, Math.max(MIN_FACTOR, f))
@@ -266,6 +278,18 @@ export function avoidedOnRoute(graph: WalkGraph, ctx: SafetyContext, nodes: read
     }
   }
   return [...hit]
+}
+
+/** Polylines of every walkable way whose name is on the avoid list (for drawing them on the map). */
+export function avoidedPolylines(data: OsmData, avoid: readonly string[]): LatLon[][] {
+  if (avoid.length === 0) return []
+  const wanted = new Set(avoid.map(normalizeName))
+  const out: LatLon[][] = []
+  for (const w of data.ways) {
+    if (!w.walkable || !w.name || !wanted.has(normalizeName(w.name))) continue
+    out.push(w.nodes.map((n) => ({ lat: data.lat[n] ?? 0, lon: data.lon[n] ?? 0 })))
+  }
+  return out
 }
 
 /** The named street nearest to a tapped point (within maxM metres), for "tap to avoid". */

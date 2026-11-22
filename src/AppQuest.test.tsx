@@ -68,14 +68,19 @@ describe('active quest UI', () => {
     expect(audioEngine().getSnapshot().musicMode).toBe('quest')
   })
 
-  it('plans a safe route by default and reports how safe it is', async () => {
+  it('plans without safety switches or notes on the main screen, and explains safety in Info', async () => {
     await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
     await waitFor(() => !!button('Plan quest') && !button('Plan quest')!.disabled)
-    const safe = host.querySelector('[data-testid="safety"] input[type="checkbox"]') as HTMLInputElement
-    expect(safe.checked).toBe(true)
+    expect(host.querySelector('[data-testid="avoid-streets"] input[type="checkbox"]')).toBeNull()
     await act(async () => button('Plan quest')!.click())
-    await waitFor(() => !!host.querySelector('[data-testid="safety-notice"]'))
-    expect(host.querySelector('[data-testid="safety-notice"]')!.textContent).toMatch(/\d+% on preferred streets/)
+    await waitFor(() => !!button('Start quest'))
+    expect(host.querySelector('[data-testid="safety-notice"]')).toBeNull()
+    const mainText = host.querySelector('main')!.textContent ?? ''
+    expect(mainText.match(/.{0,60}(safer route|after dark|lighting).{0,60}/i)?.[0]).toBeUndefined()
+    await act(async () => (host.querySelector('[data-testid="info-button"]') as HTMLButtonElement).click())
+    const info = host.querySelector('[data-testid="info-panel"]')!
+    expect(info.textContent).toContain('Are the routes safe?')
+    expect(info.textContent).toMatch(/sunset \d{2}:\d{2}/)
   })
 
   it('starts a simulated quest and shows the HUD, then moves and saves progress', async () => {

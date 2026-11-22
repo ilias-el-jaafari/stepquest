@@ -3,11 +3,6 @@ import { useI18n } from '../i18n/index.ts'
 import { normalizeName, searchStreets } from '../routing/safety.ts'
 
 type Props = {
-  safeRoute: boolean
-  nightAware: boolean
-  onChange: (patch: { safeRoute?: boolean; nightAware?: boolean }) => void
-  /** Sunset today at the start point, already formatted (undefined in polar day/night). */
-  sunset: string | undefined
   avoid: readonly string[]
   onAvoid: (name: string) => void
   onUnavoid: (name: string) => void
@@ -19,12 +14,23 @@ type Props = {
   pickNote?: { ok: boolean; name?: string }
 }
 
+/** Small hazard-tape swatch matching how avoided streets are drawn on the map. */
+function HazardSwatch() {
+  return (
+    <svg className="hazard-swatch" viewBox="0 0 16 6" width="32" height="12" aria-hidden="true" shapeRendering="crispEdges">
+      <rect x="0" y="0" width="16" height="6" fill="#1b1a2e" />
+      {[0, 6, 12].map((x) => (
+        <rect key={x} x={x + 1} y="1" width="3" height="4" fill="#ffb000" />
+      ))}
+    </svg>
+  )
+}
+
 /**
- * Compact safety settings: safe-route toggle, night weighting, and the list of
- * streets to avoid (search by name or tap on the map). Self-contained so it can
- * move into a pop-up menu later.
+ * The user's list of streets to avoid: search loaded street names or tap the
+ * map. Compact and self-contained so it can move into a pop-up menu later.
  */
-export function SafetyBox(p: Props) {
+export function AvoidStreetsBox(p: Props) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const listId = useId()
@@ -32,20 +38,8 @@ export function SafetyBox(p: Props) {
   const here = useMemo(() => new Set(p.streets.map(normalizeName)), [p.streets])
 
   return (
-    <div className="box safety" data-testid="safety">
-      <h2 className="box-title">{t('safety.title')}</h2>
-      <label className="check">
-        <input type="checkbox" checked={p.safeRoute} onChange={(e) => p.onChange({ safeRoute: e.target.checked })} />
-        <span>{t('safety.safe')}</span>
-      </label>
-      {p.safeRoute && <p className="hint">{t('safety.safeHint')}</p>}
-      <label className="check">
-        <input type="checkbox" checked={p.nightAware} disabled={!p.safeRoute} onChange={(e) => p.onChange({ nightAware: e.target.checked })} />
-        <span>{t('safety.night')}</span>
-      </label>
-      {p.safeRoute && p.nightAware && p.sunset && <p className="hint">{t('safety.sunset', { time: p.sunset })}</p>}
-
-      <h3 className="box-sub">{t('safety.avoid')}</h3>
+    <div className="box avoid-box" data-testid="avoid-streets">
+      <h2 className="box-title">{t('safety.avoid')}</h2>
       <label className="field">
         <span className="sr-only">{t('safety.search')}</span>
         <input
@@ -97,7 +91,9 @@ export function SafetyBox(p: Props) {
               </li>
             ))}
           </ul>
-          <p className="hint">{t('safety.count', { n: p.avoid.length })}</p>
+          <p className="hint legend">
+            <HazardSwatch /> {t('safety.count', { n: p.avoid.length })} {t('safety.legend')}
+          </p>
         </>
       )}
     </div>

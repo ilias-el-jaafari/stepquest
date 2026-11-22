@@ -4,6 +4,7 @@ import { cumulativeDistances } from '../routing/checkpoints.ts'
 import { Terrain, TILE_PX, type TileGrid } from '../tiles/grid.ts'
 import { townFor, type TownLayout } from '../town/layout.ts'
 import { P } from './palette.ts'
+import { hazardStamps, midpoint, NO_ENTRY } from './hazard.ts'
 import { ARROW_PATTERNS, chevrons, routeCells, smoothPolyline, type Chevron, type RouteCell } from './routePath.ts'
 import { CHECKPOINT, facingFrom, FINISH_FLAG, paintSprite, START_MAT, walkFrame, WALKER, type Facing, type Sprite } from './sprites.ts'
 import { paintFrontFence, paintGardenPath, paintGardenTree, paintHouse, paintLandmark } from './structures.ts'
@@ -88,6 +89,8 @@ export class MapRenderer {
   private routeCells: RouteCell[] = []
   private routeLine: (RouteCell & { cx: number; cy: number })[] = []
   private routeArrows: Chevron[] = []
+  /** Avoided streets in tile coordinates. */
+  private avoided: { x: number; y: number }[][] = []
   /** Walker animation: facing, tween between fixes, and when it last moved. */
   private walker: { facing: Facing; from?: { x: number; y: number }; to?: { x: number; y: number }; t0: number; ms: number; movedAt: number } = {
     facing: 'down',
@@ -132,6 +135,16 @@ export class MapRenderer {
     this.routeArrows = chevrons(this.routeCells)
     this.routeLine = smoothPolyline(this.routeCells)
     this.requestRender()
+  }
+
+  /** Streets on the user's avoid list, drawn as hazard tape under the route. */
+  setAvoided(lines: readonly (readonly LatLon[])[]): void {
+    this.avoided = lines.filter((l) => l.length > 0).map((l) => l.map((p) => this.grid.toTileXY(p)))
+    this.requestRender()
+  }
+
+  get avoidedCount(): number {
+    return this.avoided.length
   }
 
   setQuest(quest: QuestOverlay | undefined): void {
@@ -448,6 +461,9 @@ export class MapRenderer {
       ctx.drawImage(this.overviewCanvas(), originX, originY, this.grid.cols * scale, this.grid.rows * scale)
     }
 
+    // Avoided streets: hazard tape under the route.
+    if (this.avoided.length) this.drawAvoided(ctx, scale, toScreen, w, h, dpr)
+
     // Route: one continuous band along the tiles (gold where already walked) with direction arrows.
     if (this.routeCells.length) this.drawRoute(ctx, scale, toScreen, w, h, dpr)
 
@@ -547,6 +563,53 @@ export class MapRenderer {
     ctx.drawImage(this.sprite(sprite), Math.round(s.x - size / 2), Math.round(s.y - size), size, size)
     const tweening = w.from && w.ms > 0 && now - w.t0 < w.ms
     if (moving || tweening) this.requestRender()
+  }
+
+  private drawAvoided(
+    ctx: CanvasRenderingContext2D,
+    scale: number,
+    toScreen: (x: number, y: number) => { x: number; y: number },
+    w: number,
+    h: number,
+    dpr: number,
+  ): void {
+    const detail = this.zoom >= DETAIL_ZOOM
+    const unit = detail ? Math.max(1, Math.round(scale / 16)) : Math.max(1, Math.round(dpr))
+    // Bold on the town map so it reads at a glance; one road-width band up close.
+    const band = detail ? 5 * unit : Math.max(5 * unit, Math.ceil(scale * 1.8))
+    const inner = Math.max(unit, band - 2 * unit)
+    const dash = detail ? 6 * unit : Math.max(5 * unit, band * 2)
+    const margin = band * 2
+    const lines = this.avoided
+      .map((l) => l.map((p) => toScreen(p.x + 0.5, p.y + 0.5)))
+      .filter((l) => l.some((p) => p.x > -margin && p.y > -margin && p.x < w + margin && p.y < h + margin))
+    // Dark band with an outline, then the amber dashes.
+    for (const pts of lines) {
+      const stamps = hazardStamps(pts, unit, dash)
+      ctx.fillStyle = P.avoidBand
+      for (const s of stamps) ctx.fillRect(s.x - Math.round(band / 2), s.y - Math.round(band / 2), band, band)
+      ctx.fillStyle = P.avoid
+      for (const s of stamps) if (s.on) ctx.fillRect(s.x - Math.round(inner / 2), s.y - Math.round(inner / 2), inner, inner)
+    }
+    // One "no entry" sign per stretch long enough to carry it.
+    const px = detail ? unit : Math.max(1, Math.round(dpr * 1.5))
+    const size = NO_ENTRY.length * px
+    for (const pts of lines) {
+      let len = 0
+      for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y)
+      if (len < size * 3) continue
+      const m = midpoint(pts)!
+      const ox = Math.round(m.x - size / 2)
+      const oy = Math.round(m.y - size / 2)
+      NO_ENTRY.forEach((row, yy) => {
+        for (let xx = 0; xx < row.length; xx++) {
+          const ch = row[xx]
+          if (ch === '.') continue
+          ctx.fillStyle = ch === 'k' ? P.ink : ch === 'w' ? P.white : P.noEntry
+          ctx.fillRect(ox + xx * px, oy + yy * px, px, px)
+        }
+      })
+    }
   }
 
   private drawRoute(

@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../i18n/index.ts'
-import { SafetyBox } from './SafetyBox.tsx'
+import { AvoidStreetsBox } from './AvoidStreetsBox.tsx'
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean
@@ -27,12 +27,8 @@ afterEach(async () => {
 
 const streets = ['Calle de Burjassot', 'Plaza de Burjassot', 'Avenida de la Constitución']
 
-async function render(over: Partial<Parameters<typeof SafetyBox>[0]> = {}) {
+async function render(over: Partial<Parameters<typeof AvoidStreetsBox>[0]> = {}) {
   const props = {
-    safeRoute: true,
-    nightAware: true,
-    onChange: vi.fn(),
-    sunset: '17:41',
     avoid: [] as string[],
     onAvoid: vi.fn(),
     onUnavoid: vi.fn(),
@@ -41,7 +37,7 @@ async function render(over: Partial<Parameters<typeof SafetyBox>[0]> = {}) {
     onPick: vi.fn(),
     ...over,
   }
-  await act(async () => root.render(<I18nProvider><SafetyBox {...props} /></I18nProvider>))
+  await act(async () => root.render(<I18nProvider><AvoidStreetsBox {...props} /></I18nProvider>))
   return props
 }
 
@@ -54,21 +50,11 @@ async function type(input: HTMLInputElement, value: string) {
   })
 }
 
-describe('SafetyBox', () => {
-  it('shows the safe toggle on, with the sunset time, and toggles it', async () => {
-    const p = await render()
-    const [safe, night] = [...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
-    expect(safe!.checked).toBe(true)
-    expect(night!.checked).toBe(true)
-    expect(host.textContent).toContain('Sunset today: 17:41.')
-    await act(async () => safe!.click())
-    expect(p.onChange).toHaveBeenCalledWith({ safeRoute: false })
-  })
-  it('disables night weighting when safe routing is off', async () => {
-    await render({ safeRoute: false })
-    const night = host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1]!
-    expect(night.disabled).toBe(true)
-    expect(host.textContent).not.toContain('Sunset')
+describe('AvoidStreetsBox', () => {
+  it('has no safe-route or night switches (always on)', async () => {
+    await render()
+    expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
+    expect(host.textContent).not.toMatch(/safe|sunset|night/i)
   })
   it('searches street names and adds one to the avoid list', async () => {
     const p = await render()
@@ -84,6 +70,8 @@ describe('SafetyBox', () => {
   it('lists avoided streets with remove buttons and a plural count', async () => {
     const p = await render({ avoid: ['Calle de Burjassot', 'Camino Lejano'] })
     expect(host.textContent).toContain('2 streets avoided.')
+    expect(host.textContent).toContain('Striped on the map.')
+    expect(host.querySelector('.hazard-swatch')).not.toBeNull()
     expect(host.textContent).toContain('Not in this area')
     await act(async () => button('Stop avoiding Calle de Burjassot')!.click())
     expect(p.onUnavoid).toHaveBeenCalledWith('Calle de Burjassot')
@@ -103,7 +91,7 @@ describe('SafetyBox', () => {
     await act(async () => root.unmount())
     root = createRoot(host)
     await render({ avoid: ['Calle de Burjassot'] })
-    expect(host.textContent).toContain('Ruta segura')
+    expect(host.textContent).toContain('Calles a evitar')
     expect(host.textContent).toContain('1 calle evitada.')
   })
 })
