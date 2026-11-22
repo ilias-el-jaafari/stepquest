@@ -134,6 +134,16 @@ describe('one-way routes (A → B)', () => {
       expect(haversine(last, DEMO_AREA.defaultEnd)).toBeLessThan(60)
     })
   }
+  for (const targetSteps of [12_000, 15_000]) {
+    it(`reaches a long ${targetSteps}-step A → B goal within ±5 % without walking streets twice`, () => {
+      const result = planRoute(graph, { ...base, mode: 'oneway', targetSteps }, area)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(Math.abs(result.route.steps - targetSteps)).toBeLessThanOrEqual(targetSteps * 0.05)
+      expect(result.route.overlap).toBeLessThan(0.12)
+      expect(haversine(result.route.points.at(-1)!, DEMO_AREA.defaultEnd)).toBeLessThan(60)
+    })
+  }
   it('reports "too long" with the most steps reachable when the target cannot fit', () => {
     const result = planRoute(graph, { ...base, mode: 'oneway', targetSteps: 60_000 }, area)
     expect(result.ok).toBe(false)

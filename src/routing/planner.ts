@@ -269,6 +269,32 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
       if (good(best)) break outer
     }
   }
+  // Long goals: the via shapes run out of room inside the area. Walk part of the way, do a
+  // triangle loop off to one side of the direct path, then carry on to B (a "lollipop").
+  if (!good(best)) {
+    outerLoop: for (const fraction of [0.5, 0.3, 0.7]) {
+      const m = direct.nodes[Math.min(direct.nodes.length - 1, Math.max(1, Math.round((direct.nodes.length - 1) * fraction)))]!
+      if (m === a.node || m === b.node) continue
+      const mid = graph.point(m)
+      for (const side of [90, -90]) {
+        const bearing = bearingAB + side - 45
+        const loop = tune(
+          (size) => {
+            const p1 = snap(graph, destination(mid, bearing, size), area)
+            const p2 = snap(graph, destination(mid, bearing + 90, size), area)
+            if (p1 === undefined || p2 === undefined || p1 === p2 || p1 === m || p2 === m) return undefined
+            const joined = routeVia(graph, [a.node, m, p1, p2, m, b.node], req)
+            return joined ? track(finish(graph, req, joined, targetM)) : undefined
+          },
+          targetM,
+          Math.max(30, extra / DETOUR_FACTOR / (2 + Math.SQRT2)),
+          span,
+        )
+        if (loop && (!best || score(loop) < score(best))) best = loop
+        if (good(best)) break outerLoop
+      }
+    }
+  }
   if (best?.withinTolerance) return { ok: true, route: best }
   if (best && best.error < 0) {
     const far = longest ?? best
