@@ -12,8 +12,8 @@ export default defineConfig({
     },
   ],
   base: process.env.BASE_PATH ?? '/stepquest/',
-  // The offline demo map is one lazily loaded ~1.3 MB chunk (≈410 kB gzip).
-  build: { chunkSizeWarningLimit: 1500 },
+  // The offline demo map (with street names and safety data) is one lazily loaded ~1.5 MB chunk.
+  build: { chunkSizeWarningLimit: 1700 },
   test: {
     environment: 'happy-dom',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],

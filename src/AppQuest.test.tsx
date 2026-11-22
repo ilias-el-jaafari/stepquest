@@ -68,12 +68,22 @@ describe('active quest UI', () => {
     expect(audioEngine().getSnapshot().musicMode).toBe('quest')
   })
 
+  it('plans a safe route by default and reports how safe it is', async () => {
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!button('Plan quest') && !button('Plan quest')!.disabled)
+    const safe = host.querySelector('[data-testid="safety"] input[type="checkbox"]') as HTMLInputElement
+    expect(safe.checked).toBe(true)
+    await act(async () => button('Plan quest')!.click())
+    await waitFor(() => !!host.querySelector('[data-testid="safety-notice"]'))
+    expect(host.querySelector('[data-testid="safety-notice"]')!.textContent).toMatch(/\d+% on preferred streets/)
+  })
+
   it('starts a simulated quest and shows the HUD, then moves and saves progress', async () => {
     await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
     await waitFor(() => !!button('Plan quest') && !button('Plan quest')!.disabled)
     await act(async () => button('Plan quest')!.click())
     await waitFor(() => !!button('Start quest'))
-    const sim = [...host.querySelectorAll('input[type="checkbox"]')][0] as HTMLInputElement
+    const sim = host.querySelector('.quest-start input[type="checkbox"]') as HTMLInputElement
     await act(async () => sim.click())
     const speed = host.querySelector('select[aria-label="Speed"]') as HTMLSelectElement
     await act(async () => {

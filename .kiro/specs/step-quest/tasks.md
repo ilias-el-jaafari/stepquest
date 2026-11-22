@@ -76,7 +76,16 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 - [x] 41. Tests: settings persistence and repair, tempo mapping and glide, pace tracker, scheduler, song rules, effects, voice queue, numbers, Spanish and English pronunciation, synthesizer output (bounds, determinism, formant energy), turn detection, callout planner, engine with a fake AudioContext, sound menu, spoken opening line
 - [x] 42. Screenshots of the sound controls in `screenshots/phase4/`
 
+## Safe routes
+
+- [x] 43. Safety cost per edge from OpenStreetMap tags (lit, sidewalks, pedestrian/residential/living streets, alleys and driveways, tunnels and covered passages, unlit paths and tracks, industrial and railway land, shops and cafés within 40 m), as a multiplier on edge length so the step goal and its ±5 % tolerance stay the same
+- [x] 44. Safe route on by default, with a compact toggle; when no safer route meets the goal, say so and offer the normal route
+- [x] 45. Streets to avoid: search loaded street names or tap the map, saved on the device, hard-avoided by the router; if a route is impossible without them, plan anyway and name the streets used
+- [x] 46. Night awareness: local sunrise/sunset (no API); after dark (or if the walk ends after dark) lighting and empty areas weigh more
+- [x] 47. Overpass query and demo extract with street names, lighting, sidewalks, industrial land and shops/amenities (codec v3)
+- [x] 48. Tests: cost function, street search and nearest street, avoid list, safe/normal/avoid fallbacks, sun times, codec round trip, safety box UI; screenshots in `screenshots/safe-route/`
+
 ## Phase 5 — Submission
 
-- [ ] 43. Onboarding, logo, PWA manifest
-- [ ] 44. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up
+- [ ] 49. Onboarding, logo, PWA manifest
+- [ ] 50. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up

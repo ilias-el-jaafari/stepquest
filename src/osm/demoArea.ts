@@ -24,6 +24,9 @@ export function overpassQuery(b: BBox, timeoutS = 60): string {
   way["water"](${box});
   way["barrier"~"^(fence|hedge|wall)$"](${box});
   way["place"="square"](${box});
+  way["landuse"~"^(industrial|railway|construction|brownfield|depot)$"](${box});
+  nw["shop"](${box});
+  nw["amenity"~"^(restaurant|cafe|bar|pub|fast_food|pharmacy|bank|ice_cream|library|police|marketplace|community_centre|theatre|cinema)$"](${box});
   nw["shop"="supermarket"](${box});
   nw["amenity"~"^(hospital|clinic|school|college|university|kindergarten)$"](${box});
   nw["healthcare"~"^(hospital|clinic|centre)$"](${box});

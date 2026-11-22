@@ -269,7 +269,8 @@ body {
 }
 
 input[type='number'],
-input[type='text'] {
+input[type='text'],
+input[type='search'] {
   font: inherit;
   font-size: 12px;
   width: 100%;
@@ -1004,4 +1005,46 @@ button.hud-msg.sound-resume {
 
 .hud-bottom:has(.sound-panel) {
   z-index: 6;
+}
+
+/* Safety box: compact so it can move into a pop-up menu later. */
+.safety .check + .hint {
+  margin-top: -2px;
+}
+.street-hits,
+.avoid-list {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.avoid-list {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.avoid-list .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+.avoid-list .chip > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-x {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+  min-width: 24px;
+  min-height: 24px;
+}
+.safety input[type='search'] {
+  width: 100%;
 }

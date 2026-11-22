@@ -16,6 +16,10 @@ export type RouteRequest = {
   checkpoints?: number
   /** Changes the loop's direction so "Reroll" gives a different walk. */
   seed?: number
+  /** Per-edge cost multipliers (safety weights; Infinity = never use). Lengths stay real. */
+  cost?: Float32Array
+  /** Smallest value in `cost` (keeps A* exact when some streets are preferred). */
+  minCost?: number
 }
 
 export type Route = {
@@ -86,13 +90,13 @@ function overlapOf(graph: WalkGraph, joined: { nodes: number[]; edges: number[] 
 }
 
 /** Route through the given graph nodes in order, discouraging reuse of streets. */
-function routeVia(graph: WalkGraph, stops: number[]): Leg | undefined {
-  const penalty = new Float32Array(graph.edgeCount).fill(1)
+function routeVia(graph: WalkGraph, stops: number[], req: RouteRequest): Leg | undefined {
+  const penalty = req.cost ? Float32Array.from(req.cost) : new Float32Array(graph.edgeCount).fill(1)
   const legs: Leg[] = []
   for (let i = 1; i < stops.length; i++) {
-    const leg = graph.shortestPath(stops[i - 1]!, stops[i]!, penalty)
+    const leg = graph.shortestPath(stops[i - 1]!, stops[i]!, penalty, req.minCost ?? 1)
     if (!leg) return undefined
-    for (const e of leg.edges) penalty[e] = REUSE_PENALTY
+    for (const e of leg.edges) penalty[e] = (req.cost?.[e] ?? 1) * REUSE_PENALTY
     legs.push(leg)
   }
   return joinLegs(legs)
@@ -183,7 +187,7 @@ export function planLoop(graph: WalkGraph, req: RouteRequest, area: BBox): PlanR
         const a = snap(graph, destination(req.start, bearing, size), area)
         const b = snap(graph, destination(req.start, bearing + spread, size), area)
         if (a === undefined || b === undefined || a === b || a === start.node || b === start.node) return undefined
-        const joined = routeVia(graph, [start.node, a, b, start.node])
+        const joined = routeVia(graph, [start.node, a, b, start.node], req)
         return joined ? finish(graph, req, joined, targetM) : undefined
       },
       targetM,
@@ -209,7 +213,7 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
   const b = graph.nearestNode(end)
   if (!a || !b || a.distance > MAX_SNAP_M || b.distance > MAX_SNAP_M) return { ok: false, reason: 'unreachable' }
   if (a.node === b.node) return { ok: false, reason: 'samePoint' }
-  const direct = graph.shortestPath(a.node, b.node)
+  const direct = graph.shortestPath(a.node, b.node, req.cost, req.minCost ?? 1)
   if (!direct) return { ok: false, reason: 'unreachable' }
   const directRoute = finish(graph, req, direct, targetM)
   const minSteps = metresToSteps(direct.length, req.strideM)
@@ -241,7 +245,7 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
         (h) => {
           const w = snap(graph, destination(anchor, bearingAB + side, h), area)
           if (w === undefined || w === a.node || w === b.node) return undefined
-          const joined = routeVia(graph, [a.node, w, b.node])
+          const joined = routeVia(graph, [a.node, w, b.node], req)
           return joined ? track(finish(graph, req, joined, targetM)) : undefined
         },
         targetM,
@@ -254,7 +258,7 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
           const w1 = snap(graph, destination(destination(req.start, bearingAB, straight * (fraction - 0.5)), bearingAB + side, h), area)
           const w2 = snap(graph, destination(destination(end, bearingAB, straight * (fraction - 0.5)), bearingAB + side, h), area)
           if (w1 === undefined || w2 === undefined || w1 === w2) return undefined
-          const joined = routeVia(graph, [a.node, w1, w2, b.node])
+          const joined = routeVia(graph, [a.node, w1, w2, b.node], req)
           return joined ? track(finish(graph, req, joined, targetM)) : undefined
         },
         targetM,

@@ -33,7 +33,22 @@ export type OsmWay = {
   sub?: string
   /** Indices into OsmData.lat / OsmData.lon. Shared nodes connect ways. */
   nodes: number[]
+  /** Street name (name=*), used for the "streets to avoid" list. */
+  name?: string
+  /** Safety proxies from the tags, as SAFETY_* bit flags (lighting, sidewalks, alleys…). */
+  safety?: number
 }
+
+/** lit=yes (or a lit time range). */
+export const SAFETY_LIT = 1
+/** lit=no. */
+export const SAFETY_UNLIT = 2
+/** A sidewalk is mapped (sidewalk=both/left/right/yes, or footway=sidewalk). */
+export const SAFETY_SIDEWALK = 4
+/** A back alley, driveway or parking aisle (service=alley|driveway|parking_aisle). */
+export const SAFETY_ALLEY = 8
+/** Covered or underground: tunnels, underpasses, building passages, covered=yes. */
+export const SAFETY_COVERED = 16
 
 export type OsmData = {
   bbox: BBox
@@ -42,6 +57,10 @@ export type OsmData = {
   ways: OsmWay[]
   /** Landmark points (supermarkets, health centres, stations, schools). */
   pois: Poi[]
+  /** Industrial / railway land as closed rings of node indices (routing avoids walking through it). */
+  industrial?: number[][]
+  /** Shops, cafés and other places that keep a street lively, as [lat, lon, lat, lon, …]. */
+  activity?: number[]
   source: 'fixture' | 'overpass'
   /** OSM base timestamp (ISO) reported by Overpass. */
   timestamp: string

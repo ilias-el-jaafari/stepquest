@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { bboxAround, bboxContains } from '../geo/geo.ts'
 import { MemoryCache } from './cache.ts'
-import { classifyWay, isArea, isCrossing, isTunnel, isWalkable } from './classify.ts'
+import { classifyWay, isArea, isCrossing, isIndustrialLand, isLively, isTunnel, isWalkable, safetyFlags } from './classify.ts'
+import { SAFETY_ALLEY, SAFETY_COVERED, SAFETY_LIT, SAFETY_SIDEWALK, SAFETY_UNLIT } from './types.ts'
 import { decodeOsm, encodeOsm } from './codec.ts'
 import { DEMO_AREA, overpassQuery } from './demoArea.ts'
 import { loadDemoOsm } from './demo.ts'
@@ -93,7 +94,7 @@ describe('compact codec', () => {
     expect(back.bbox).toEqual(bbox)
   })
   it('rejects unknown versions', () => {
-    expect(() => decodeOsm({ ...encodeOsm(normalizeOverpass(sample, bbox)), v: 3 as 1 })).toThrow()
+    expect(() => decodeOsm({ ...encodeOsm(normalizeOverpass(sample, bbox)), v: 9 as 1 })).toThrow()
   })
 })
 
@@ -180,5 +181,62 @@ describe('Overpass client', () => {
     const oneway = areaForWalk(DEMO_AREA.defaultStart, 3000, DEMO_AREA.defaultEnd)
     expect(bboxContains(oneway, DEMO_AREA.defaultStart)).toBe(true)
     expect(bboxContains(oneway, DEMO_AREA.defaultEnd)).toBe(true)
+  })
+})
+
+describe('safety tags', () => {
+  it('reads lighting, sidewalks, alleys and covered ways', () => {
+    expect(safetyFlags({ highway: 'residential', lit: 'yes', sidewalk: 'both' })).toBe(SAFETY_LIT | SAFETY_SIDEWALK)
+    expect(safetyFlags({ highway: 'footway', lit: 'no' })).toBe(SAFETY_UNLIT)
+    expect(safetyFlags({ highway: 'footway', footway: 'sidewalk' })).toBe(SAFETY_SIDEWALK)
+    expect(safetyFlags({ highway: 'residential', sidewalk: 'no' })).toBe(0)
+    expect(safetyFlags({ highway: 'service', service: 'alley' })).toBe(SAFETY_ALLEY)
+    expect(safetyFlags({ highway: 'service', service: 'driveway' })).toBe(SAFETY_ALLEY)
+    expect(safetyFlags({ highway: 'footway', tunnel: 'yes' }) & SAFETY_COVERED).toBeTruthy()
+    expect(safetyFlags({ highway: 'footway', covered: 'yes' }) & SAFETY_COVERED).toBeTruthy()
+  })
+  it('spots lively places and industrial land', () => {
+    expect(isLively({ shop: 'bakery' })).toBe(true)
+    expect(isLively({ shop: 'vacant' })).toBe(false)
+    expect(isLively({ amenity: 'cafe' })).toBe(true)
+    expect(isLively({ amenity: 'parking' })).toBe(false)
+    expect(isIndustrialLand({ landuse: 'industrial' })).toBe(true)
+    expect(isIndustrialLand({ landuse: 'residential' })).toBe(false)
+  })
+  it('keeps names, safety, industrial land and activity through normalize and the v3 codec', () => {
+    const json: OverpassResponse = {
+      osm3s: { timestamp_osm_base: '2026-11-20T19:11:51Z' },
+      elements: [
+        { type: 'way', id: 1, tags: { highway: 'residential', name: 'Calle Mayor', lit: 'yes', sidewalk: 'both' }, nodes: [1, 2],
+          geometry: [{ lat: 39.49, lon: -0.39 }, { lat: 39.491, lon: -0.39 }] },
+        { type: 'way', id: 2, tags: { landuse: 'industrial' }, nodes: [5, 6, 7, 5],
+          geometry: [{ lat: 39.485, lon: -0.395 }, { lat: 39.485, lon: -0.394 }, { lat: 39.486, lon: -0.394 }, { lat: 39.485, lon: -0.395 }] },
+        { type: 'node', id: 9, lat: 39.4905, lon: -0.3901, tags: { shop: 'bakery' } },
+      ] as OverpassResponse['elements'],
+    }
+    const data = normalizeOverpass(json, bbox)
+    const street = data.ways.find((w) => w.id === 1)!
+    expect(street.name).toBe('Calle Mayor')
+    expect(street.safety).toBe(SAFETY_LIT | SAFETY_SIDEWALK)
+    expect(data.industrial).toHaveLength(1)
+    expect(data.activity).toEqual([39.4905, -0.3901])
+    const back = decodeOsm(JSON.parse(JSON.stringify(encodeOsm(data))))
+    expect(back.ways.find((w) => w.id === 1)).toMatchObject({ name: 'Calle Mayor', safety: SAFETY_LIT | SAFETY_SIDEWALK })
+    expect(back.industrial).toEqual(data.industrial)
+    expect(back.activity).toEqual(data.activity)
+  })
+  it('asks Overpass for the safety data', () => {
+    const q = overpassQuery(DEMO_AREA.bbox)
+    expect(q).toContain('landuse')
+    expect(q).toContain('"shop"')
+    expect(q).toContain('amenity')
+  })
+  it('ships the demo area with names, lighting and lively places', () => {
+    const demo = loadDemoOsm()
+    const walk = demo.ways.filter((w) => w.walkable)
+    expect(walk.filter((w) => w.name).length).toBeGreaterThan(500)
+    expect(walk.filter((w) => (w.safety ?? 0) & SAFETY_LIT).length).toBeGreaterThan(300)
+    expect((demo.activity ?? []).length / 2).toBeGreaterThan(300)
+    expect((demo.industrial ?? []).length).toBeGreaterThan(10)
   })
 })

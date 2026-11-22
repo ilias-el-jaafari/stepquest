@@ -5,13 +5,15 @@ import { defaultCache } from '../osm/cache.ts'
 import { OverpassClient, OverpassError, type OverpassErrorCode } from '../osm/overpass.ts'
 import type { OsmData } from '../osm/types.ts'
 import { WalkGraph } from '../routing/graph.ts'
+import { safetyContext, type SafetyContext } from '../routing/safety.ts'
 import { buildTileGrid } from '../tiles/rasterize.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 
-export type World = { data: OsmData; grid: TileGrid; graph: WalkGraph }
+export type World = { data: OsmData; grid: TileGrid; graph: WalkGraph; safety: SafetyContext }
 
 export function buildWorld(data: OsmData): World {
-  return { data, grid: buildTileGrid(data), graph: new WalkGraph(data) }
+  const graph = new WalkGraph(data)
+  return { data, grid: buildTileGrid(data), graph, safety: safetyContext(graph, data) }
 }
 
 export async function loadDemoWorld(): Promise<World> {

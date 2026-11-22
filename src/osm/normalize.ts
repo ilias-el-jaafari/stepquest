@@ -1,5 +1,5 @@
 import type { BBox } from '../geo/geo.ts'
-import { classifyWay, isArea, isCrossing, isTunnel, isWalkable, wayStyle, type Tags } from './classify.ts'
+import { classifyWay, isArea, isCrossing, isIndustrialLand, isLively, isTunnel, isWalkable, safetyFlags, wayStyle, type Tags } from './classify.ts'
 import { dedupePois, landmarkKind } from './landmarks.ts'
 import type { OsmData, OsmWay, Poi } from './types.ts'
 
@@ -30,11 +30,16 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
   const ways: OsmWay[] = []
   // Landmark candidates, ranked so outlines beat points and stations beat their entrances.
   const candidates: { poi: Poi; rank: number }[] = []
+  const industrial: number[][] = []
+  const activity: number[] = []
   const inBox = (p: { lat: number; lon: number }) => p.lat >= bbox.south && p.lat <= bbox.north && p.lon >= bbox.west && p.lon <= bbox.east
 
   for (const element of json.elements ?? []) {
     if (element.type === 'node') {
       const tags = element.tags ?? {}
+      if (isLively(tags) && typeof element.lat === 'number' && typeof element.lon === 'number' && inBox({ lat: element.lat, lon: element.lon })) {
+        activity.push(round6(element.lat), round6(element.lon))
+      }
       const kind = landmarkKind(tags, false)
       if (kind && typeof element.lat === 'number' && typeof element.lon === 'number' && inBox({ lat: element.lat, lon: element.lon })) {
         candidates.push({ poi: { kind, lat: element.lat, lon: element.lon }, rank: tags.railway === 'subway_entrance' ? 2 : 1 })
@@ -55,8 +60,13 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
       const centre = element.center ?? centroid(way.geometry)
       if (centre && inBox(centre)) candidates.push({ poi: { kind: landmark, ...centre }, rank: 0 })
     }
+    if (isLively(tags) && !tags.highway) {
+      const centre = element.center ?? centroid(way.geometry)
+      if (centre && inBox(centre)) activity.push(round6(centre.lat), round6(centre.lon))
+    }
+    const industrialLand = isIndustrialLand(tags)
     const kind = classifyWay(tags)
-    if (!kind || !way.nodes || !way.geometry || way.nodes.length < 2) continue
+    if ((!kind && !industrialLand) || !way.nodes || !way.geometry || way.nodes.length < 2) continue
     const nodes: number[] = []
     for (let i = 0; i < way.nodes.length; i++) {
       const id = way.nodes[i]
@@ -73,16 +83,21 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
     }
     if (nodes.length < 2) continue
     const closed = way.nodes[0] === way.nodes[way.nodes.length - 1]
+    if (industrialLand && closed && nodes.length >= 4) industrial.push(nodes)
+    if (!kind) continue
+    const walkable = isWalkable(tags)
     ways.push({
       id: way.id,
       kind,
       highway: tags.highway,
-      walkable: isWalkable(tags),
+      walkable,
       area: isArea(kind, tags, closed),
       tunnel: isTunnel(tags),
       crossing: kind === 'path' && isCrossing(tags),
       sub: wayStyle(kind, tags),
       nodes,
+      ...(walkable && tags.name ? { name: tags.name } : {}),
+      ...(walkable ? { safety: safetyFlags(tags) } : {}),
     })
   }
   candidates.sort((a, b) => a.rank - b.rank)
@@ -94,6 +109,8 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
     lon: Float64Array.from(lon),
     ways,
     pois,
+    industrial,
+    activity,
     source,
     timestamp: json.osm3s?.timestamp_osm_base ?? '',
   }
@@ -111,3 +128,5 @@ function centroid(geometry: OverpassWay['geometry']): { lat: number; lon: number
   }
   return n ? { lat: lat / n, lon: lon / n } : undefined
 }
+
+const round6 = (v: number) => Math.round(v * 1e6) / 1e6

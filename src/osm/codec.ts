@@ -6,9 +6,11 @@ import { FEATURE_KINDS, LANDMARK_KINDS, type OsmData, type OsmWay, type Poi } fr
  * coordinates are delta-encoded integers (1e-6 degrees ≈ 0.1 m), and each way
  * is a flat array `[kind, highwayIndex, flags, styleIndex, ...deltaNodeIndices]`
  * (version 1 had no style index). Landmarks are `[kind, lat1e6, lon1e6]` triples.
+ * Version 3 adds street names and safety flags per way (`wn`, `ws`), industrial
+ * land rings (`ind`, node indices) and lively places (`act`, lat/lon 1e6 pairs).
  */
 export type CompactOsm = {
-  v: 1 | 2
+  v: 1 | 2 | 3
   bbox: [number, number, number, number]
   timestamp: string
   source: OsmData['source']
@@ -19,6 +21,13 @@ export type CompactOsm = {
   ids: number[]
   subs?: string[]
   pois?: number[]
+  names?: string[]
+  /** Per way: index into `names`, or -1. */
+  wn?: number[]
+  /** Per way: safety flags. */
+  ws?: number[]
+  ind?: number[][]
+  act?: number[]
 }
 
 const SCALE = 1e6
@@ -46,7 +55,22 @@ export function encodeOsm(data: OsmData): CompactOsm {
   const ids: number[] = []
   const subs: string[] = []
   const subIndex = new Map<string, number>()
+  const names: string[] = []
+  const nameIndex = new Map<string, number>()
+  const wn: number[] = []
+  const ws: number[] = []
   for (const way of data.ways) {
+    let nm = -1
+    if (way.name) {
+      nm = nameIndex.get(way.name) ?? -1
+      if (nm < 0) {
+        nm = names.length
+        names.push(way.name)
+        nameIndex.set(way.name, nm)
+      }
+    }
+    wn.push(nm)
+    ws.push(way.safety ?? 0)
     let sub = -1
     if (way.sub) {
       sub = subIndex.get(way.sub) ?? -1
@@ -78,11 +102,12 @@ export function encodeOsm(data: OsmData): CompactOsm {
   const { south, west, north, east } = data.bbox
   const pois: number[] = []
   for (const p of data.pois) pois.push(LANDMARK_KINDS.indexOf(p.kind), Math.round(p.lat * SCALE), Math.round(p.lon * SCALE))
-  return { v: 2, bbox: [south, west, north, east], timestamp: data.timestamp, source: data.source, highways, dlat, dlon, ways, ids, subs, pois }
+  const act = (data.activity ?? []).map((v) => Math.round(v * SCALE))
+  return { v: 3, bbox: [south, west, north, east], timestamp: data.timestamp, source: data.source, highways, dlat, dlon, ways, ids, subs, pois, names, wn, ws, ind: data.industrial ?? [], act }
 }
 
 export function decodeOsm(compact: CompactOsm): OsmData {
-  if (compact.v !== 1 && compact.v !== 2) throw new Error(`Unsupported map data version ${String(compact.v)}`)
+  if (compact.v !== 1 && compact.v !== 2 && compact.v !== 3) throw new Error(`Unsupported map data version ${String(compact.v)}`)
   const n = compact.dlat.length
   const lat = new Float64Array(n)
   const lon = new Float64Array(n)
@@ -115,6 +140,8 @@ export function decodeOsm(compact: CompactOsm): OsmData {
       crossing: (flags & FLAG_CROSSING) !== 0,
       sub: compact.v === 1 ? undefined : compact.subs?.[row[3] ?? -1],
       nodes,
+      ...(compact.names && (compact.wn?.[i] ?? -1) >= 0 ? { name: compact.names[compact.wn![i]!] } : {}),
+      ...(compact.ws && (flags & FLAG_WALKABLE) !== 0 ? { safety: compact.ws[i] ?? 0 } : {}),
     }
   })
   const pois: Poi[] = []
@@ -125,5 +152,6 @@ export function decodeOsm(compact: CompactOsm): OsmData {
   }
   const [south, west, north, east] = compact.bbox
   const bbox: BBox = { south, west, north, east }
-  return { bbox, lat, lon, ways, pois, source: compact.source, timestamp: compact.timestamp }
+  const extra = compact.v === 3 ? { industrial: compact.ind ?? [], activity: (compact.act ?? []).map((v) => v / SCALE) } : {}
+  return { bbox, lat, lon, ways, pois, ...extra, source: compact.source, timestamp: compact.timestamp }
 }

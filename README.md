@@ -6,7 +6,7 @@ Kiroween 2026 entry, **Resurrection** category.
 
 ## Status
 
-Phase 4 of 5 done: route planner and tile map, GPS tracking and checkpoints, the overworld look (houses, landmarks, a continuous route path, a walking character and dialogue boxes), and sound (a retro robot voice, chiptune music that follows your pace, sound effects). See `.kiro/specs/step-quest/` for the full plan.
+Phase 4 of 5 done: route planner and tile map, GPS tracking and checkpoints, the overworld look (houses, landmarks, a continuous route path, a walking character and dialogue boxes), and sound (a retro robot voice, chiptune music that follows your pace, sound effects), plus safer routes (lit, lively streets; a list of streets to avoid). See `.kiro/specs/step-quest/` for the full plan.
 
 ## Walking a quest
 
@@ -24,6 +24,13 @@ Phase 4 of 5 done: route planner and tile map, GPS tracking and checkpoints, the
 
 **Limitation:** a web app cannot track your position in the background. Tracking only works while the page is open and the screen is on. The app asks the browser to keep the screen awake (Screen Wake Lock) where supported; if you lock the phone, the quest pauses and catches up when you come back. Location also requires HTTPS (GitHub Pages is fine).
 
+## Safer routes
+
+- **Safe route** (on by default) prefers streets that are mapped as lit, have sidewalks, are pedestrian or residential, or have shops and cafés nearby, and steers away from back alleys and driveways, tunnels and underpasses, industrial estates and unlit paths or tracks. Steps are only a small penalty. The step goal and its ±5 % tolerance do not change; if no safer route meets it, the app says so and offers the normal route.
+- **After sunset** (computed on the device from the date and position) lighting counts much more, and so do empty parks and industrial areas. This also applies when the walk will end after dark. It can be turned off.
+- **Streets to avoid**: search a street by name or tap it on the map. The list is saved on your device and those streets are never used; if the route is impossible without them, the app plans one anyway and names the streets it had to use.
+- These are proxies from OpenStreetMap tags, not crime data. Lighting is only mapped on part of the streets (about one in eight in the demo area), so "unknown" is treated as neutral.
+
 ## Run it
 
 ```bash
@@ -34,9 +41,9 @@ npm run lint
 npm run build
 ```
 
-Screenshots: `npm run build && npx vite preview --host 127.0.0.1 --port 4188`, then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots` (phase 1) `PHASE2_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase2.mjs` (phase 2) `PHASE3_URL=http://127.0.0.1:4188/stepquest/ PHASE3_TAG=after node scripts/screenshot-phase3.mjs` (phase 3) or `PHASE4_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase4.mjs` (phase 4, also checks that audio runs).
+Screenshots: `npm run build && npx vite preview --host 127.0.0.1 --port 4188`, then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots` (phase 1) `PHASE2_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase2.mjs` (phase 2) `PHASE3_URL=http://127.0.0.1:4188/stepquest/ PHASE3_TAG=after node scripts/screenshot-phase3.mjs` (phase 3) `PHASE4_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase4.mjs` (phase 4, also checks that audio runs) or `SAFE_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-safe-route.mjs` (safe routes).
 
-Offline map extract: save Overpass responses for the demo area (the main query with `out geom`, plus barriers/squares and landmark points with `out tags center`), then `npm run fixture -- src/data/benicalap.osm.json main.json extra.json poi.json`.
+Offline map extract: save Overpass responses for the demo area (the main query with `out geom`, which also fetches industrial land, shops and amenities for safe routing, plus barriers/squares and landmark points with `out tags center`), then `npm run fixture -- src/data/benicalap.osm.json main.json extra.json poi.json`. `KEEP_POIS=old.json` keeps the landmarks of an earlier extract.
 
 ## How it works
 
@@ -45,7 +52,7 @@ Offline map extract: save Overpass responses for the demo area (the main query w
 - **Town**: building blocks are cut into lots with small houses, gardens and fences; hospitals and health centres, stations, schools, park entrances and supermarkets from OSM get their own special buildings (generic, original designs; no brand names or logos).
 - **Art**: every tile, building and sprite is painted procedurally or hand-coded in `src/render/`. No assets from any commercial game.
 - **Sound**: the voice, music and effects are synthesized in `src/audio/` with the Web Audio API; there are no audio files.
-- **Routing**: A* on the walkable OSM network; loops and A→B detours are tuned until they land within ±5 % of the goal, and checkpoints are spaced evenly along the route.
+- **Routing**: A* on the walkable OSM network; loops and A→B detours are tuned until they land within ±5 % of the goal, and checkpoints are spaced evenly along the route. Safe routing multiplies each street's cost by a safety factor (0.6–6×) and closes avoided streets; real lengths are kept for the step count.
 
 ## Credits and licences
 

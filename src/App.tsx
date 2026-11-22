@@ -6,7 +6,12 @@ import { useI18n, type Locale } from './i18n/index.ts'
 import { DEMO_AREA } from './osm/demoArea.ts'
 import { areaForWalk } from './osm/overpass.ts'
 import { STEPS_PER_CHECKPOINT } from './routing/checkpoints.ts'
-import { planRoute, type PlanResult, type RouteMode } from './routing/planner.ts'
+import { type PlanResult, type RouteMode } from './routing/planner.ts'
+import { planWithSafety, type SafePlan } from './routing/safePlanner.ts'
+import { nearestStreet, streetNames } from './routing/safety.ts'
+import { isDark, sunTimes } from './geo/sun.ts'
+import { addAvoid, loadAvoid, removeAvoid, saveAvoid } from './ui/avoidList.ts'
+import { SafetyBox } from './ui/SafetyBox.tsx'
 import { locateOnce, type LocationErrorCode } from './quest/geolocation.ts'
 import { createQuest, type AreaRef } from './quest/quest.ts'
 import { audioEngine } from './audio/engine.ts'
@@ -41,6 +46,11 @@ export default function App() {
   const [end, setEnd] = useState<LatLon | undefined>(DEMO_AREA.defaultEnd)
   const [placing, setPlacing] = useState<'start' | 'end'>('start')
   const [result, setResult] = useState<PlanResult>()
+  const [safePlan, setSafePlan] = useState<SafePlan>()
+  const [usingNormal, setUsingNormal] = useState(false)
+  const [avoid, setAvoid] = useState<string[]>(() => loadAvoid())
+  const [pickingAvoid, setPickingAvoid] = useState(false)
+  const [pickNote, setPickNote] = useState<{ ok: boolean; name?: string }>()
   const [planning, setPlanning] = useState(false)
   const [seed, setSeed] = useState(0)
   const [coordsText, setCoordsText] = useState('39.4935, -0.3920')
@@ -96,10 +106,24 @@ export default function App() {
     audio.playMenuMusic()
   }, [onPlanning])
 
+  const clearResult = () => {
+    setResult(undefined)
+    setSafePlan(undefined)
+    setUsingNormal(false)
+  }
+
   const update = (patch: Partial<Settings>) => {
     setSettings((s) => ({ ...s, ...patch }))
-    setResult(undefined)
+    clearResult()
   }
+
+  const changeAvoid = (next: string[]) => {
+    setAvoid(next)
+    saveAvoid(next)
+    clearResult()
+  }
+
+  const streets = useMemo(() => (world ? streetNames(world.data) : []), [world])
 
   const setSteps = (value: number) => {
     setStepsText(String(value))
@@ -152,11 +176,29 @@ export default function App() {
 
   const onTap = useCallback(
     (p: LatLon) => {
+      if (pickingAvoid) {
+        const name = world ? nearestStreet(world.data, p) : undefined
+        setPickNote(name ? { ok: true, name } : { ok: false })
+        if (name) {
+          setPickingAvoid(false)
+          setAvoid((list) => {
+            const next = addAvoid(list, name)
+            saveAvoid(next)
+            return next
+          })
+          setResult(undefined)
+          setSafePlan(undefined)
+          setUsingNormal(false)
+        }
+        return
+      }
       if (settings.mode === 'oneway' && placing === 'end') setEnd(p)
       else setStart(p)
       setResult(undefined)
+      setSafePlan(undefined)
+      setUsingNormal(false)
     },
-    [placing, settings.mode],
+    [placing, settings.mode, pickingAvoid, world],
   )
 
   const plan = (nextSeed = seed) => {
@@ -167,12 +209,20 @@ export default function App() {
     setSeed(nextSeed)
     // Let the button repaint before the (fast but synchronous) search.
     setTimeout(() => {
-      const res = planRoute(
+      // Dark at the start or by the (estimated) end of the walk: lighting counts more.
+      const now = Date.now()
+      const walkMs = (stepsToMetres(targetSteps, strideM) / 1000 / WALK_KMH) * 3_600_000
+      const night = settings.safeRoute && settings.nightAware && (isDark(now, start) || isDark(now + walkMs, start))
+      const sp = planWithSafety(
         world.graph,
+        world.safety,
         { mode: settings.mode, start, end: settings.mode === 'oneway' ? end : undefined, targetSteps, strideM, seed: nextSeed },
         world.data.bbox,
+        { safe: settings.safeRoute, night, avoid },
       )
-      setResult(res)
+      setSafePlan(sp)
+      setUsingNormal(false)
+      setResult(sp.result)
       setPlanning(false)
       // On phones the panel sits under the map: bring the map back into view.
       const map = document.querySelector('.map-wrap')
@@ -191,7 +241,7 @@ export default function App() {
     setStart(coords)
     setEnd(undefined)
     setPlacing(settings.mode === 'oneway' ? 'end' : 'start')
-    setResult(undefined)
+    clearResult()
     return true
   }
 
@@ -214,7 +264,7 @@ export default function App() {
     if (world && bboxContains(world.data.bbox, p)) {
       setStart(p)
       setPlacing(settings.mode === 'oneway' ? 'end' : 'start')
-      setResult(undefined)
+      clearResult()
     } else {
       setLocate({ state: 'loadingArea' })
       const ok = await loadLiveAround(p)
@@ -249,8 +299,14 @@ export default function App() {
   const resetPoints = () => {
     setStart(DEMO_AREA.defaultStart)
     setEnd(DEMO_AREA.defaultEnd)
-    setResult(undefined)
+    clearResult()
   }
+
+  const [today] = useState(() => Date.now())
+  const sunsetText = useMemo(() => {
+    const times = sunTimes(today, start)
+    return times ? new Date(times.sunset).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) : undefined
+  }, [start, locale, today])
 
   const shown = result?.ok ? result.route : result?.closest
   const markers = useMemo(() => ({ start, end: settings.mode === 'oneway' ? end : undefined }), [start, end, settings.mode])
@@ -426,7 +482,34 @@ export default function App() {
             </div>
           </div>
 
+          <SafetyBox
+            safeRoute={settings.safeRoute}
+            nightAware={settings.nightAware}
+            onChange={update}
+            sunset={sunsetText}
+            avoid={avoid}
+            onAvoid={(name) => changeAvoid(addAvoid(avoid, name))}
+            onUnavoid={(name) => changeAvoid(removeAvoid(avoid, name))}
+            streets={streets}
+            picking={pickingAvoid}
+            onPick={(on) => {
+              setPickingAvoid(on)
+              setPickNote(undefined)
+            }}
+            pickNote={pickNote}
+          />
           <ResultBox result={result} onUseSteps={(steps) => setSteps(clampSteps(steps))} />
+          {safePlan && result && (
+            <SafetyNotice
+              plan={safePlan}
+              usingNormal={usingNormal}
+              onUseNormal={() => {
+                if (!safePlan.normal) return
+                setUsingNormal(true)
+                setResult(safePlan.normal)
+              }}
+            />
+          )}
 
           {result?.ok && (
             <div className="box quest-start">
@@ -592,5 +675,37 @@ function FieldNote(props: {
     <p id={props.id} className={`field-note ${note ? 'warn' : ''}`} role="status" aria-live="polite">
       {text}
     </p>
+  )
+}
+
+function SafetyNotice({ plan, usingNormal, onUseNormal }: { plan: SafePlan; usingNormal: boolean; onUseNormal: () => void }) {
+  const { t } = useI18n()
+  const pct = (v: number) => Math.round(v * 100)
+  const lines: { text: string; ok: boolean }[] = []
+  if (usingNormal) lines.push({ text: t('safety.usingNormal'), ok: false })
+  else {
+    if (plan.notice === 'safeInfeasible') lines.push({ text: t('safety.infeasible'), ok: false })
+    if (plan.notice === 'avoidIgnored' && plan.avoidedUsed?.length) {
+      lines.push({ text: t('safety.avoidIgnored', { names: plan.avoidedUsed.join(', '), n: plan.avoidedUsed.length }), ok: false })
+    }
+    if (plan.safety) lines.push({ text: t('safety.summary', { pref: pct(plan.safety.preferred), lit: pct(plan.safety.lit) }), ok: true })
+    if (plan.night) lines.push({ text: t('safety.dark'), ok: true })
+  }
+  if (lines.length === 0) return null
+  return (
+    <div className="box safety-notice" aria-live="polite" data-testid="safety-notice">
+      {lines.map((l) => (
+        <p key={l.text} className={l.ok ? 'hint' : 'msg bad'}>
+          {l.text}
+        </p>
+      ))}
+      {plan.normal && !usingNormal && (
+        <div className="actions">
+          <button type="button" className="pix-btn" onClick={onUseNormal}>
+            {t('safety.useNormal')}
+          </button>
+        </div>
+      )}
+    </div>
   )
 }

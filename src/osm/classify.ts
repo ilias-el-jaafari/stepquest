@@ -120,3 +120,33 @@ export function isCrossing(tags: Tags): boolean {
 export function isTunnel(tags: Tags): boolean {
   return (tags.tunnel !== undefined && tags.tunnel !== 'no') || Number(tags.layer ?? 0) < 0
 }
+
+const ALLEY_SERVICE = new Set(['alley', 'driveway', 'parking_aisle', 'drive-through'])
+const LIVELY_AMENITY = new Set([
+  'restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'pharmacy', 'bank', 'ice_cream', 'library', 'police',
+  'marketplace', 'community_centre', 'theatre', 'cinema',
+])
+const INDUSTRIAL_LANDUSE = new Set(['industrial', 'railway', 'construction', 'brownfield', 'depot'])
+
+/** Safety proxy flags (SAFETY_* in types.ts) for a walkable way. */
+export function safetyFlags(tags: Tags): number {
+  let f = 0
+  const lit = tags.lit
+  if (lit === 'no' || lit === 'disused') f |= 2
+  else if (lit && lit !== 'unknown') f |= 1 // yes, 24/7, automatic, sunset-sunrise, limited…
+  const sw = tags.sidewalk ?? tags['sidewalk:both'] ?? tags['sidewalk:left'] ?? tags['sidewalk:right']
+  if ((sw && sw !== 'no' && sw !== 'none' && sw !== 'separate') || tags.footway === 'sidewalk') f |= 4
+  if (tags.highway === 'service' && tags.service && ALLEY_SERVICE.has(tags.service)) f |= 8
+  if (isTunnel(tags) || tags.covered === 'yes' || tags.tunnel === 'building_passage' || tags.indoor === 'yes') f |= 16
+  return f
+}
+
+/** Whether a node or building makes the street around it lively (shops, cafés, bars…). */
+export function isLively(tags: Tags): boolean {
+  return (tags.shop !== undefined && tags.shop !== 'vacant' && tags.shop !== 'no') || (tags.amenity !== undefined && LIVELY_AMENITY.has(tags.amenity))
+}
+
+/** Industrial or railway land, which is empty and badly lit at night. */
+export function isIndustrialLand(tags: Tags): boolean {
+  return tags.landuse !== undefined && INDUSTRIAL_LANDUSE.has(tags.landuse)
+}

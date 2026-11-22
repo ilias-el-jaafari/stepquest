@@ -17,6 +17,8 @@ export class WalkGraph {
   /** Undirected edge id for each half-edge (shared by both directions). */
   readonly edgeIds: Uint32Array
   readonly edgeCount: number
+  /** Index into OsmData.ways of the way each undirected edge belongs to. */
+  readonly edgeWay: Int32Array
   /** Connected component label per node; component 0 is the largest. */
   readonly component: Int32Array
   private readonly projection: LocalProjection
@@ -26,6 +28,7 @@ export class WalkGraph {
   constructor(data: OsmData) {
     const map = new Map<number, number>()
     const pairs: [number, number][] = []
+    const pairWay: number[] = []
     const seen = new Set<string>()
     // Only route inside the loaded box: ways that leave it are clipped, so the
     // walk always stays on the part of the map we actually draw.
@@ -35,8 +38,8 @@ export class WalkGraph {
       const lo = data.lon[n] ?? 0
       return la >= south && la <= north && lo >= west && lo <= east
     }
-    for (const way of data.ways) {
-      if (!way.walkable) continue
+    data.ways.forEach((way, wayIndex) => {
+      if (!way.walkable) return
       for (let i = 1; i < way.nodes.length; i++) {
         const a = way.nodes[i - 1]!
         const b = way.nodes[i]!
@@ -46,8 +49,9 @@ export class WalkGraph {
         seen.add(key)
         for (const n of [a, b]) if (!map.has(n)) map.set(n, map.size)
         pairs.push([map.get(a)!, map.get(b)!])
+        pairWay.push(wayIndex)
       }
-    }
+    })
     this.size = map.size
     this.lat = new Float64Array(this.size)
     this.lon = new Float64Array(this.size)
@@ -67,6 +71,7 @@ export class WalkGraph {
     this.lengths = new Float64Array(pairs.length * 2)
     this.edgeIds = new Uint32Array(pairs.length * 2)
     this.edgeCount = pairs.length
+    this.edgeWay = Int32Array.from(pairWay)
     pairs.forEach(([a, b], e) => {
       const len = haversine(this.point(a), this.point(b))
       const ia = fill[a]!++
@@ -144,9 +149,11 @@ export class WalkGraph {
 
   /**
    * A* shortest path. `penalty[edgeId]` multiplies an edge's cost (≥ 1), which
-   * steers later legs of a loop away from streets already used.
+   * steers later legs of a loop away from streets already used. An infinite
+   * penalty closes the edge. `minPenalty` is the smallest value in `penalty`
+   * (below 1 when some streets are preferred), which keeps A* exact.
    */
-  shortestPath(from: number, to: number, penalty?: Float32Array): { nodes: number[]; edges: number[]; length: number } | undefined {
+  shortestPath(from: number, to: number, penalty?: Float32Array, minPenalty = 1): { nodes: number[]; edges: number[]; length: number } | undefined {
     if (from === to) return { nodes: [from], edges: [], length: 0 }
     const g = new Float64Array(this.size).fill(Infinity)
     const prev = new Int32Array(this.size).fill(-1)
@@ -155,7 +162,8 @@ export class WalkGraph {
     const heap = new MinHeap()
     const tx = this.x[to]!
     const ty = this.y[to]!
-    const h = (n: number) => Math.hypot(this.x[n]! - tx, this.y[n]! - ty) * 0.995
+    const hScale = 0.995 * Math.min(1, minPenalty)
+    const h = (n: number) => Math.hypot(this.x[n]! - tx, this.y[n]! - ty) * hScale
     g[from] = 0
     heap.push(h(from), from)
     while (heap.size) {
@@ -169,6 +177,7 @@ export class WalkGraph {
         if (closed[m]) continue
         const e = this.edgeIds[i]!
         const cost = this.lengths[i]! * (penalty ? penalty[e]! : 1)
+        if (cost === Infinity) continue
         const gm = gn + cost
         if (gm < g[m]!) {
           g[m] = gm

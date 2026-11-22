@@ -1,9 +1,12 @@
 // Builds the bundled offline demo area from saved Overpass responses.
 // Usage: node scripts/build-fixture.ts <out.json> <overpass.json> [more.json ...]
 // Inputs are merged (e.g. the main `out geom` extract plus a landmark `out center` extract).
+// Set KEEP_POIS=<old fixture.json> to carry over landmarks from a previous build
+// (handy when the landmark `out center` query cannot be re-run).
 // The data is © OpenStreetMap contributors, available under the ODbL.
 import { readFileSync, writeFileSync } from 'node:fs'
-import { encodeOsm } from '../src/osm/codec.ts'
+import { decodeOsm, encodeOsm, type CompactOsm } from '../src/osm/codec.ts'
+import { dedupePois } from '../src/osm/landmarks.ts'
 import { normalizeOverpass, type OverpassResponse } from '../src/osm/normalize.ts'
 import { DEMO_AREA } from '../src/osm/demoArea.ts'
 
@@ -26,6 +29,10 @@ for (const input of inputs) {
   }
 }
 const data = normalizeOverpass({ elements: [...merged.values()], osm3s: { timestamp_osm_base: timestamp } }, DEMO_AREA.bbox, 'fixture')
+if (process.env.KEEP_POIS) {
+  const old = decodeOsm(JSON.parse(readFileSync(process.env.KEEP_POIS, 'utf8')) as CompactOsm)
+  data.pois = dedupePois([...old.pois, ...data.pois])
+}
 writeFileSync(output, JSON.stringify(encodeOsm(data)))
 const counts = new Map<string, number>()
 for (const p of data.pois) counts.set(p.kind, (counts.get(p.kind) ?? 0) + 1)
