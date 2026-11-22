@@ -1,5 +1,5 @@
 import { Dir8, gridMask4, gridMask8, reduceMask8 } from '../tiles/autotile.ts'
-import { Corner, diagonalCorners, isRoad } from '../tiles/diagonal.ts'
+import { Corner, diagonalCorners, isRoad, rampAt, rampCode, rampCovers } from '../tiles/diagonal.ts'
 import { Terrain, type TileGrid } from '../tiles/grid.ts'
 import { tileHash, type TileSpec } from './tileset.ts'
 
@@ -12,6 +12,8 @@ export function roadMask8(grid: TileGrid, tx: number, ty: number): number {
     const x = tx + dx
     const y = ty + dy
     if (!grid.inBounds(x, y)) return { road: true, c: 0 }
+    const ramp = rampAt(grid, x, y)
+    if (ramp) return { road: dx !== 0 && dy !== 0 ? true : rampCovers(ramp, -dx, -dy), c: 0 }
     const c = diagonalCorners(grid, x, y)
     return { road: isRoad(grid.terrainAt(x, y)) || c === -1, c: Math.max(0, c) }
   }
@@ -45,7 +47,8 @@ const BARRIER_ON = new Set<number>([Terrain.ground, Terrain.park, Terrain.plaza]
 export function tileSpecAt(grid: TileGrid, tx: number, ty: number): TileSpec {
   let terrain = grid.terrainAt(tx, ty) ?? Terrain.ground
   const i = grid.index(tx, ty)
-  const diag = diagonalCorners(grid, tx, ty)
+  const ramp = rampAt(grid, tx, ty)
+  const diag = ramp ? 0 : diagonalCorners(grid, tx, ty)
   if (diag === -1) terrain = Terrain.road
   const road = terrain === Terrain.road
   const barrier = BARRIER_ON.has(terrain) ? (grid.barrier[i] ?? 0) : 0
@@ -59,5 +62,6 @@ export function tileSpecAt(grid: TileGrid, tx: number, ty: number): TileSpec {
     barrier,
     bm4: barrier ? barrierMask(grid, tx, ty, barrier) : 0,
     diag: diag > 0 ? diag : 0,
+    ramp: rampCode(ramp),
   }
 }

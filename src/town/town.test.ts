@@ -8,7 +8,10 @@ import type { OsmData } from '../osm/types.ts'
 import { ARROW_PATTERNS, chevrons, dir8, routeCells, smoothPolyline } from '../render/routePath.ts'
 import { facingFrom, spriteIsValid, WALKER, walkFrame } from '../render/sprites.ts'
 import { paintFrontFence, paintGardenTree, paintHouse, paintLandmark } from '../render/structures.ts'
-import { Corner, diagonalCorners } from '../tiles/diagonal.ts'
+import { Corner, decodeRamp, diagonalCorners, rampAt } from '../tiles/diagonal.ts'
+import { roadMask8, tileSpecAt } from '../render/tileSpecs.ts'
+import { rampDepth } from '../render/tileset.ts'
+import { Dir8 } from '../tiles/autotile.ts'
 import { Terrain, TileGrid } from '../tiles/grid.ts'
 import { buildTileGrid } from '../tiles/rasterize.ts'
 import { largestRect, layoutTown, LOT, rng, subdivide, townFor } from './layout.ts'
@@ -371,5 +374,42 @@ describe('structure painters', () => {
     paintFrontFence(ctx, 0, 0, false)
     paintFrontFence(ctx, 0, 0, true)
     expect(ctx.calls).toBeGreaterThan(10)
+  })
+})
+
+describe('shallow diagonal streets', () => {
+  const g = () =>
+    gridFrom(`
+      ...........
+      RRRR.......
+      ...RRRR....
+      ......RRRR.
+      ...........`)
+
+  it('spreads one long wedge over the flat run between two steps', () => {
+    const grid = g()
+    for (const x of [4, 5, 6]) expect(rampAt(grid, x, 1)).toEqual({ side: 2, highNeg: true, len: 3, index: x - 4 })
+    // The last run has no step down after it, so it keeps the plain look.
+    expect(rampAt(grid, 7, 2)).toBeNull()
+    // Road tiles and single steps are not ramps.
+    expect(rampAt(grid, 3, 1)).toBeNull()
+    const spec = tileSpecAt(grid, 4, 1)
+    expect(spec.diag).toBe(0)
+    expect(decodeRamp(spec.ramp ?? 0)).toEqual(rampAt(grid, 4, 1))
+    // The street below takes the wedge as asphalt: no kerb across it.
+    expect(roadMask8(grid, 5, 2) & Dir8.N).toBe(Dir8.N)
+  })
+
+  it('draws a straight kerb line: full depth at the high end, none at the low end', () => {
+    const grid = g()
+    const tiles = [4, 5, 6].map((x) => rampAt(grid, x, 1)!)
+    // Depth of the kerb line above the street, column by column across the run.
+    const edge = tiles.flatMap((r) => Array.from({ length: 16 }, (_, x) => [...Array(16).keys()].filter((y) => rampDepth(r, x, y) >= 0).length))
+    expect(edge[0]).toBe(16)
+    expect(edge[47]).toBe(0)
+    for (let i = 1; i < edge.length; i++) {
+      expect(edge[i]!).toBeLessThanOrEqual(edge[i - 1]!)
+      expect(edge[i - 1]! - edge[i]!).toBeLessThanOrEqual(1)
+    }
   })
 })

@@ -1,5 +1,5 @@
 import type { LandmarkKind } from '../osm/types.ts'
-import { diagonalCorners } from '../tiles/diagonal.ts'
+import { diagonalCorners, rampAt } from '../tiles/diagonal.ts'
 import { BUILDING_STYLES, PARK_STYLES, Terrain, type TileGrid } from '../tiles/grid.ts'
 
 /**
@@ -326,9 +326,9 @@ export function layoutTown(grid: TileGrid): TownLayout {
     const lots = subdivide({ x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 }, random)
     for (const lot of lots) {
       const mask = new Uint8Array(lot.w * lot.h)
-      // Tiles cut by a diagonal street corner stay garden so the smooth kerb shows.
+      // Tiles cut by a diagonal street corner or ramp stay garden so the smooth kerb shows.
       for (let y = 0; y < lot.h; y++)
-        for (let x = 0; x < lot.w; x++) mask[y * lot.w + x] = inBlock.has(grid.index(lot.x + x, lot.y + y)) && diagonalCorners(grid, lot.x + x, lot.y + y) === 0 ? 1 : 0
+        for (let x = 0; x < lot.w; x++) mask[y * lot.w + x] = inBlock.has(grid.index(lot.x + x, lot.y + y)) && diagonalCorners(grid, lot.x + x, lot.y + y) === 0 && !rampAt(grid, lot.x + x, lot.y + y) ? 1 : 0
       // Up to three houses per lot: odd-shaped lots (diagonal blocks) get filled piece by piece.
       for (let k = 0; k < 3; k++) {
         const r = largestRect(mask, lot.w, lot.h)

@@ -1,5 +1,5 @@
 import { Dir4, Dir8 } from '../tiles/autotile.ts'
-import { Corner } from '../tiles/diagonal.ts'
+import { Corner, decodeRamp, type Ramp } from '../tiles/diagonal.ts'
 import { PARK_STYLES, Terrain, type TerrainId } from '../tiles/grid.ts'
 import { P } from './palette.ts'
 
@@ -22,11 +22,13 @@ export type TileSpec = {
   bm4?: number
   /** Asphalt triangles that smooth diagonal streets: NE 1, SE 2, SW 4, NW 8. */
   diag?: number
+  /** Share of a long asphalt wedge along a shallow diagonal street (rampCode). */
+  ramp?: number
 }
 
 
 export function tileKey(s: TileSpec): string {
-  return `${s.terrain}:${s.m4}:${s.m8}:${s.variant}:${s.vertical ? 1 : 0}:${s.style ?? 0}:${s.barrier ?? 0}:${s.bm4 ?? 0}:${s.diag ?? 0}`
+  return `${s.terrain}:${s.m4}:${s.m8}:${s.variant}:${s.vertical ? 1 : 0}:${s.style ?? 0}:${s.barrier ?? 0}:${s.bm4 ?? 0}:${s.diag ?? 0}:${s.ramp ?? 0}`
 }
 
 type Ctx = CanvasRenderingContext2D
@@ -387,6 +389,8 @@ export function paintTile(ctx: Ctx, ox: number, oy: number, spec: TileSpec): voi
   }
   if (spec.barrier) paintBarrier(ctx, ox, oy, spec.barrier, spec.bm4 ?? 0)
   if (spec.diag) paintDiagonals(ctx, ox, oy, spec.diag)
+  const ramp = decodeRamp(spec.ramp ?? 0)
+  if (ramp) paintRamp(ctx, ox, oy, ramp)
 }
 
 /** Fence, hedge or wall running through the tile towards connected neighbours. */
@@ -428,6 +432,31 @@ function paintDiagonals(ctx: Ctx, ox: number, oy: number, diag: number) {
       if (inside < 0) continue
       const asphalt = (x + y) % 4 === 0 ? P.asphaltB : P.asphaltA
       rect(ctx, ox + x, oy + y, 1, 1, inside <= 1 ? P.curb : inside === 2 ? P.curbShadow : asphalt)
+    }
+  }
+}
+
+/**
+ * Pixels of a ramp tile inside the wedge, as depth in pixels past the kerb
+ * line (negative outside). The wedge spans the whole run: full tile depth at
+ * the high end, nothing at the low end, so the kerb runs straight.
+ */
+export function rampDepth(r: Ramp, x: number, y: number): number {
+  const px = (x + 0.5) / 16
+  const py = (y + 0.5) / 16
+  const v = r.side === 0 ? py : r.side === 2 ? 1 - py : r.side === 1 ? 1 - px : px
+  const w = r.side === 0 || r.side === 2 ? px : py
+  const u = r.index + (r.highNeg ? w : 1 - w)
+  return (1 - u / r.len - v) * 16
+}
+
+function paintRamp(ctx: Ctx, ox: number, oy: number, r: Ramp) {
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const d = rampDepth(r, x, y)
+      if (d < 0) continue
+      const asphalt = (x + y) % 4 === 0 ? P.asphaltB : P.asphaltA
+      rect(ctx, ox + x, oy + y, 1, 1, d < 2 ? P.curb : d < 3 ? P.curbShadow : asphalt)
     }
   }
 }
