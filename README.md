@@ -28,7 +28,8 @@ Phase 4 of 5 done: route planner and tile map, GPS tracking and checkpoints, the
 
 ## On your phone
 
-- The map fills the screen; the step goal and the start button sit in a framed panel above a bottom tab bar: **Map** (planner), **Bag** (quest log, start point, streets to avoid, demo walk), **Hero** (today's steps and your stride) and **Settings** (sound, language, help, map data). On wide screens the tab bar becomes a side rail and the active tab shows next to the map.
+- The map fills the screen; the step goal and the start button sit in a framed panel above a bottom tab bar: **Map** (planner), **Bag** (quest log, start point, streets to avoid, demo walk), **Hero** (today's steps as a segmented meter, your stride, and your walker's look: boy or girl, with skin, hair, cap, shirt and trousers from small retro palettes; the map walker and the header avatar wear it) and **Settings** (sound, language, help, map data). On wide screens the tab bar becomes a side rail and the active tab shows next to the map.
+- During a quest the map is the screen of a plain handheld console (no brand, no extra buttons). Panels and buttons are 8-bit: notched corners, no rounding, every control at least 48 px to press, a press-down step, a quiet click on the effects channel (volume and mute apply) and a tiny buzz on Android. Menus and sheets move in short steps; with reduced motion they do not move.
 - **Add to Home Screen** opens it full screen like an app (web app manifest, iPhone meta tags, notch and home-indicator safe areas). The pixel icons are rendered from `public/favicon.svg` with `node scripts/build-icons.mjs`.
 - **Steps today** in the header adds up real walks (simulated ones do not count) and resets at midnight.
 
@@ -51,7 +52,7 @@ npm run lint
 npm run build
 ```
 
-Screenshots: `npm run build && npx vite preview --host 127.0.0.1 --port 4188`, then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots` (phase 1) `PHASE2_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase2.mjs` (phase 2) `PHASE3_URL=http://127.0.0.1:4188/stepquest/ PHASE3_TAG=after node scripts/screenshot-phase3.mjs` (phase 3) `PHASE4_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase4.mjs` (phase 4, also checks that audio runs) `SAFE_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-safe-route.mjs` (safe routes) or `MD_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-mobile-design.mjs` (mobile design: every tab, desktop, quest dialogue).
+Screenshots: `npm run build && npx vite preview --host 127.0.0.1 --port 4188`, then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots` (phase 1) `PHASE2_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase2.mjs` (phase 2) `PHASE3_URL=http://127.0.0.1:4188/stepquest/ PHASE3_TAG=after node scripts/screenshot-phase3.mjs` (phase 3) `PHASE4_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-phase4.mjs` (phase 4, also checks that audio runs) `SAFE_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-safe-route.mjs` (safe routes) `MD_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-mobile-design.mjs` (mobile design: every tab, desktop, quest dialogue) or `RETRO_URL=http://127.0.0.1:4188/stepquest/ node scripts/screenshot-retro.mjs` (retro look: press areas, console screen, Hero tab).
 
 Offline map extract: save Overpass responses for the demo area (the main query with `out geom`, which also fetches industrial land, shops and amenities for safe routing, plus barriers/squares and landmark points with `out tags center`), then `npm run fixture -- src/data/benicalap.osm.json main.json extra.json poi.json`. `KEEP_POIS=old.json` keeps the landmarks of an earlier extract.
 

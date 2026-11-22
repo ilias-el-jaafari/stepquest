@@ -91,6 +91,7 @@ export class MapRenderer {
   private route: RouteShape | undefined
   private routeCells: RouteCell[] = []
   private routeLine: (RouteCell & { cx: number; cy: number })[] = []
+  private walkerSprites: Record<Facing, Sprite[]> = WALKER
   private walkedLines: (RouteCell & { cx: number; cy: number })[][] = []
   /** Avoided streets in tile coordinates. */
   private avoided: { x: number; y: number }[][] = []
@@ -147,6 +148,14 @@ export class MapRenderer {
 
   get avoidedCount(): number {
     return this.avoided.length
+  }
+
+  /** Dress the walker (sprites for the four directions). */
+  setWalker(sprites: Record<Facing, Sprite[]>): void {
+    if (sprites === this.walkerSprites) return
+    for (const frames of Object.values(this.walkerSprites)) for (const f of frames) this.spriteCache.delete(f)
+    this.walkerSprites = sprites
+    this.requestRender()
   }
 
   setQuest(quest: QuestOverlay | undefined): void {
@@ -569,7 +578,7 @@ export class MapRenderer {
     // Outside a quest (planning screen) the walker just stands at the start.
     const pos = this.quest?.player ? (this.walkerPos(now) ?? target) : target
     const moving = this.quest?.player !== undefined && now - w.movedAt < WALK_HOLD_MS && !prefersReducedMotion()
-    const frames = WALKER[this.quest?.player ? w.facing : 'down']
+    const frames = this.walkerSprites[this.quest?.player ? w.facing : 'down']
     const sprite = frames[walkFrame(now, moving)] ?? frames[0]!
     const s = toScreen(pos.x, pos.y)
     const size = 16 * spriteScale

@@ -1402,20 +1402,6 @@ button.hud-msg.sound-resume {
   color: var(--accent-dark);
 }
 
-.hp-bar {
-  height: 16px;
-  margin-top: 12px;
-  background: #3a3950;
-  border: 3px solid #000;
-  box-shadow: inset 0 0 0 2px #fff;
-}
-
-.hp-bar span {
-  display: block;
-  height: 100%;
-  background: repeating-linear-gradient(90deg, #7fe07a 0 6px, #5cbf55 6px 8px);
-}
-
 /* Settings: the sound controls inline instead of a pop-up. */
 .sound-inline {
   font-size: 8px;
@@ -1632,4 +1618,536 @@ details.advanced summary {
   cursor: pointer;
   font-size: 8px;
   margin-bottom: 8px;
+}
+
+/* ---------- Retro UX: 8-bit panels, console frame, big touch targets, stepwise motion ---------- */
+
+:root {
+  /* Stepped outlines: four offset copies of the edge leave the corners notched, like 8-bit art. */
+  --out3: 0 -3px 0 #000, 0 3px 0 #000, -3px 0 0 #000, 3px 0 0 #000;
+  --out4: 0 -4px 0 #000, 0 4px 0 #000, -4px 0 0 #000, 4px 0 0 #000;
+  --drop4: 4px 8px 0 #000, 8px 4px 0 #000;
+  --plastic: #c3bfd2;
+  --plastic-dark: #8e8aa6;
+  --bezel: #34324a;
+  /* Smallest press area for any control. */
+  --hit: 48px;
+}
+
+img,
+svg,
+canvas {
+  image-rendering: pixelated;
+}
+
+/* Panels: no rounded corners, notched outline and a stepped drop shadow. */
+.box,
+.hud,
+.complete-box,
+.sound-panel,
+.info-panel {
+  border: none;
+  border-radius: 0;
+  margin: 4px;
+  box-shadow:
+    var(--out4),
+    var(--drop4),
+    inset 0 0 0 3px var(--frame),
+    inset 0 0 0 5px var(--paper);
+}
+
+.box {
+  padding: 18px 18px 16px;
+}
+
+.hud {
+  padding: 14px 16px;
+  margin: 0;
+}
+
+.complete-box {
+  box-shadow:
+    var(--out4),
+    var(--drop4),
+    inset 0 0 0 3px var(--gold),
+    inset 0 0 0 5px var(--paper);
+}
+
+.dialog {
+  border: none;
+  border-radius: 0;
+  padding: 18px 20px 20px;
+  box-shadow:
+    var(--out4),
+    4px 8px 0 rgba(0, 0, 0, 0.6),
+    8px 4px 0 rgba(0, 0, 0, 0.6),
+    inset 0 0 0 3px #fbf7ec,
+    inset 0 0 0 5px #4a8ff0;
+}
+
+.dialog[data-kind='finish'] {
+  box-shadow:
+    var(--out4),
+    4px 8px 0 rgba(0, 0, 0, 0.6),
+    8px 4px 0 rgba(0, 0, 0, 0.6),
+    inset 0 0 0 3px #fbf7ec,
+    inset 0 0 0 5px var(--gold);
+}
+
+.hud-msg,
+.map-banner {
+  border: none;
+  box-shadow: var(--out3), 3px 6px 0 #000, 6px 3px 0 #000;
+}
+
+.map-attribution,
+.quest .map-attribution,
+.layout .map-attribution {
+  border-radius: 0;
+}
+
+.steps-pill {
+  border: none;
+  border-radius: 0;
+  box-shadow: var(--out3), inset 0 0 0 2px #7fe07a;
+}
+
+.avatar {
+  border: none;
+  border-radius: 0;
+  margin: 3px;
+  box-shadow: var(--out3), inset 0 0 0 2px #fff;
+}
+
+/* Buttons: chunky bevels with a notched outline; they sink when pressed. */
+.pix-btn {
+  --hi: #fff;
+  --lo: #c9bfa3;
+  position: relative;
+  border: none;
+  border-radius: 0;
+  min-height: var(--hit);
+  padding: 13px 15px;
+  box-shadow: var(--out3), inset -3px -3px 0 var(--lo), inset 3px 3px 0 var(--hi);
+  transition: transform 0.15s steps(2);
+}
+
+.pix-btn.on {
+  --hi: #9cc4ee;
+  --lo: var(--frame-dark);
+}
+
+.pix-btn.primary {
+  --hi: #ff9aac;
+  --lo: var(--accent-dark);
+}
+
+.planner .pix-btn.primary {
+  --hi: #8ff0e4;
+  --lo: #1d7f75;
+}
+
+.pix-btn.danger {
+  --hi: #fff0f1;
+  --lo: #d89aa0;
+}
+
+.pix-btn,
+.pix-btn.on,
+.pix-btn.primary,
+.planner .pix-btn.primary {
+  box-shadow: var(--out3), inset -3px -3px 0 var(--lo), inset 3px 3px 0 var(--hi);
+}
+
+.pix-btn:active:not(:disabled),
+.planner .pix-btn.primary:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: var(--out3), inset 3px 3px 0 var(--lo);
+}
+
+/* Compact buttons keep their look but get an invisible press area of at least 48 px. */
+.pix-btn::after,
+.chip::after,
+.link-btn::after {
+  content: '';
+  position: absolute;
+  top: min(-3px, calc((100% - var(--hit)) / 2));
+  bottom: min(-3px, calc((100% - var(--hit)) / 2));
+  left: min(-3px, calc((100% - var(--hit)) / 2));
+  right: min(-3px, calc((100% - var(--hit)) / 2));
+}
+
+.chip,
+.link-btn {
+  position: relative;
+}
+
+/* Rows that are pressed as a whole are simply tall enough. */
+.check,
+summary {
+  min-height: var(--hit);
+}
+
+summary {
+  padding: 14px 0;
+}
+
+select {
+  min-height: var(--hit);
+}
+
+.pix-btn.small {
+  width: var(--hit);
+  height: var(--hit);
+}
+
+.pix-btn.small-text {
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+.pix-btn.big {
+  min-height: 52px;
+}
+
+.segmented.small {
+  gap: 8px;
+}
+
+.segmented.small .pix-btn {
+  min-height: 40px;
+}
+
+.planner-toggle {
+  min-height: 32px;
+}
+
+.planner-row {
+  gap: 8px;
+}
+
+.presets {
+  gap: 8px;
+}
+
+.chip {
+  border: none;
+  padding: 8px 10px;
+  margin: 2px;
+  box-shadow: 0 -2px 0 #000, 0 2px 0 #000, -2px 0 0 #000, 2px 0 0 #000;
+}
+
+.chip:active {
+  transform: translateY(2px);
+}
+
+.map-buttons {
+  gap: 10px;
+  top: 13px;
+  right: 13px;
+}
+
+.hud-buttons {
+  gap: 10px;
+}
+
+.tab:active .tab-icon,
+.swatch:active {
+  transform: translateY(2px);
+}
+
+.tab {
+  position: relative;
+}
+
+/* Selected tab: a blinking ▶ cursor beside its icon (drawn with borders, the font has no glyph). */
+.tab.on::before {
+  content: '';
+  position: absolute;
+  top: 17px;
+  left: calc(50% - 32px);
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 6px solid var(--gold);
+  animation: cursor-blink 0.9s steps(2, jump-none) infinite;
+}
+
+@keyframes cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.tab.on .tab-icon {
+  border: none;
+  box-shadow: var(--out3), inset 0 0 0 2px var(--gold);
+}
+
+/* Bottom sheets come in in four steps. */
+.sheet:not(.planner):not([hidden]) {
+  animation: sheet-in 0.2s steps(4) both;
+}
+
+.planner-edit {
+  animation: sheet-in 0.16s steps(3) both;
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
+/* Today's steps: a segmented meter that fills one block at a time. */
+.step-meter {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 3px;
+  height: 22px;
+  margin: 14px 4px 0;
+  padding: 3px;
+  background: #000;
+  box-shadow: var(--out3);
+}
+
+.step-meter .seg {
+  background: #3a3950;
+  box-shadow: inset 2px 2px 0 #2a293c;
+}
+
+.step-meter .seg.on {
+  background: #7fe07a;
+  box-shadow: inset -2px -2px 0 #3f9a3a, inset 2px 2px 0 #c8f7c0;
+  animation: seg-in 0.2s steps(2) both;
+}
+
+@keyframes seg-in {
+  from {
+    background: #fff;
+  }
+}
+
+/* Hero tab: the walker and its colours. */
+.look-stage {
+  display: grid;
+  place-items: center;
+  height: 128px;
+  margin: 4px 3px 12px;
+  background:
+    linear-gradient(#000, #000) 0 100% / 100% 3px no-repeat,
+    repeating-linear-gradient(90deg, #8fd07a 0 8px, #7fc46a 8px 16px) 0 100% / 100% 28px no-repeat,
+    #bfe6f5;
+  box-shadow: var(--out3);
+}
+
+.walker-preview {
+  display: block;
+  margin-top: 8px;
+}
+
+.walker-preview svg {
+  display: block;
+}
+
+.look-row {
+  margin-top: 12px;
+}
+
+.look-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 8px;
+  color: var(--frame-dark);
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--hit));
+  gap: 10px;
+  padding: 3px;
+}
+
+.swatch {
+  width: var(--hit);
+  height: var(--hit);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--swatch);
+  cursor: pointer;
+  box-shadow: var(--out3), inset -4px -4px 0 rgba(0, 0, 0, 0.25), inset 4px 4px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 0.15s steps(2);
+}
+
+.swatch.on {
+  box-shadow: 0 -3px 0 var(--gold), 0 3px 0 var(--gold), -3px 0 0 var(--gold), 3px 0 0 var(--gold), inset 0 0 0 3px #000, inset 0 0 0 6px #fff;
+}
+
+.swatch:focus-visible,
+.pix-btn:focus-visible {
+  outline: 3px dashed var(--gold);
+  outline-offset: 5px;
+}
+
+/* ---------- Quest: the map is the screen of a generic handheld console ---------- */
+.quest {
+  background: var(--ink);
+}
+
+.console {
+  position: absolute;
+  inset: 0;
+  padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.08) 0 2px, transparent 2px 4px),
+    var(--plastic);
+  box-shadow: inset 0 0 0 3px var(--plastic-dark);
+}
+
+.console-bezel {
+  position: relative;
+  height: 100%;
+  margin: 3px;
+  padding: 16px 8px 8px;
+  background: var(--bezel);
+  box-shadow: var(--out3), inset 0 -3px 0 #24233a, inset 0 3px 0 #4a4866;
+}
+
+/* Two thin stripes across the top of the bezel, and the power light. */
+.console-bezel::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 26px;
+  right: 10px;
+  height: 4px;
+  background: linear-gradient(#ff4f6d 0 1px, transparent 1px 3px, #5d93c9 3px 4px);
+  opacity: 0.8;
+}
+
+.console-led {
+  position: absolute;
+  top: 5px;
+  left: 10px;
+  width: 6px;
+  height: 6px;
+  background: #ff4f6d;
+  box-shadow: 0 0 0 1px #000, 0 0 6px #ff4f6d;
+}
+
+.console-screen {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+}
+
+.console-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 3px #000;
+}
+
+/* Inside the screen the console already keeps clear of the notch and the home bar. */
+.console-screen .hud-top {
+  top: 10px;
+  left: 10px;
+  right: 72px;
+}
+
+.console-screen .hud-bottom {
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+}
+
+.console-screen .hud-msg {
+  top: 112px;
+  left: 10px;
+  right: 72px;
+}
+
+.quest .console-screen .map-buttons {
+  top: 13px;
+  right: 13px;
+}
+
+.console-screen .map-attribution,
+.quest .console-screen .map-attribution {
+  bottom: 118px;
+}
+
+.console-screen .dialog-wrap {
+  bottom: 140px;
+}
+
+@media (min-width: 900px) {
+  .quest {
+    display: grid;
+    place-items: center;
+    background:
+      radial-gradient(circle at 2px 2px, #2d2b52 1px, transparent 1.5px) 0 0 / 8px 8px,
+      var(--ink);
+  }
+
+  .console {
+    position: relative;
+    inset: auto;
+    width: min(1200px, calc(100% - 48px));
+    height: calc(100% - 48px);
+    padding: 18px;
+    box-shadow: var(--out4), var(--drop4), inset 0 0 0 3px var(--plastic-dark);
+  }
+
+  .console-bezel {
+    padding: 24px 16px 16px;
+  }
+
+  .console-bezel::before {
+    top: 9px;
+    left: 40px;
+    right: 16px;
+  }
+
+  .console-led {
+    top: 8px;
+    left: 16px;
+    width: 8px;
+    height: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab.on::before,
+  .sheet:not(.planner):not([hidden]),
+  .planner-edit,
+  .step-meter .seg.on {
+    animation: none;
+  }
+  .pix-btn,
+  .swatch {
+    transition: none;
+  }
+  .pix-btn:active:not(:disabled),
+  .planner .pix-btn.primary:active:not(:disabled),
+  .tab:active .tab-icon,
+  .swatch:active,
+  .chip:active {
+    transform: none;
+  }
+}
+
+/* Long directions shorten with an ellipsis instead of running under the gem count. */
+.hud-top {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.hud-next > div {
+  min-width: 0;
 }

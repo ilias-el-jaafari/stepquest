@@ -140,162 +140,170 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
 
   return (
     <div className="quest" data-testid="quest">
-      <div className="quest-map">
-        <MapView
-          grid={grid}
-          route={quest.route}
-          markers={markers}
-          focus={focus}
-          focusKey={`quest:${quest.id}`}
-          onTap={() => {}}
-          home={player}
-          quest={overlay}
-          follow={follow && quest.finishedAt === undefined}
-          pickup={pickup}
-          onUserPan={() => setFollow(false)}
-          onLocate={() => setFollow(true)}
-        />
-      </div>
-
-      <div className="hud hud-top" data-testid="hud">
-        <div className="hud-next">
-          <span className="gem" aria-hidden="true" />
-          <div>
-            <div className="hud-label">{nextLine}</div>
-            <div className="hud-big" data-testid="next-distance">
-              {nextDist}
-              {nextDir && (
-                <>
-                  {' '}
-                  <span className="arrow" style={{ transform: `rotate(${Math.round(nextDir.bearing / 45) * 45}deg)` }} aria-hidden="true">
-                    ↑
-                  </span>{' '}
-                  {nextDir.label}
-                </>
-              )}
+      {/* A generic handheld console: plastic body, dark bezel with a power light, the map as its screen. */}
+      <div className="console">
+        <div className="console-bezel">
+          <span className="console-led" aria-hidden="true" />
+          <div className="console-screen" data-testid="console-screen">
+            <div className="quest-map">
+              <MapView
+                grid={grid}
+                route={quest.route}
+                markers={markers}
+                focus={focus}
+                focusKey={`quest:${quest.id}`}
+                onTap={() => {}}
+                home={player}
+                quest={overlay}
+                follow={follow && quest.finishedAt === undefined}
+                pickup={pickup}
+                onUserPan={() => setFollow(false)}
+                onLocate={() => setFollow(true)}
+              />
             </div>
-          </div>
-        </div>
-        <div className="hud-count">
-          <div className="hud-label">{t('quest.collected')}</div>
-          <div className="hud-big" data-testid="collected">
-            {stats.collected}/{stats.total}
-          </div>
-        </div>
-        <div className={`hud-gps ${quest.simulated ? 'sim' : ''}`}>
-          {gps}
-          {wakeActive && <span className="wake"> · {t('quest.wakeLock')}</span>}
-        </div>
-      </div>
 
-      {message && (
-        <div className={`hud-msg ${message.tone}`} role="status">
-          {message.text}
-          {error === 'denied' && (
-            <button type="button" className="pix-btn small-text" onClick={onUseSim}>
-              {t('quest.useSim')}
-            </button>
-          )}
-        </div>
-      )}
-      {showResumed && !message && !finished && <div className="hud-msg info">{t('quest.resumed')}</div>}
-      {soundPaused && !message && (
-        <button type="button" className="hud-msg info sound-resume" onClick={() => engine.unlock()} data-testid="sound-resume">
-          {t('sound.resume')}
-        </button>
-      )}
-
-      {dialogue && (
-        <div className="dialog-wrap">
-          <DialogueBox key={dialogue.key} kind={dialogue.kind} lines={dialogue.lines} onDone={dialogue.onDone} autoCloseMs={dialogue.autoCloseMs} />
-        </div>
-      )}
-
-      <div className={`hud hud-bottom ${statsOpen ? '' : 'folded'}`} data-testid="hud-bottom">
-        <dl className="hud-stats">
-          <div>
-            <dt>{t('quest.walked')}</dt>
-            <dd data-testid="walked">{fmtDistance(stats.walkedM, locale)}</dd>
-          </div>
-          <div>
-            <dt>{t('quest.steps')}</dt>
-            <dd data-testid="quest-steps">{stats.steps.toLocaleString(locale)}</dd>
-          </div>
-          <div>
-            <dt>{t('quest.time')}</dt>
-            <dd>{formatDuration(stats.elapsedMs)}</dd>
-          </div>
-          <div>
-            <dt>{t('quest.pace')}</dt>
-            <dd>
-              {formatPace(stats.paceMinPerKm)}
-              <small>{t('quest.paceUnit')}</small>
-            </dd>
-          </div>
-        </dl>
-        <div className="hud-buttons">
-          {!follow && (
-            <button type="button" className="pix-btn small-text" onClick={() => setFollow(true)}>
-              {t('quest.follow')}
-            </button>
-          )}
-          <button
-            type="button"
-            className="pix-btn small-text hud-fold"
-            aria-expanded={statsOpen}
-            aria-label={t(statsOpen ? 'hud.less' : 'hud.more')}
-            title={t(statsOpen ? 'hud.less' : 'hud.more')}
-            onClick={() => setStatsOpen(!statsOpen)}
-            data-testid="hud-fold"
-          >
-            <span className={`chev ${statsOpen ? 'down' : 'up'}`} aria-hidden="true" />
-          </button>
-          <SoundMenu placement="up" showLabel={false} />
-          <button type="button" className="pix-btn small-text danger" onClick={confirmEnd}>
-            {t('quest.end')}
-          </button>
-        </div>
-      </div>
-
-      {finished && finishDone && (
-        <div className="complete" role="dialog" aria-modal="true" data-testid="complete">
-          <div className="complete-box">
-            <div className="stars" aria-hidden="true">
-              ★ ★ ★
+            <div className="hud hud-top" data-testid="hud">
+              <div className="hud-next">
+                <span className="gem" aria-hidden="true" />
+                <div>
+                  <div className="hud-label">{nextLine}</div>
+                  <div className="hud-big" data-testid="next-distance">
+                    {nextDist}
+                    {nextDir && (
+                      <>
+                        {' '}
+                        <span className="arrow" style={{ transform: `rotate(${Math.round(nextDir.bearing / 45) * 45}deg)` }} aria-hidden="true">
+                          ↑
+                        </span>{' '}
+                        {nextDir.label}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="hud-count">
+                <div className="hud-label">{t('quest.collected')}</div>
+                <div className="hud-big" data-testid="collected">
+                  {stats.collected}/{stats.total}
+                </div>
+              </div>
+              <div className={`hud-gps ${quest.simulated ? 'sim' : ''}`}>
+                {gps}
+                {wakeActive && <span className="wake"> · {t('quest.wakeLock')}</span>}
+              </div>
             </div>
-            <h2>{t('complete.title')}</h2>
-            <p>{t('complete.subtitle', { n: stats.total })}</p>
-            <dl className="complete-stats">
-              <div>
-                <dt>{t('complete.distance')}</dt>
-                <dd>{fmtDistance(stats.walkedM, locale)}</dd>
+
+            {message && (
+              <div className={`hud-msg ${message.tone}`} role="status">
+                {message.text}
+                {error === 'denied' && (
+                  <button type="button" className="pix-btn small-text" onClick={onUseSim}>
+                    {t('quest.useSim')}
+                  </button>
+                )}
               </div>
-              <div>
-                <dt>{t('complete.steps')}</dt>
-                <dd>{stats.steps.toLocaleString(locale)}</dd>
+            )}
+            {showResumed && !message && !finished && <div className="hud-msg info">{t('quest.resumed')}</div>}
+            {soundPaused && !message && (
+              <button type="button" className="hud-msg info sound-resume" onClick={() => engine.unlock()} data-testid="sound-resume">
+                {t('sound.resume')}
+              </button>
+            )}
+
+            {dialogue && (
+              <div className="dialog-wrap">
+                <DialogueBox key={dialogue.key} kind={dialogue.kind} lines={dialogue.lines} onDone={dialogue.onDone} autoCloseMs={dialogue.autoCloseMs} />
               </div>
-              <div>
-                <dt>{t('complete.time')}</dt>
-                <dd>{formatDuration(stats.elapsedMs)}</dd>
+            )}
+
+            <div className={`hud hud-bottom ${statsOpen ? '' : 'folded'}`} data-testid="hud-bottom">
+              <dl className="hud-stats">
+                <div>
+                  <dt>{t('quest.walked')}</dt>
+                  <dd data-testid="walked">{fmtDistance(stats.walkedM, locale)}</dd>
+                </div>
+                <div>
+                  <dt>{t('quest.steps')}</dt>
+                  <dd data-testid="quest-steps">{stats.steps.toLocaleString(locale)}</dd>
+                </div>
+                <div>
+                  <dt>{t('quest.time')}</dt>
+                  <dd>{formatDuration(stats.elapsedMs)}</dd>
+                </div>
+                <div>
+                  <dt>{t('quest.pace')}</dt>
+                  <dd>
+                    {formatPace(stats.paceMinPerKm)}
+                    <small>{t('quest.paceUnit')}</small>
+                  </dd>
+                </div>
+              </dl>
+              <div className="hud-buttons">
+                {!follow && (
+                  <button type="button" className="pix-btn small-text" onClick={() => setFollow(true)}>
+                    {t('quest.follow')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="pix-btn small-text hud-fold"
+                  aria-expanded={statsOpen}
+                  aria-label={t(statsOpen ? 'hud.less' : 'hud.more')}
+                  title={t(statsOpen ? 'hud.less' : 'hud.more')}
+                  onClick={() => setStatsOpen(!statsOpen)}
+                  data-testid="hud-fold"
+                >
+                  <span className={`chev ${statsOpen ? 'down' : 'up'}`} aria-hidden="true" />
+                </button>
+                <SoundMenu placement="up" showLabel={false} />
+                <button type="button" className="pix-btn small-text danger" onClick={confirmEnd}>
+                  {t('quest.end')}
+                </button>
               </div>
-              <div>
-                <dt>{t('complete.pace')}</dt>
-                <dd>
-                  {formatPace(stats.paceMinPerKm)}
-                  {t('quest.paceUnit')}
-                </dd>
+            </div>
+
+            {finished && finishDone && (
+              <div className="complete" role="dialog" aria-modal="true" data-testid="complete">
+                <div className="complete-box">
+                  <div className="stars" aria-hidden="true">
+                    ★ ★ ★
+                  </div>
+                  <h2>{t('complete.title')}</h2>
+                  <p>{t('complete.subtitle', { n: stats.total })}</p>
+                  <dl className="complete-stats">
+                    <div>
+                      <dt>{t('complete.distance')}</dt>
+                      <dd>{fmtDistance(stats.walkedM, locale)}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('complete.steps')}</dt>
+                      <dd>{stats.steps.toLocaleString(locale)}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('complete.time')}</dt>
+                      <dd>{formatDuration(stats.elapsedMs)}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('complete.pace')}</dt>
+                      <dd>
+                        {formatPace(stats.paceMinPerKm)}
+                        {t('quest.paceUnit')}
+                      </dd>
+                    </div>
+                    <div className="wide">
+                      <dt>{t('complete.goal')}</dt>
+                      <dd>{t('complete.goalValue', { steps: quest.route.targetSteps.toLocaleString(locale) })}</dd>
+                    </div>
+                  </dl>
+                  <button type="button" className="pix-btn primary" onClick={onEnd}>
+                    {t('complete.new')}
+                  </button>
+                </div>
               </div>
-              <div className="wide">
-                <dt>{t('complete.goal')}</dt>
-                <dd>{t('complete.goalValue', { steps: quest.route.targetSteps.toLocaleString(locale) })}</dd>
-              </div>
-            </dl>
-            <button type="button" className="pix-btn primary" onClick={onEnd}>
-              {t('complete.new')}
-            </button>
+            )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }

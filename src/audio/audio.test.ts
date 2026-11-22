@@ -194,8 +194,10 @@ describe('procedural chiptune', () => {
 
 describe('sound effects', () => {
   it('are short, and the finish jingle is the longest', () => {
-    for (const notes of Object.values(SFX)) {
-      expect(sfxDuration(notes)).toBeGreaterThan(0.1)
+    for (const [name, notes] of Object.entries(SFX)) {
+      // The button click is a tick, everything else a little tune.
+      if (name === 'click') expect(sfxDuration(notes)).toBeLessThan(0.05)
+      else expect(sfxDuration(notes)).toBeGreaterThan(0.1)
       expect(sfxDuration(notes)).toBeLessThan(2)
       for (const n of notes) expect(n.len).toBeGreaterThan(0)
     }

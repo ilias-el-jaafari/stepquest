@@ -24,7 +24,11 @@ import { SoundControls } from './ui/SoundMenu.tsx'
 import { PixelSvg } from './ui/PixelIcons.tsx'
 import { TabBar } from './ui/TabBar.tsx'
 import { panelId, tabId, type Tab } from './ui/tabs.ts'
-import { WALKER } from './render/sprites.ts'
+import { walkerFor } from './hero/look.ts'
+import { useLook } from './hero/useLook.ts'
+import { HeroEditor } from './ui/HeroEditor.tsx'
+import { StepMeter } from './ui/StepMeter.tsx'
+import { deviceVibrate, installPressFeedback } from './ui/pressFeedback.ts'
 import { addStepsToday, stepsToday } from './quest/dailySteps.ts'
 import { questStats } from './quest/quest.ts'
 import { useQuestRunner } from './ui/useQuestRunner.ts'
@@ -47,6 +51,7 @@ const fmt = (n: number, digits = 4) => n.toFixed(digits)
 
 export default function App() {
   const { t, locale, setLocale } = useI18n()
+  const walker = walkerFor(useLook())
   const [world, setWorld] = useState<World>()
   const [isDemo, setIsDemo] = useState(true)
   const [settings, setSettings] = useState<Settings>(() => loadSettings())
@@ -132,6 +137,17 @@ export default function App() {
     audio.armUnlock()
     audio.playMenuMusic()
   }, [onPlanning])
+
+  // Every press clicks on the effects channel (volume and mute apply) and buzzes a little on Android.
+  useEffect(
+    () =>
+      installPressFeedback(document, {
+        playClick: () => audioEngine().playSfx('click'),
+        vibrate: deviceVibrate(),
+        userAgent: navigator.userAgent,
+      }),
+    [],
+  )
 
   const clearResult = () => {
     setResult(undefined)
@@ -404,7 +420,7 @@ export default function App() {
         </div>
         <div className="status-row">
           <span className="avatar" role="img" aria-label={t('header.avatar')}>
-            <PixelSvg art={WALKER.down[0]!} size={30} />
+            <PixelSvg art={walker.down[0]!} size={30} />
           </span>
           <span className="steps-pill" data-testid="steps-today">
             <span className="steps-pill-label">{t('header.stepsToday')}:</span> <strong>{todaySteps.toLocaleString(locale)}</strong>
@@ -655,7 +671,7 @@ export default function App() {
           <div className="box hero-box">
             <div className="hero-head">
               <span className="avatar big" aria-hidden="true">
-                <PixelSvg art={WALKER.down[0]!} size={64} />
+                <PixelSvg art={walker.down[0]!} size={64} />
               </span>
               <div>
                 <h2 className="box-title">{t('hero.title')}</h2>
@@ -665,12 +681,11 @@ export default function App() {
                 <p className="hint">{t('hero.goal', { goal: settings.targetSteps.toLocaleString(locale) })}</p>
               </div>
             </div>
-            <div className="hp-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={todayPct} aria-label={t('hero.progress', { pct: todayPct })}>
-              <span style={{ width: `${todayPct}%` }} />
-            </div>
+            <StepMeter pct={todayPct} label={t('hero.progress', { pct: todayPct })} />
             <p className="hint">{t('hero.progress', { pct: todayPct })}</p>
             <p className="hint">{t('hero.note')}</p>
           </div>
+          <HeroEditor />
           <div className="box">
             <label className="field">
               <span className="box-title">{t('stride.label')}</span>

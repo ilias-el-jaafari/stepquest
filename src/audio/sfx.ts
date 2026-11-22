@@ -37,7 +37,10 @@ export const OFF_ROUTE: SfxNote[] = [
   { hz: 311.13, at: 0.1, len: 0.16, wave: 'pulse50', gain: 0.6, slideTo: 261.63 },
 ]
 
-export const SFX = { gem: GEM, gemLast: GEM_LAST, finish: FINISH, offRoute: OFF_ROUTE } as const
+/** A short, quiet button click. */
+export const CLICK: SfxNote[] = [{ hz: 1760, at: 0, len: 0.022, wave: 'pulse50', gain: 0.3, slideTo: 1320 }]
+
+export const SFX = { gem: GEM, gemLast: GEM_LAST, finish: FINISH, offRoute: OFF_ROUTE, click: CLICK } as const
 export type SfxName = keyof typeof SFX
 
 /** Total length of an effect in seconds. */

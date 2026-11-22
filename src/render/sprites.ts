@@ -38,6 +38,7 @@ export const PLAYER_DOWN: Sprite = {
 }
 
 export type Facing = 'down' | 'up' | 'left' | 'right'
+export type Body = 'boy' | 'girl'
 
 const WALKER_COLORS = { ...PLAYER_DOWN.colors, h: '#5a3a2a' }
 
@@ -72,6 +73,37 @@ const LEFT_TOP = [
   '....kpPPpppk....',
   '....ksspppk.....',
 ]
+// The girl: a fringe under the beanie and hair to the shoulders (a ponytail from the side).
+const GIRL_DOWN_TOP = [
+  ...DOWN_TOP.slice(0, 5),
+  '..kHkhhhhhhkHk..',
+  '..kHhsssssshHk..',
+  '..kHhsEssEshHk..',
+  '..khhsssssshhk..',
+  '..khhksssskhhk..',
+  '..khpppppppphk..',
+  '..kspppPPpppsk..',
+  '..kskppppppksk..',
+]
+const GIRL_UP_TOP = [
+  ...UP_TOP.slice(0, 8),
+  '..khhhhhhhhhhk..',
+  '..khhhhhhhhhhk..',
+  '...khhhhhhhhk...',
+  '..kspPPPPPPpsk..',
+  '..kskpPPPPpksk..',
+]
+const GIRL_LEFT_TOP = [
+  ...LEFT_TOP.slice(0, 5),
+  '...kkhhhhkHHk...',
+  '..ksssssshkHkk..',
+  '..ksEssshhkhhk..',
+  '..ksssssshhhhk..',
+  '...kksssskkhk...',
+  '....kppppppkk...',
+  '....kpPPpppk....',
+  '....ksspppk.....',
+]
 // Legs for the front and back views: standing, left foot forward, right foot forward.
 const FRONT_LEGS = [
   ['...kkbbbbbbkk...', '....kbbkkbbk....', '....kkk..kkk....'],
@@ -89,17 +121,25 @@ function mirror(rows: readonly string[]): string[] {
   return rows.map((r) => [...r].reverse().join(''))
 }
 
-function frames(top: readonly string[], legs: readonly (readonly string[])[]): Sprite[] {
-  return legs.map((l) => ({ rows: [...top, ...l], colors: WALKER_COLORS }))
-}
+/** Colour keys a walker can be dressed in: t/T cap, h hair, s skin, p/P shirt, b trousers. */
+export type WalkerColors = Record<string, string>
 
 /** The walker in four directions, three frames each (stand, step, other step). Original design. */
-export const WALKER: Record<Facing, Sprite[]> = {
-  down: frames(DOWN_TOP, FRONT_LEGS),
-  up: frames(UP_TOP, FRONT_LEGS),
-  left: frames(LEFT_TOP, SIDE_LEGS),
-  right: frames(mirror(LEFT_TOP), SIDE_LEGS.map(mirror)),
+export function buildWalker(body: Body = 'boy', colors: WalkerColors = WALKER_COLORS): Record<Facing, Sprite[]> {
+  const girl = body === 'girl'
+  const frames = (top: readonly string[], legs: readonly (readonly string[])[]) => legs.map((l) => ({ rows: [...top, ...l], colors }))
+  const side = girl ? GIRL_LEFT_TOP : LEFT_TOP
+  return {
+    down: frames(girl ? GIRL_DOWN_TOP : DOWN_TOP, FRONT_LEGS),
+    up: frames(girl ? GIRL_UP_TOP : UP_TOP, FRONT_LEGS),
+    left: frames(side, SIDE_LEGS),
+    right: frames(mirror(side), SIDE_LEGS.map(mirror)),
+  }
 }
+
+/** The default walker. */
+export const WALKER: Record<Facing, Sprite[]> = buildWalker()
+export const DEFAULT_WALKER_COLORS: WalkerColors = WALKER_COLORS
 
 /**
  * Which way the walker faces after moving by (dx, dy) in map units (y grows

@@ -4,6 +4,8 @@ import { useI18n } from '../i18n/index.ts'
 import { PixelIcon } from './PixelIcons.tsx'
 import { MapRenderer, type Markers, type QuestOverlay, type RouteShape } from '../render/MapRenderer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
+import { walkerFor } from '../hero/look.ts'
+import { useLook } from '../hero/useLook.ts'
 
 type Props = {
   grid: TileGrid
@@ -138,6 +140,11 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
   useEffect(() => {
     rendererRef.current?.setRoute(route)
   }, [route, grid])
+
+  const look = useLook()
+  useEffect(() => {
+    rendererRef.current?.setWalker(walkerFor(look))
+  }, [look, grid])
 
   useEffect(() => {
     rendererRef.current?.setMarkers(markers)
