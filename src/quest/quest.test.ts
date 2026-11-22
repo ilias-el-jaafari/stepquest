@@ -8,7 +8,8 @@ import { planRoute } from '../routing/planner.ts'
 import { compassPoint, directionTo } from './compass.ts'
 import { judgeStartFix, locateOnce, mapGeoError, browserSource } from './geolocation.ts'
 import { advanceOdometer, filterFix, type FilterState } from './gpsFilter.ts'
-import { applyFix, collectRadius, createQuest, formatDuration, formatPace, nextCheckpoint, questStats, type QuestState } from './quest.ts'
+import { applyFix, collectRadius, createQuest, formatDuration, formatPace, nextCheckpoint, questStats, routeToNext, type QuestState } from './quest.ts'
+import { bearingBetween } from '../routing/planner.ts'
 import { simulatedSource } from './simSource.ts'
 import { SimWalker } from './simulate.ts'
 import { makeTrack, snapToRoute } from './snap.ts'
@@ -391,5 +392,31 @@ describe('simulated walk, end to end on the Benicalap fixture', () => {
     for (let i = 1; i < fixes.length; i++) expect(fixes[i]!.timestamp - fixes[i - 1]!.timestamp).toBe(2000)
     const last = fixes.at(-1)!
     expect(haversine(last, track.points.at(-1)!)).toBeLessThan(1)
+  })
+})
+
+describe('distance to the next checkpoint', () => {
+  // L-shaped route: 300 m east, then 300 m north; one checkpoint (the flag) at the end.
+  const corner = destination(origin, 90, 300)
+  const points = [...Array.from({ length: 4 }, (_, i) => destination(origin, 90, i * 100)), ...Array.from({ length: 3 }, (_, i) => destination(corner, 0, (i + 1) * 100))]
+  const route: QuestRoute = { mode: 'oneway', points, distanceM: 600, steps: 800, targetSteps: 800, checkpoints: placeCheckpoints(points, 1) }
+  it('is measured along the route, not as the crow flies', () => {
+    const q = createQuest(route, { strideM: 0.75, area: { kind: 'demo' }, simulated: false, now: 0, id: 'l' })
+    const ahead = routeToNext(q)!
+    expect(haversine(origin, points.at(-1)!)).toBeLessThan(430)
+    expect(ahead.metres).toBeCloseTo(600, -1)
+    // "Which way now" points along the first street (east), not diagonally at the flag.
+    expect(compassPoint(bearingBetween(origin, ahead.toward))).toBe('E')
+  })
+  it('counts the way back to the route when off it', () => {
+    let q = createQuest(route, { strideM: 0.75, area: { kind: 'demo' }, simulated: false, now: 0, id: 'l' })
+    q = applyFix(q, fixAt(destination(origin, 90, 100), 0)).state
+    const off = destination(destination(origin, 90, 150), 180, 60)
+    for (let i = 0; i < 6; i++) q = applyFix(q, fixAt(off, 30 + i * 10)).state
+    expect(q.offRoute).toBe(true)
+    const ahead = routeToNext(q)!
+    expect(ahead.metres).toBeGreaterThan(500)
+    expect(ahead.metres).toBeLessThan(530)
+    expect(compassPoint(bearingBetween(q.player!, ahead.toward))).toBe('N')
   })
 })

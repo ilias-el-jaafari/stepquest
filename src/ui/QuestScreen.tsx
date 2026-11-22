@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { haversine } from '../geo/geo.ts'
 import { useI18n } from '../i18n/index.ts'
 import { directionTo } from '../quest/compass.ts'
-import { formatDuration, formatPace, nextCheckpoint, questStats, trackFor, type QuestState } from '../quest/quest.ts'
+import { formatDuration, formatPace, nextCheckpoint, questStats, routeToNext, trackFor, type QuestState } from '../quest/quest.ts'
 import { snapToRoute } from '../quest/snap.ts'
 import type { LocationErrorCode } from '../quest/geolocation.ts'
 import type { TileGrid } from '../tiles/grid.ts'
@@ -77,10 +76,12 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
   let nextLine = ''
   let nextDist = ''
   let nextDir: { bearing: number; label: string } | undefined
-  if (next && player) {
-    const dir = directionTo(player, next.point)
+  const ahead = routeToNext(quest)
+  if (next && player && ahead) {
+    // Distance along the route, and the way to walk now (not a straight line to the gem).
+    const dir = directionTo(player, ahead.toward)
     nextLine = next.isFinish ? t('quest.nextFinish') : t('quest.next', { n: next.index })
-    nextDist = fmtDistance(haversine(player, next.point), locale)
+    nextDist = fmtDistance(ahead.metres, locale)
     nextDir = { bearing: dir.bearing, label: t(`dir.${dir.point}`) }
   }
 

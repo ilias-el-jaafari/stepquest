@@ -1,6 +1,7 @@
 import { haversine, type BBox, type LatLon } from '../geo/geo.ts'
 import { bearingBetween } from '../routing/planner.ts'
 import { advanceOdometer, DEFAULT_FILTER, filterFix, type FilterConfig, type FilterState, type Odometer, type RejectReason } from './gpsFilter.ts'
+import { pointAlong } from '../routing/checkpoints.ts'
 import { makeTrack, snapToRoute, type RouteTrack } from './snap.ts'
 import type { GpsFix, QuestRoute } from './types.ts'
 
@@ -286,6 +287,29 @@ export function questStats(state: QuestState, now: number): QuestStats {
 
 export function nextCheckpoint(state: QuestState) {
   return state.route.checkpoints[state.collected]
+}
+
+/** How far ahead on the route the "which way now" arrow looks. */
+const AHEAD_M = 25
+
+/**
+ * Distance to the next checkpoint measured along the route (what the walker
+ * will really walk), plus the way to head now: along the route ahead, or back
+ * to the route when off it. Undefined when there is no next checkpoint.
+ */
+export function routeToNext(state: QuestState): { metres: number; toward: LatLon } | undefined {
+  const next = nextCheckpoint(state)
+  const player = state.player
+  if (!next || !player) return undefined
+  const track = trackFor(state.route)
+  if (track.points.length < 2) return { metres: haversine(player, next.point), toward: next.point }
+  const snap = snapToRoute(track, player, state.alongM)
+  const from = state.offRoute ? snap.alongM : state.alongM
+  const rest = Math.max(0, next.distanceM - from)
+  // Off the line: first back to it, then along it.
+  const metres = (state.offRoute ? snap.offsetM : 0) + rest
+  const toward = state.offRoute && snap.offsetM > 15 ? snap.point : pointAlong(track.points, track.cumulative, Math.min(next.distanceM, from + AHEAD_M))
+  return { metres, toward: haversine(player, toward) < 3 ? next.point : toward }
 }
 
 export function formatDuration(ms: number): string {
