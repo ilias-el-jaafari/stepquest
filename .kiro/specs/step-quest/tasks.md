@@ -79,7 +79,7 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 ## Safe routes
 
 - [x] 43. Safety cost per edge from OpenStreetMap tags (lit, sidewalks, pedestrian/residential/living streets, alleys and driveways, tunnels and covered passages, unlit paths and tracks, industrial and railway land, shops and cafés within 40 m), as a multiplier on edge length so the step goal and its ±5 % tolerance stay the same
-- [x] 44. Safe routing always on (no switch); when no safer route meets the goal, say so and offer the normal route; explained in an Info / FAQ panel from the header
+- [x] 44. Safe routing always on (no switch); when the preferred streets cannot fit the goal, say so in neutral words and offer a walk that fits on any street; explained in an Info / FAQ panel from the header
 - [x] 45. Streets to avoid: search loaded street names or tap the map, saved on the device, drawn on the map as hazard tape with a no-entry sign, hard-avoided by the router; if a route is impossible without them, plan anyway and name the streets used
 - [x] 46. Night awareness, automatic: local sunrise/sunset (no API); from sunset to sunrise (or if the walk ends after dark) lighting and empty areas weigh more, and lit or lively avenues get a small bonus
 - [x] 47. Overpass query and demo extract with street names, lighting, sidewalks, industrial land and shops/amenities (codec v3)
@@ -90,6 +90,8 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 - [x] 49. App frame: header with title and steps today, full-height map, framed planner above a bottom tab bar (Map, Bag, Hero, Settings) with original pixel icons; side rail on wide screens; existing panels moved into tabs and sheets; iPhone safe areas, web app manifest and home-screen icons; quest dialogue kept clear of the map credit line
 - [x] 49b. Field test fixes A: much stronger lighting weight (main avenues presumed lit, unknown side streets penalised), tram/metro/train tracks drawn as rails and never walkable, HUD messages never cover the map buttons, locate centres on the walker during a quest
 - [x] 49c. Field test fixes B: footprints route (walked prints darker), follow mode, adaptive rerouting, map-area loading (auto-load around GPS, "Load this area", mirror race, worker, area cache, progress)
+- [x] 49d. Polish: the planner folds on phones once a route is ready (and the quest HUD starts folded); distance to the next checkpoint measured along the route; long A→B goals hit ±5 % with a side loop; strong penalty for walking a street twice; neutral fallback wording; straight kerbs on shallow diagonal streets; walked footprints kept after a reroute; Pages workflow on Node 24 actions
+- [x] 49e. Retro look: walker dressing in the Hero tab (boy/girl, five colour parts, live walking preview, saved on the device), ten-block steps meter, quest map inside a generic handheld-console screen, notched 8-bit panels and buttons, 48 px press areas, press click and Android buzz, stepwise motion with reduced-motion support
 - [ ] 50. Speech bubbles on the map
 - [ ] 51. New tile art
 
