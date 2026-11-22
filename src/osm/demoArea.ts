@@ -15,7 +15,7 @@ export function overpassQuery(b: BBox, timeoutS = 60): string {
   const box = `${b.south.toFixed(5)},${b.west.toFixed(5)},${b.north.toFixed(5)},${b.east.toFixed(5)}`
   return `[out:json][timeout:${timeoutS}];
 (
-  way["highway"](${box});
+  way["highway"]["highway"!~"^(proposed|construction|abandoned|platform|raceway|bus_guideway|elevator|corridor|services|rest_area)$"](${box});
   way["building"](${box});
   way["leisure"~"park|garden|pitch|playground|dog_park|common|recreation_ground"](${box});
   way["landuse"~"grass|recreation_ground|meadow|farmland|orchard|forest|village_green|allotments|cemetery|reservoir|basin"](${box});
@@ -28,7 +28,6 @@ export function overpassQuery(b: BBox, timeoutS = 60): string {
   way["landuse"~"^(industrial|railway|construction|brownfield|depot)$"](${box});
   nw["shop"](${box});
   nw["amenity"~"^(restaurant|cafe|bar|pub|fast_food|pharmacy|bank|ice_cream|library|police|marketplace|community_centre|theatre|cinema)$"](${box});
-  nw["shop"="supermarket"](${box});
   nw["amenity"~"^(hospital|clinic|school|college|university|kindergarten)$"](${box});
   nw["healthcare"~"^(hospital|clinic|centre)$"](${box});
   nw["railway"~"^(station|halt|subway_entrance)$"](${box});

@@ -156,7 +156,7 @@ describe('checkpoint collection', () => {
     expect(r.events).toEqual([{ type: 'rejected', reason: 'inaccurate' }])
     expect(r.state.weakSince).toBe(0)
   })
-  it('flags off-route after two far fixes and clears it on return', () => {
+  it('marks the walker off the line after two far fixes, without the message yet, and clears it on return', () => {
     let q = newQuest()
     q = applyFix(q, fixAt(destination(origin, 90, 100), 0)).state
     const away = destination(destination(origin, 90, 120), 0, 90)
@@ -164,10 +164,12 @@ describe('checkpoint collection', () => {
     expect(r1.state.offRoute).toBe(false)
     const r2 = applyFix(r1.state, fixAt(destination(away, 0, 5), 40))
     expect(r2.state.offRoute).toBe(true)
-    expect(r2.events).toContainEqual({ type: 'offRoute' })
+    // Not judged yet: the message waits until the walker clearly heads away.
+    expect(r2.events).not.toContainEqual({ type: 'offRoute' })
+    expect(r2.state.lost).toBe(false)
     const back = applyFix(r2.state, fixAt(destination(origin, 90, 140), 80))
     expect(back.state.offRoute).toBe(false)
-    expect(back.events).toContainEqual({ type: 'backOnRoute' })
+    expect(back.state.offStart).toBeUndefined()
   })
   it('only finishes a loop after every checkpoint, even though it starts at the flag', () => {
     const out = Array.from({ length: 6 }, (_, i) => destination(origin, 90, i * 100))

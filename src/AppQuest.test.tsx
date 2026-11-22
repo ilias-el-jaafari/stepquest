@@ -308,4 +308,25 @@ describe('active quest UI', () => {
     await waitFor(() => host.textContent!.includes('39.4901, -0.3955'))
     expect(host.textContent).toContain('Start set to your location (±9 m)')
   })
+
+  it('sets the start from GPS by itself at launch when location is already allowed', async () => {
+    Object.defineProperty(navigator, 'permissions', { configurable: true, value: { query: async () => ({ state: 'granted' }) } })
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: { getCurrentPosition: (ok: (p: unknown) => void) => ok({ coords: { latitude: 39.4901, longitude: -0.3955, accuracy: 9 }, timestamp: Date.now() }) },
+    })
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => host.textContent!.includes('39.4901, -0.3955'))
+    expect(host.querySelector('[data-testid="area-toast"]')).toBeNull()
+  })
+
+  it('offers planning where you are when permission was not given yet, and hides coordinates under Advanced', async () => {
+    Object.defineProperty(navigator, 'permissions', { configurable: true, value: { query: async () => ({ state: 'prompt' }) } })
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!host.querySelector('[data-testid="area-toast"]'))
+    expect(host.querySelector('[data-testid="area-toast"]')!.textContent).toContain('Plan your walk around where you are?')
+    const details = host.querySelector('details.advanced') as HTMLDetailsElement
+    expect(details.open).toBe(false)
+    expect(details.querySelector('input[type="text"]')).not.toBeNull()
+  })
 })

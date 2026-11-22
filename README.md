@@ -10,8 +10,10 @@ Phase 4 of 5 done: route planner and tile map, GPS tracking and checkpoints, the
 
 ## Walking a quest
 
-- **Use my location** sets the start from your phone's GPS (and downloads the map around you if you are outside the loaded area).
-- **Start quest!** follows you on the map. Collect the numbered gems in order (within about 22 m; a bit more when GPS is weak) and reach the flag.
+- **Use my location** sets the start from your phone's GPS (and downloads the map around you if you are outside the loaded area). If location is already allowed this happens by itself at launch; otherwise a small toast offers it. Pan off the loaded map and **Load this area** appears; the download shows its progress. Typing coordinates is under Settings → Map data → Advanced.
+- The route is drawn as **red pixel footprints**, left and right, turned along the path; footprints you have walked turn darker and faded. Their spacing is in screen pixels, so they stay readable at every zoom.
+- **Start quest!** follows you on the map (dragging the map pauses following; the target button centres on you and follows again). Collect the numbered gems in order (within about 22 m; a bit more when GPS is weak) and reach the flag.
+- **Adaptive rerouting**: if you leave the line but still head for the next gem (within 90° of it, or not getting further from it), the rest of the walk is quietly recalculated from where you are, keeping the remaining step budget (±5 %), the safety weights and the gems still to collect, and avoiding the street you just left. "You left the route" (text and voice) only appears when you walk clearly away for about 60 m; short GPS jumps are ignored.
 - The quest is saved on your device, so a reload or a lost signal resumes where you were.
 - **Simulate walk (demo)** moves the walker along the route by itself at up to 120× speed, with optional GPS noise, for testing and demo videos.
 
@@ -55,7 +57,7 @@ Offline map extract: save Overpass responses for the demo area (the main query w
 
 ## How it works
 
-- **Map data**: OpenStreetMap ways from the Overpass API (cached on the device for a week, throttled), or the bundled offline extract of Benicalap, València.
+- **Map data**: OpenStreetMap ways from the Overpass API (cached on the device for a week, a smaller area inside a cached one needs no download, throttled; one request goes to each of three public mirrors at once and the first good answer wins, with a timeout per mirror; parsing runs in a Web Worker), or the bundled offline extract of Benicalap, València.
 - **Tiles**: features are rasterized into a grid of 16×16 tiles (about 5 m each) and auto-tiled with 4-bit masks (paths) and 8-bit "blob" masks (roads, buildings, parks, water).
 - **Town**: building blocks are cut into lots with small houses, gardens and fences; hospitals and health centres, stations, schools, park entrances and supermarkets from OSM get their own special buildings (generic, original designs; no brand names or logos).
 - **Art**: every tile, building and sprite is painted procedurally or hand-coded in `src/render/`. No assets from any commercial game.

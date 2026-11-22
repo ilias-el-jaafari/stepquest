@@ -86,7 +86,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
   // Once the quest is finished, GPS no longer matters: no signal or route warnings.
   if (quest.finishedAt !== undefined) message = undefined
   else if (error === 'denied' || error === 'unsupported' || error === 'insecure') message = { text: t(`quest.err.${error}`), tone: 'bad' }
-  else if (quest.offRoute && player) {
+  else if (quest.lost && player) {
     const snap = snapToRoute(trackFor(quest.route), player, quest.alongM)
     const dir = directionTo(player, snap.point)
     message = { text: t('quest.offRoute', { dir: t(`dir.${dir.point}`), m: Math.round(snap.offsetM) }), tone: 'warn' }

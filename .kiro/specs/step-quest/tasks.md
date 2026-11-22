@@ -89,7 +89,8 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 
 - [x] 49. App frame: header with title and steps today, full-height map, framed planner above a bottom tab bar (Map, Bag, Hero, Settings) with original pixel icons; side rail on wide screens; existing panels moved into tabs and sheets; iPhone safe areas, web app manifest and home-screen icons; quest dialogue kept clear of the map credit line
 - [x] 49b. Field test fixes A: much stronger lighting weight (main avenues presumed lit, unknown side streets penalised), tram/metro/train tracks drawn as rails and never walkable, HUD messages never cover the map buttons, locate centres on the walker during a quest
-- [ ] 50. Route drawn as footprints, speech bubbles on the map
+- [x] 49c. Field test fixes B: footprints route (walked prints darker), follow mode, adaptive rerouting, map-area loading (auto-load around GPS, "Load this area", mirror race, worker, area cache, progress)
+- [ ] 50. Speech bubbles on the map
 - [ ] 51. New tile art
 
 ## Phase 5 — Submission

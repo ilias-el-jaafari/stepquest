@@ -37,7 +37,11 @@ function sourceFor(q: QuestState): LocationSource {
 }
 
 /** Drives an active quest: location source, events, sounds, wake lock and persistence. */
-export function useQuestRunner() {
+export function useQuestRunner(reroute?: (q: QuestState) => QuestState | undefined) {
+  const rerouteRef = useRef(reroute)
+  useLayoutEffect(() => {
+    rerouteRef.current = reroute
+  })
   const [quest, setQuest] = useState<QuestState>()
   const [pickup, setPickup] = useState<Pickup>()
   const [error, setError] = useState<LocationErrorCode>()
@@ -70,7 +74,11 @@ export function useQuestRunner() {
       const current = questRef.current
       // A finished quest ignores late fixes (the watch is stopped, but one may already be queued).
       if (!current || current.finishedAt !== undefined) return
-      const { state, events } = applyFix(current, fix)
+      const applied = applyFix(current, fix)
+      const events = applied.events
+      let state = applied.state
+      // Still heading for the goal off the line: quietly recalculate the rest of the route.
+      if (events.some((e) => e.type === 'reroute')) state = rerouteRef.current?.(state) ?? state
       questRef.current = state
       setError(undefined)
       const audio = audioEngine()

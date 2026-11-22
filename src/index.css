@@ -1539,3 +1539,27 @@ button.hud-msg.sound-resume {
     right: 70px;
   }
 }
+
+/* Map-area toast: "Load this area", download progress, or "plan where you are". */
+.area-toast {
+  bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.area-toast span {
+  flex: 1 1 100%;
+}
+
+.area-toast .area-error {
+  color: #b3122e;
+}
+
+details.advanced {
+  margin: 8px 0;
+}
+
+details.advanced summary {
+  cursor: pointer;
+  font-size: 8px;
+  margin-bottom: 8px;
+}

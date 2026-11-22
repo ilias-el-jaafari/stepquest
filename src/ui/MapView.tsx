@@ -28,22 +28,26 @@ type Props = {
   /** Shows a "use my location" button. During a quest it centres on the walker and then calls this. */
   onLocate?: () => void
   locating?: boolean
+  /** The map centre after the user pans or zooms (to offer loading that area). */
+  onView?: (centre: LatLon) => void
 }
 
 const TAP_SLOP_PX = 8
 
-export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating }: Props) {
+export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<MapRenderer | undefined>(undefined)
   const onTapRef = useRef(onTap)
   const focusRef = useRef(focus)
   const onUserPanRef = useRef(onUserPan)
+  const onViewRef = useRef(onView)
 
   useEffect(() => {
     onTapRef.current = onTap
     focusRef.current = focus
     onUserPanRef.current = onUserPan
+    onViewRef.current = onView
   })
 
   useEffect(() => {
@@ -60,6 +64,11 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
     let moved = 0
     let pinchStart = 0
     let pinchZoom = renderer.zoom
+    let viewTimer: ReturnType<typeof setTimeout> | undefined
+    const reportView = () => {
+      clearTimeout(viewTimer)
+      viewTimer = setTimeout(() => onViewRef.current?.(renderer.screenToLatLon(renderer.cssWidth / 2, renderer.cssHeight / 2)), 150)
+    }
     const local = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect()
       return { x: e.clientX - r.left, y: e.clientY - r.top }
@@ -99,13 +108,14 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
       pointers.delete(e.pointerId)
       if (p && pointers.size === 0 && moved <= TAP_SLOP_PX && e.type === 'pointerup') {
         onTapRef.current(renderer.screenToLatLon(p.x, p.y))
-      }
+      } else if (pointers.size === 0) reportView()
       if (pointers.size < 2) pinchStart = 0
     }
     const wheel = (e: WheelEvent) => {
       e.preventDefault()
       const r = canvas.getBoundingClientRect()
       renderer.zoomStep(e.deltaY < 0 ? 1 : -1, e.clientX - r.left, e.clientY - r.top)
+      reportView()
     }
     canvas.addEventListener('pointerdown', down)
     canvas.addEventListener('pointermove', move)
@@ -119,6 +129,7 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
       canvas.removeEventListener('pointerup', up)
       canvas.removeEventListener('pointercancel', up)
       canvas.removeEventListener('wheel', wheel)
+      clearTimeout(viewTimer)
       renderer.dispose()
       rendererRef.current = undefined
     }

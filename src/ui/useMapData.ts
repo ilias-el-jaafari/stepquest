@@ -23,7 +23,7 @@ export async function loadDemoWorld(): Promise<World> {
 
 export type LiveStatus =
   | { state: 'idle' }
-  | { state: 'loading' }
+  | { state: 'loading'; bytes: number }
   | { state: 'done'; fromCache: boolean }
   | { state: 'error'; code: OverpassErrorCode }
 
@@ -37,9 +37,9 @@ export function useLiveLoader() {
     async (bbox: BBox): Promise<World | undefined> => {
       if (busy.current) return undefined
       busy.current = true
-      setStatus({ state: 'loading' })
+      setStatus({ state: 'loading', bytes: 0 })
       try {
-        const { data, fromCache } = await client.loadArea(bbox)
+        const { data, fromCache } = await client.loadArea(bbox, (bytes) => setStatus({ state: 'loading', bytes }))
         setStatus({ state: 'done', fromCache })
         return buildWorld(data)
       } catch (error) {

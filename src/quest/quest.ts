@@ -1,4 +1,5 @@
 import { haversine, type BBox, type LatLon } from '../geo/geo.ts'
+import { bearingBetween } from '../routing/planner.ts'
 import { advanceOdometer, DEFAULT_FILTER, filterFix, type FilterConfig, type FilterState, type Odometer, type RejectReason } from './gpsFilter.ts'
 import { makeTrack, snapToRoute, type RouteTrack } from './snap.ts'
 import type { GpsFix, QuestRoute } from './types.ts'
@@ -30,7 +31,14 @@ export type QuestState = {
   /** Progress along the route (last on-route snap), metres. */
   alongM: number
   offRouteCount: number
+  /** Geometrically off the line (the walker is drawn at the raw position). */
   offRoute: boolean
+  /** Where the walker left the line, to judge whether they still head for the goal. */
+  offStart?: OffStart
+  /** Clearly walking away from the goal: the "you left the route" message shows. */
+  lost?: boolean
+  /** How many times the rest of the route was recalculated. */
+  rerouted?: number
   /** Position to draw the walker at (snapped to the route when on it). */
   player: LatLon | undefined
   /** Accuracy of the last accepted fix, metres. */
@@ -39,12 +47,27 @@ export type QuestState = {
   weakSince: number | undefined
 }
 
+export type OffStart = {
+  /** Last point on the route before leaving it. */
+  from: LatLon
+  /** First fix off the route. */
+  point: LatLon
+  /** Odometer reading at that fix. */
+  odoM: number
+  /** Straight-line distance to the next checkpoint at that fix. */
+  goalM: number
+  /** Odometer reading at the last reroute attempt (to retry only every so often). */
+  triedM?: number
+}
+
 export type QuestEvent =
   | { type: 'collected'; index: number; isFinish: boolean; point: LatLon }
   | { type: 'finished' }
   | { type: 'rejected'; reason: RejectReason }
   | { type: 'offRoute' }
   | { type: 'backOnRoute' }
+  /** Off the line but still heading for the goal: recalculate the rest of the route. */
+  | { type: 'reroute' }
 
 export type QuestConfig = {
   filter: FilterConfig
@@ -58,6 +81,16 @@ export type QuestConfig = {
   offRouteFixes: number
   /** Furthest forward a single fix may advance progress when "passing" checkpoints. */
   maxPassJumpM: number
+  /** Walked this far off the line before deciding between rerouting and "you left the route". */
+  decideM: number
+  /** "Heading for the goal": within this many degrees of it… */
+  towardDeg: number
+  /** …or the goal is no further away than when leaving, give or take this slack. */
+  goalSlackM: number
+  /** Walked this far off the line, moving away, before the message shows. */
+  lostM: number
+  /** Retry a failed reroute after this much more walking. */
+  retryM: number
 }
 
 export const DEFAULT_QUEST_CONFIG: QuestConfig = {
@@ -67,6 +100,32 @@ export const DEFAULT_QUEST_CONFIG: QuestConfig = {
   offRouteM: 40,
   offRouteFixes: 2,
   maxPassJumpM: 400,
+  decideM: 30,
+  towardDeg: 90,
+  goalSlackM: 25,
+  lostM: 60,
+  retryM: 80,
+}
+
+/** Smallest angle between two bearings, degrees (0–180). */
+export function angleDiff(a: number, b: number): number {
+  const d = Math.abs((((a - b) % 360) + 540) % 360 - 180)
+  return d
+}
+
+/**
+ * Off the line: still heading for the next checkpoint (reroute quietly), walking
+ * clearly away (show the message), or not sure yet (keep watching). GPS noise is
+ * absorbed by requiring real walked distance (the odometer ignores jitter).
+ */
+export function judgeDeviation(off: OffStart, position: LatLon, odoM: number, goal: LatLon, cfg: QuestConfig = DEFAULT_QUEST_CONFIG): 'wait' | 'toward' | 'away' {
+  const walked = odoM - off.odoM
+  if (walked < cfg.decideM) return 'wait'
+  const goalNow = haversine(position, goal)
+  const heading = angleDiff(bearingBetween(off.point, position), bearingBetween(off.point, goal))
+  const closer = goalNow <= off.goalM + cfg.goalSlackM
+  if (heading <= cfg.towardDeg || closer) return 'toward'
+  return walked >= cfg.lostM ? 'away' : 'wait'
 }
 
 /** Pickup radius grows with poor accuracy (half of anything above 10 m), capped. */
@@ -143,8 +202,21 @@ export function applyFix(state: QuestState, fix: GpsFix, cfg: QuestConfig = DEFA
   const onRoute = snap.offsetM <= threshold
   const offRouteCount = onRoute ? 0 : state.offRouteCount + 1
   const offRoute = offRouteCount >= cfg.offRouteFixes
-  if (offRoute && !state.offRoute) events.push({ type: 'offRoute' })
-  if (!offRoute && state.offRoute) events.push({ type: 'backOnRoute' })
+  const odometer = advanceOdometer(state.odometer, position, accuracy)
+  const goal = state.route.checkpoints[state.collected]?.point
+  let offStart: OffStart | undefined
+  let lost = false
+  if (offRoute && goal) {
+    offStart = state.offStart ?? { from: state.player ?? position, point: position, odoM: odometer.totalM, goalM: haversine(position, goal) }
+    const verdict = judgeDeviation(offStart, position, odometer.totalM, goal, cfg)
+    lost = verdict === 'away' || (state.lost === true && verdict !== 'toward')
+    if (verdict === 'toward' && (offStart.triedM === undefined || odometer.totalM - offStart.triedM >= cfg.retryM)) {
+      offStart = { ...offStart, triedM: odometer.totalM }
+      events.push({ type: 'reroute' })
+    }
+  }
+  if (lost && !state.lost) events.push({ type: 'offRoute' })
+  if (!offRoute && state.lost) events.push({ type: 'backOnRoute' })
 
   const prevAlong = state.alongM
   const alongM = onRoute ? snap.alongM : state.alongM
@@ -169,10 +241,12 @@ export function applyFix(state: QuestState, fix: GpsFix, cfg: QuestConfig = DEFA
     state: {
       ...state,
       filter: filtered.state,
-      odometer: advanceOdometer(state.odometer, position, accuracy),
+      odometer,
       alongM,
       offRouteCount,
       offRoute,
+      offStart,
+      lost,
       collected,
       lastFixAt: fix.timestamp,
       finishedAt: finished ? fix.timestamp : undefined,

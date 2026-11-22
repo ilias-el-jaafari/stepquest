@@ -125,7 +125,7 @@ describe('Overpass client', () => {
   it('caches results and serves the second request without the network', async () => {
     const fetch = vi.fn(async () => okResponse())
     let clock = 1_000_000
-    const client = new OverpassClient({ cache: new MemoryCache(), fetch, now: () => clock })
+    const client = new OverpassClient({ cache: new MemoryCache(), fetch, now: () => clock, endpoints: ['https://only'] })
     const first = await client.loadArea(bbox)
     expect(first.fromCache).toBe(false)
     expect(first.data.ways).toHaveLength(3)
@@ -140,9 +140,9 @@ describe('Overpass client', () => {
   it('refetches after the cache expires but never faster than the minimum gap', async () => {
     const fetch = vi.fn(async () => okResponse())
     let clock = 0
-    const client = new OverpassClient({ cache: new MemoryCache(), fetch, now: () => clock })
+    const client = new OverpassClient({ cache: new MemoryCache(), fetch, now: () => clock, endpoints: ['https://only'] })
     await client.loadArea(bbox)
-    const other = { ...bbox, north: 39.49 }
+    const other = { ...bbox, north: bbox.north + 0.01 }
     clock += 2000
     await expect(client.loadArea(other)).rejects.toMatchObject({ code: 'rateLimited' })
     clock += 10_000

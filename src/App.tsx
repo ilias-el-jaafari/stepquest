@@ -14,7 +14,8 @@ import { addAvoid, loadAvoid, removeAvoid, saveAvoid } from './ui/avoidList.ts'
 import { AvoidStreetsBox } from './ui/AvoidStreetsBox.tsx'
 import { InfoMenu } from './ui/InfoMenu.tsx'
 import { locateOnce, type LocationErrorCode } from './quest/geolocation.ts'
-import { createQuest, type AreaRef } from './quest/quest.ts'
+import { createQuest, type AreaRef, type QuestState } from './quest/quest.ts'
+import { rerouteQuest } from './quest/reroute.ts'
 import { audioEngine } from './audio/engine.ts'
 import { loadQuest } from './quest/storage.ts'
 import { MapView } from './ui/MapView.tsx'
@@ -69,6 +70,11 @@ export default function App() {
   const [simNoise, setSimNoise] = useState(true)
   const [resumed, setResumed] = useState(false)
   const [tab, setTab] = useState<Tab>('map')
+  /** Map centre after a pan or zoom, to offer loading an area that is not loaded yet. */
+  const [viewCentre, setViewCentre] = useState<LatLon>()
+  /** Location permission not granted yet: offer planning around the walker's position. */
+  const [askHere, setAskHere] = useState(false)
+  const locateRef = useRef<(w?: World) => Promise<void>>(async () => {})
   const [todaySteps, setTodaySteps] = useState(() => stepsToday(Date.now()))
   // Raw text of the number fields: typed freely, validated on blur, Enter or Plan.
   const [stepsText, setStepsText] = useState(() => String(settings.targetSteps))
@@ -76,7 +82,11 @@ export default function App() {
   const [stepsNote, setStepsNote] = useState<Committed>()
   const [strideNote, setStrideNote] = useState<Committed>()
   const live = useLiveLoader()
-  const runner = useQuestRunner()
+  const reroute = useCallback(
+    (q: QuestState) => (world ? rerouteQuest(q, { graph: world.graph, ctx: world.safety, data: world.data, bbox: world.data.bbox }, { avoid, now: Date.now() }) : undefined),
+    [world, avoid],
+  )
+  const runner = useQuestRunner(reroute)
   const liveLoad = live.load
   const beginQuest = runner.begin
   const booted = useRef(false)
@@ -100,7 +110,13 @@ export default function App() {
       if (saved && (saved.area.kind === 'demo' || !isDemoWorld(w))) {
         setResumed(true)
         beginQuest(saved, true)
+        return
       }
+      // No quest to resume: load the map around the walker when location is already allowed,
+      // otherwise offer it (the browser asks for permission on that tap).
+      const permission = await navigator.permissions?.query({ name: 'geolocation' }).catch(() => undefined)
+      if (permission?.state === 'granted') void locateRef.current(w)
+      else if (permission?.state !== 'denied') setAskHere(true)
     })()
   }, [liveLoad, beginQuest])
 
@@ -246,6 +262,7 @@ export default function App() {
     const box = areaForWalk(coords, stepsToMetres(settings.targetSteps, settings.strideM))
     const w = await live.load(box)
     if (!w) return false
+    setAskHere(false)
     setWorld(w)
     setIsDemo(false)
     setLiveBox(box)
@@ -263,7 +280,10 @@ export default function App() {
     await loadLiveAround(coords)
   }
 
-  const locateMe = async () => {
+  /** `loaded` is the world just loaded at start-up (state is not updated yet then). */
+  const locateMe = async (loaded?: World) => {
+    const current = loaded ?? world
+    setAskHere(false)
     setLocate({ state: 'locating' })
     const res = await locateOnce()
     if (!res.ok) {
@@ -272,7 +292,7 @@ export default function App() {
     }
     const p = { lat: res.fix.lat, lon: res.fix.lon }
     setCoordsText(`${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`)
-    if (world && bboxContains(world.data.bbox, p)) {
+    if (current && bboxContains(current.data.bbox, p)) {
       setStart(p)
       setPlacing(settings.mode === 'oneway' ? 'end' : 'start')
       clearResult()
@@ -286,6 +306,17 @@ export default function App() {
     }
     setLocate({ state: 'ok', accuracy: res.fix.accuracy, weak: res.weak })
   }
+
+  useEffect(() => {
+    locateRef.current = locateMe
+  })
+
+  const loadView = async () => {
+    if (!viewCentre) return
+    if (await loadLiveAround(viewCentre)) setViewCentre(undefined)
+  }
+  const outsideView = !!world && !!viewCentre && !bboxContains(world.data.bbox, viewCentre)
+  const loadingMb = live.status.state === 'loading' ? (live.status.bytes / 1e6).toFixed(1) : undefined
 
   // Leaving a quest: real (not simulated) steps add to today's total.
   const endQuest = () => {
@@ -391,6 +422,7 @@ export default function App() {
               avoided={avoidedLines}
               onLocate={() => void locateMe()}
               locating={locate.state === 'locating' || locate.state === 'loadingArea'}
+              onView={setViewCentre}
             />
           ) : (
             <div className="map map-loading">{t('map.loading')}</div>
@@ -409,6 +441,31 @@ export default function App() {
               >
                 {t('safety.cancel')}
               </button>
+            </div>
+          )}
+          {!pickingAvoid && pickNote?.ok !== false && (loadingMb !== undefined || outsideView || askHere) && (
+            <div className="map-banner area-toast" role="status" data-testid="area-toast">
+              {loadingMb !== undefined ? (
+                <span>{t('area.loading', { mb: loadingMb })}</span>
+              ) : outsideView ? (
+                <>
+                  <span>{t('area.outside')}</span>
+                  {live.status.state === 'error' && <span className="area-error">{t(`data.err.${live.status.code}`)}</span>}
+                  <button type="button" className="pix-btn small-text" onClick={() => void loadView()} data-testid="load-area">
+                    {t('area.load')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span>{t('area.askHere')}</span>
+                  <button type="button" className="pix-btn small-text" onClick={() => void locateMe()}>
+                    {t('loc.use')}
+                  </button>
+                  <button type="button" className="pix-btn small-text" onClick={() => setAskHere(false)} aria-label={t('info.close')}>
+                    ×
+                  </button>
+                </>
+              )}
             </div>
           )}
         </section>
@@ -644,14 +701,18 @@ export default function App() {
           <div className="box">
             <h2 className="box-title">{t('data.label')}</h2>
             <p className="hint">{isDemo ? t('data.demo', { name: DEMO_AREA.name }) : t('data.live', { lat: fmt(start.lat), lon: fmt(start.lon) })}</p>
-            <label className="field">
-              <span className="hint">{t('data.coords')}</span>
-              <input type="text" value={coordsText} onChange={(e) => setCoordsText(e.target.value)} />
-            </label>
-            <div className="actions">
+            <p className="hint">{t('data.howTo')}</p>
+            <details className="advanced">
+              <summary>{t('data.advanced')}</summary>
+              <label className="field">
+                <span className="hint">{t('data.coords')}</span>
+                <input type="text" value={coordsText} onChange={(e) => setCoordsText(e.target.value)} />
+              </label>
               <button type="button" className="pix-btn" disabled={live.status.state === 'loading'} onClick={() => void loadLive()}>
                 {live.status.state === 'loading' ? t('data.loading') : t('data.load')}
               </button>
+            </details>
+            <div className="actions">
               {!isDemo && (
                 <button type="button" className="pix-btn" onClick={() => void backToDemo()}>
                   {t('data.backToDemo')}

@@ -6,7 +6,7 @@ import { townFor, type TownLayout } from '../town/layout.ts'
 import { P } from './palette.ts'
 import { hazardStamps, midpoint, NO_ENTRY } from './hazard.ts'
 import { railStamps } from './rails.ts'
-import { ARROW_PATTERNS, chevrons, routeCells, smoothPolyline, type Chevron, type RouteCell } from './routePath.ts'
+import { dirIndex, FOOT_DIRS, FOOT_PATTERNS, footprints, routeCells, smoothPolyline, type RouteCell } from './routePath.ts'
 import { CHECKPOINT, facingFrom, FINISH_FLAG, paintSprite, START_MAT, walkFrame, WALKER, type Facing, type Sprite } from './sprites.ts'
 import { paintFrontFence, paintGardenPath, paintGardenTree, paintHouse, paintLandmark } from './structures.ts'
 import { paintTile, tileHash, tileKey } from './tileset.ts'
@@ -89,7 +89,6 @@ export class MapRenderer {
   private route: RouteShape | undefined
   private routeCells: RouteCell[] = []
   private routeLine: (RouteCell & { cx: number; cy: number })[] = []
-  private routeArrows: Chevron[] = []
   /** Avoided streets in tile coordinates. */
   private avoided: { x: number; y: number }[][] = []
   /** Walker animation: facing, tween between fixes, and when it last moved. */
@@ -133,7 +132,6 @@ export class MapRenderer {
   setRoute(route: RouteShape | undefined): void {
     this.route = route
     this.routeCells = route ? routeCells(route.points.map((p) => this.grid.toTileXY(p)), cumulativeDistances(route.points)) : []
-    this.routeArrows = chevrons(this.routeCells)
     this.routeLine = smoothPolyline(this.routeCells)
     this.requestRender()
   }
@@ -285,9 +283,12 @@ export class MapRenderer {
     this.requestRender()
   }
 
+  /** The camera may go half a screen past the loaded area, so the map can offer loading the next one. */
   private clampCamera(): void {
-    this.camX = Math.max(0, Math.min(this.grid.cols, this.camX))
-    this.camY = Math.max(0, Math.min(this.grid.rows, this.camY))
+    const mx = this.cssWidth / 2 / this.zoom
+    const my = this.cssHeight / 2 / this.zoom
+    this.camX = Math.max(-mx, Math.min(this.grid.cols + mx, this.camX))
+    this.camY = Math.max(-my, Math.min(this.grid.rows + my, this.camY))
   }
 
   screenToTile(sx: number, sy: number): { x: number; y: number } {
@@ -468,7 +469,7 @@ export class MapRenderer {
     // Avoided streets: hazard tape under the route.
     if (this.avoided.length) this.drawAvoided(ctx, scale, toScreen, w, h, dpr)
 
-    // Route: one continuous band along the tiles (gold where already walked) with direction arrows.
+    // Route: red pixel footprints along the path (darker where already walked).
     if (this.routeCells.length) this.drawRoute(ctx, scale, toScreen, w, h, dpr)
 
     const spriteScale = Math.max(1, Math.round((this.zoom >= 16 ? this.zoom / 16 : 1.5) * dpr))
@@ -672,69 +673,34 @@ export class MapRenderer {
     h: number,
     dpr: number,
   ): void {
-    const cells = this.routeCells
     const line = this.routeLine
     const walked = this.quest?.alongM ?? -1
     const detail = this.zoom >= DETAIL_ZOOM
-    // One art pixel in device pixels (detail), or a fixed band on the town map.
+    // One art pixel in device pixels.
     const unit = detail ? Math.max(1, Math.round(scale / 16)) : Math.max(1, Math.round(dpr))
-    const band = detail ? 6 * unit : Math.max(2 * dpr, Math.ceil(scale * 1.6))
-    const margin = scale * 2 + band
+    const margin = 12 * unit
     const visible = (p: { x: number; y: number }) => p.x > -margin && p.y > -margin && p.x < w + margin && p.y < h + margin
-    // Square brush stamped every art pixel along each segment: a pixel-art thick line.
-    const stroke = (width: number, colour: (c: RouteCell) => string, dx = 0, dy = 0) => {
-      for (let i = 1; i < line.length; i++) {
-        const a = line[i - 1]!
-        const b = line[i]!
-        const pa = toScreen(a.cx, a.cy)
-        const pb = toScreen(b.cx, b.cy)
-        if (!visible(pa) && !visible(pb)) continue
-        ctx.fillStyle = colour(a)
-        const steps = Math.max(1, Math.ceil(Math.max(Math.abs(pb.x - pa.x), Math.abs(pb.y - pa.y)) / unit))
-        const straight = pa.x === pb.x || pa.y === pb.y
-        if (straight) {
-          ctx.fillRect(Math.round(Math.min(pa.x, pb.x) - width / 2) + dx, Math.round(Math.min(pa.y, pb.y) - width / 2) + dy, Math.round(Math.abs(pb.x - pa.x) + width), Math.round(Math.abs(pb.y - pa.y) + width))
-          continue
-        }
-        for (let k = 0; k <= steps; k++) {
-          const x = pa.x + ((pb.x - pa.x) * k) / steps
-          const y = pa.y + ((pb.y - pa.y) * k) / steps
-          ctx.fillRect(Math.round((x - width / 2) / unit) * unit + dx, Math.round((y - width / 2) / unit) * unit + dy, width, width)
-        }
-      }
-      if (line.length === 1) {
-        const p = toScreen(line[0]!.cx, line[0]!.cy)
-        ctx.fillStyle = colour(line[0]!)
-        ctx.fillRect(Math.round(p.x - width / 2), Math.round(p.y - width / 2), width, width)
-      }
-    }
-    // Drop shadow, dark outline, then the band (pink ahead, gold behind).
-    stroke(band + 2 * unit, () => 'rgba(27, 26, 46, 0.3)', unit, unit)
-    stroke(band + 2 * unit, () => P.routeShadow)
-    stroke(band, (c) => (c.along <= walked ? P.routeGlow : P.route))
-    if (!detail) return
-    // Centre dots give the band a path-like texture.
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
-    for (let i = 0; i < cells.length; i += 2) {
-      const c = cells[i]!
-      const p = toScreen(c.x + 0.5, c.y + 0.5)
-      if (visible(p) && i % 4 === 0) ctx.fillRect(Math.round(p.x - unit), Math.round(p.y - unit), 2 * unit, 2 * unit)
-    }
-    // Direction arrows.
-    for (const a of this.routeArrows) {
-      const p = toScreen(a.x + 0.5, a.y + 0.5)
-      if (!visible(p)) continue
-      const rows = ARROW_PATTERNS[a.dir]!
-      const ox = Math.round(p.x - 4.5 * unit)
-      const oy = Math.round(p.y - 4.5 * unit)
+    // Footprints: bright red ahead, darker and faded where already walked.
+    const pts = line.map((c) => ({ ...toScreen(c.cx, c.cy), along: c.along }))
+    const px = detail ? unit : Math.max(1, Math.round(dpr * (this.zoom >= 8 ? 1.5 : 1)))
+    const prints = footprints(pts, 7 * px, 2 * px)
+    const size = 9 * px
+    for (const f of prints) {
+      if (!visible(f)) continue
+      const done = f.along <= walked
+      const rows = FOOT_PATTERNS[f.left ? 0 : 1]![dirIndex(f.angle, FOOT_DIRS)]!
+      const ox = Math.round(f.x - size / 2)
+      const oy = Math.round(f.y - size / 2)
+      ctx.globalAlpha = done ? 0.6 : 1
       rows.forEach((row, yy) => {
         for (let xx = 0; xx < row.length; xx++) {
           const ch = row[xx]
           if (ch === '.') continue
-          ctx.fillStyle = ch === 'k' ? P.ink : P.white
-          ctx.fillRect(ox + xx * unit, oy + yy * unit, unit, unit)
+          ctx.fillStyle = ch === 'k' ? (done ? P.routeShadow : P.ink) : done ? P.routeWalked : P.route
+          ctx.fillRect(ox + xx * px, oy + yy * px, px, px)
         }
       })
     }
+    ctx.globalAlpha = 1
   }
 }

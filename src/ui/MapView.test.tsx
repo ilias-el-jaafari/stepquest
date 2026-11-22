@@ -63,4 +63,25 @@ describe('map buttons during a quest', () => {
     expect(host.querySelectorAll('.map-buttons button')).toHaveLength(5)
     expect(host.querySelector('[data-testid="map-locate"]')!.getAttribute('aria-label')).toBe('Use my location')
   })
+
+  it('reports the map centre after the user zooms or pans (to offer loading that area)', async () => {
+    vi.useFakeTimers()
+    const onView = vi.fn()
+    await act(async () =>
+      root.render(
+        <I18nProvider>
+          <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="v" onTap={() => {}} home={start} onView={onView} />
+        </I18nProvider>,
+      ),
+    )
+    const canvas = host.querySelector('canvas')!
+    await act(async () => {
+      canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))
+    })
+    expect(onView).not.toHaveBeenCalled()
+    await act(async () => vi.advanceTimersByTime(200))
+    vi.useRealTimers()
+    expect(onView).toHaveBeenCalledTimes(1)
+    expect(onView.mock.calls[0]![0]).toHaveProperty('lat')
+  })
 })
