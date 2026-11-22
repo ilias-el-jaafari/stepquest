@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { LatLon } from '../geo/geo.ts'
 import { useI18n } from '../i18n/index.ts'
+import { PixelIcon } from './PixelIcons.tsx'
 import { MapRenderer, type Markers, type QuestOverlay, type RouteShape } from '../render/MapRenderer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 
@@ -24,11 +25,14 @@ type Props = {
   onUserPan?: () => void
   /** Streets on the avoid list, drawn as hazard tape. */
   avoided?: readonly (readonly LatLon[])[]
+  /** Shows a "use my location" button. */
+  onLocate?: () => void
+  locating?: boolean
 }
 
 const TAP_SLOP_PX = 8
 
-export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided }: Props) {
+export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<MapRenderer | undefined>(undefined)
@@ -183,6 +187,11 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
         <button type="button" className="pix-btn small" onClick={goHome} aria-label={t('map.home')} title={t('map.home')}>
           ⌂
         </button>
+        {onLocate && (
+          <button type="button" className="pix-btn small" onClick={onLocate} disabled={locating} aria-label={t('loc.use')} title={t('loc.use')} data-testid="map-locate">
+            <PixelIcon name="locate" size={18} />
+          </button>
+        )}
       </div>
       <div className="map-attribution">{t('map.attribution')}</div>
     </div>

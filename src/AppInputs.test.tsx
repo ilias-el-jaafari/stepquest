@@ -39,7 +39,7 @@ const stepsInput = () => host.querySelector<HTMLInputElement>('input[name="steps
 const strideInput = () => host.querySelector<HTMLInputElement>('input[name="stride"]')!
 const slider = () => host.querySelector<HTMLInputElement>('input[type="range"]')!
 const note = (id: string) => host.querySelector(`#${id}`)?.textContent ?? ''
-const kmHint = () => host.querySelector('.box .hint:last-of-type')?.textContent ?? ''
+const kmHint = () => host.querySelector('[data-testid="km-hint"]')?.textContent ?? ''
 const savedSettings = () => JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? '{}') as { targetSteps?: number; strideM?: number }
 
 /** Set the value like a browser does (so React's value tracker sees it) and fire an input event. */

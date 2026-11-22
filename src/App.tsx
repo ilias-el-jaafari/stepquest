@@ -19,7 +19,13 @@ import { audioEngine } from './audio/engine.ts'
 import { loadQuest } from './quest/storage.ts'
 import { MapView } from './ui/MapView.tsx'
 import { QuestScreen } from './ui/QuestScreen.tsx'
-import { SoundMenu } from './ui/SoundMenu.tsx'
+import { SoundControls } from './ui/SoundMenu.tsx'
+import { PixelSvg } from './ui/PixelIcons.tsx'
+import { TabBar } from './ui/TabBar.tsx'
+import { panelId, tabId, type Tab } from './ui/tabs.ts'
+import { WALKER } from './render/sprites.ts'
+import { addStepsToday, stepsToday } from './quest/dailySteps.ts'
+import { questStats } from './quest/quest.ts'
 import { useQuestRunner } from './ui/useQuestRunner.ts'
 import { commitSteps, commitStride, formatStride, liveSteps, liveStride, parseStepsText, parseStrideText, SLIDER_MAX, SLIDER_MIN, SLIDER_STEP, sliderValue, type Committed } from './ui/numberInput.ts'
 import { clampSteps, loadSettings, parseCoords, saveSettings, type Settings } from './ui/settings.ts'
@@ -62,6 +68,8 @@ export default function App() {
   const [simSpeed, setSimSpeed] = useState(20)
   const [simNoise, setSimNoise] = useState(true)
   const [resumed, setResumed] = useState(false)
+  const [tab, setTab] = useState<Tab>('map')
+  const [todaySteps, setTodaySteps] = useState(() => stepsToday(Date.now()))
   // Raw text of the number fields: typed freely, validated on blur, Enter or Plan.
   const [stepsText, setStepsText] = useState(() => String(settings.targetSteps))
   const [strideText, setStrideText] = useState(() => formatStride(settings.strideM))
@@ -182,6 +190,7 @@ export default function App() {
         setPickNote(name ? { ok: true, name } : { ok: false })
         if (name) {
           setPickingAvoid(false)
+          setTab('bag')
           setAvoid((list) => {
             const next = addAvoid(list, name)
             saveAvoid(next)
@@ -278,6 +287,14 @@ export default function App() {
     setLocate({ state: 'ok', accuracy: res.fix.accuracy, weak: res.weak })
   }
 
+  // Leaving a quest: real (not simulated) steps add to today's total.
+  const endQuest = () => {
+    const q = runner.quest
+    const now = Date.now()
+    if (q && !q.simulated) setTodaySteps(addStepsToday(questStats(q, now).steps, now))
+    runner.end()
+  }
+
   const startQuest = () => {
     if (!result?.ok) return
     const area: AreaRef = isDemo || !liveBox ? { kind: 'demo' } : { kind: 'live', bbox: liveBox }
@@ -333,87 +350,90 @@ export default function App() {
         error={runner.error}
         wakeActive={runner.wakeActive}
         resumed={resumed}
-        onEnd={runner.end}
+        onEnd={endQuest}
         onUseSim={() => runner.switchToSimulation(simSpeed)}
       />
     )
   }
 
+  const hidden = (name: Tab) => tab !== name
+  const todayPct = Math.min(100, Math.round((todaySteps / Math.max(1, settings.targetSteps)) * 100))
+  const shownRoute = result?.ok ? result.route : result?.closest
+
   return (
-    <div className="app">
+    <div className={`app tab-${tab}`}>
       <header className="topbar">
         <div className="brand">
           <h1 className="logo">{APP_NAME}</h1>
           <p className="tagline">{t('app.tagline')}</p>
         </div>
-        <div className="topbar-tools">
-          <InfoMenu place={start} now={today} />
-          <SoundMenu placement="down" />
-          <label className="lang">
-            <span className="sr-only">{t('lang.switchTo')}</span>
-            <select value={locale} onChange={(e) => setLocale(e.target.value as Locale)} aria-label={t('lang.switchTo')}>
-              <option value="es">ES</option>
-              <option value="en">EN</option>
-            </select>
-          </label>
+        <div className="status-row">
+          <span className="avatar" role="img" aria-label={t('header.avatar')}>
+            <PixelSvg art={WALKER.down[0]!} size={30} />
+          </span>
+          <span className="steps-pill" data-testid="steps-today">
+            <span className="steps-pill-label">{t('header.stepsToday')}:</span> <strong>{todaySteps.toLocaleString(locale)}</strong>
+          </span>
         </div>
       </header>
 
       <main className="layout">
         <section className="map-wrap">
           {world ? (
-            <MapView grid={world.grid} route={shown} markers={markers} focus={focus} focusKey={focusKey} onTap={onTap} home={start} avoided={avoidedLines} />
+            <MapView
+              grid={world.grid}
+              route={shown}
+              markers={markers}
+              focus={focus}
+              focusKey={focusKey}
+              onTap={onTap}
+              home={start}
+              avoided={avoidedLines}
+              onLocate={() => void locateMe()}
+              locating={locate.state === 'locating' || locate.state === 'loadingArea'}
+            />
           ) : (
             <div className="map map-loading">{t('map.loading')}</div>
           )}
+          {(pickingAvoid || pickNote?.ok === false) && (
+            <div className="map-banner" role="status">
+              <span>{pickingAvoid ? t('safety.picking') : t('safety.noStreet')}</span>
+              <button
+                type="button"
+                className="pix-btn small-text"
+                onClick={() => {
+                  setPickingAvoid(false)
+                  setPickNote(undefined)
+                  setTab('bag')
+                }}
+              >
+                {t('safety.cancel')}
+              </button>
+            </div>
+          )}
         </section>
 
-        <aside className="panel">
-          <div className="box">
-            <h2 className="box-title">{t('mode.label')}</h2>
-            <div className="segmented" role="radiogroup" aria-label={t('mode.label')}>
-              {(['loop', 'oneway'] as const).map((m) => (
-                <button key={m} type="button" role="radio" aria-checked={settings.mode === m} className={`pix-btn ${settings.mode === m ? 'on' : ''}`} onClick={() => setMode(m)}>
-                  {t(m === 'loop' ? 'mode.loop' : 'mode.oneway')}
-                </button>
-              ))}
-            </div>
-            <p className="hint">{t(settings.mode === 'loop' ? 'mode.loopHint' : 'mode.onewayHint')}</p>
-
-            {settings.mode === 'oneway' && (
-              <>
-                <h3 className="box-sub">{t('place.label')}</h3>
-                <div className="segmented">
+        {/* Map tab: the planner, framed above the tab bar. */}
+        <section className="sheet planner" id={panelId('map')} role="tabpanel" aria-labelledby={tabId('map')} hidden={hidden('map')}>
+          <div className="box planner-box">
+            <div className="planner-row">
+              <div className="segmented small" role="radiogroup" aria-label={t('mode.label')}>
+                {(['loop', 'oneway'] as const).map((m) => (
+                  <button key={m} type="button" role="radio" aria-checked={settings.mode === m} className={`pix-btn ${settings.mode === m ? 'on' : ''}`} onClick={() => setMode(m)}>
+                    {t(m === 'loop' ? 'mode.loop' : 'mode.oneway')}
+                  </button>
+                ))}
+              </div>
+              {settings.mode === 'oneway' && (
+                <div className="segmented small" aria-label={t('place.label')}>
                   {(['start', 'end'] as const).map((p) => (
                     <button key={p} type="button" className={`pix-btn ${placing === p ? 'on' : ''}`} onClick={() => setPlacing(p)}>
                       {t(p === 'start' ? 'place.start' : 'place.end')}
                     </button>
                   ))}
                 </div>
-              </>
-            )}
-            <p className="coords">
-              ▶ {t('place.startAt', { lat: fmt(start.lat), lon: fmt(start.lon) })}
-              {settings.mode === 'oneway' && (
-                <>
-                  <br />⚑ {end ? t('place.endAt', { lat: fmt(end.lat), lon: fmt(end.lon) }) : t('place.endMissing')}
-                </>
               )}
-            </p>
-            <div className="actions">
-              <button type="button" className="pix-btn" disabled={locate.state === 'locating' || locate.state === 'loadingArea'} onClick={() => void locateMe()}>
-                ◉ {locate.state === 'locating' ? t('loc.locating') : t('loc.use')}
-              </button>
             </div>
-            <LocateMessage status={locate} />
-            {isDemo && (
-              <button type="button" className="link-btn" onClick={resetPoints}>
-                {t('place.reset')}
-              </button>
-            )}
-          </div>
-
-          <div className="box">
             <label className="field">
               <span className="box-title">{t('target.label')}</span>
               <span className="input-row">
@@ -450,6 +470,133 @@ export default function App() {
                 </button>
               ))}
             </div>
+            <LocateMessage status={locate} />
+            {shownRoute && (
+              <p className={`route-line ${result?.ok ? 'ok' : 'bad'}`} data-testid="route-line">
+                {t('result.short', { km: (shownRoute.distanceM / 1000).toFixed(2), steps: shownRoute.steps.toLocaleString(locale), n: shownRoute.steps })}
+                {!result?.ok && <> · {t('result.title')} ▸</>}
+                {result?.ok && simulate && <> · {t('bag.demo')}</>}
+              </p>
+            )}
+            {result?.ok && (
+              <button type="button" className="pix-btn primary big start-btn" onClick={startQuest}>
+                ▶ {t('quest.start')}
+              </button>
+            )}
+            <div className="actions">
+              <button type="button" className={`pix-btn ${result?.ok ? 'small-text' : 'primary big'}`} disabled={!world || planning || (settings.mode === 'oneway' && !end)} onClick={() => plan(seed)}>
+                {planning ? t('action.planning') : t('action.generate')}
+              </button>
+              {settings.mode === 'loop' && result && (
+                <button type="button" className={`pix-btn ${result?.ok ? 'small-text' : ''}`} disabled={planning} onClick={() => plan(seed + 1)}>
+                  {t('action.reroll')}
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Bag: the quest log and the route kit (start point, streets to avoid). */}
+        <section className="sheet" id={panelId('bag')} role="tabpanel" aria-labelledby={tabId('bag')} hidden={hidden('bag')}>
+          <ResultBox result={result} onUseSteps={(steps) => setSteps(clampSteps(steps))} />
+          {safePlan && result && (
+            <SafetyNotice
+              plan={safePlan}
+              usingNormal={usingNormal}
+              onUseNormal={() => {
+                if (!safePlan.normal) return
+                setUsingNormal(true)
+                setResult(safePlan.normal)
+              }}
+            />
+          )}
+          <div className="box quest-start">
+            <h2 className="box-title">{t('bag.demo')}</h2>
+            <p className="hint">{t('quest.simulateHint')}</p>
+            <label className="check">
+              <input type="checkbox" checked={simulate} onChange={(e) => setSimulate(e.target.checked)} />
+              <span>{t('quest.simulate')}</span>
+            </label>
+            {simulate && (
+              <div className="sim-options">
+                <label className="field inline">
+                  <span className="hint">{t('quest.simSpeed')}</span>
+                  <select value={simSpeed} onChange={(e) => setSimSpeed(Number(e.target.value))} aria-label={t('quest.simSpeed')}>
+                    {SIM_SPEEDS.map((x) => (
+                      <option key={x} value={x}>
+                        {t('quest.simSpeedValue', { x })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="check">
+                  <input type="checkbox" checked={simNoise} onChange={(e) => setSimNoise(e.target.checked)} />
+                  <span>{t('quest.simNoise')}</span>
+                </label>
+              </div>
+            )}
+          </div>
+          <div className="box">
+            <h2 className="box-title">{t('bag.start')}</h2>
+            <p className="hint">{t(settings.mode === 'loop' ? 'mode.loopHint' : 'mode.onewayHint')}</p>
+            <p className="coords">
+              ▶ {t('place.startAt', { lat: fmt(start.lat), lon: fmt(start.lon) })}
+              {settings.mode === 'oneway' && (
+                <>
+                  <br />⚑ {end ? t('place.endAt', { lat: fmt(end.lat), lon: fmt(end.lon) }) : t('place.endMissing')}
+                </>
+              )}
+            </p>
+            <div className="actions">
+              <button type="button" className="pix-btn" disabled={locate.state === 'locating' || locate.state === 'loadingArea'} onClick={() => void locateMe()}>
+                ◉ {locate.state === 'locating' ? t('loc.locating') : t('loc.use')}
+              </button>
+            </div>
+            <LocateMessage status={locate} />
+            {isDemo && (
+              <button type="button" className="link-btn" onClick={resetPoints}>
+                {t('place.reset')}
+              </button>
+            )}
+          </div>
+          <AvoidStreetsBox
+            avoid={avoid}
+            onAvoid={(name) => changeAvoid(addAvoid(avoid, name))}
+            onUnavoid={(name) => changeAvoid(removeAvoid(avoid, name))}
+            streets={streets}
+            picking={pickingAvoid}
+            onPick={(on) => {
+              setPickingAvoid(on)
+              setPickNote(undefined)
+              // Picking needs the map in view.
+              if (on) setTab('map')
+            }}
+            pickNote={pickNote}
+          />
+        </section>
+
+        {/* Hero: the walker, today's steps and the stride. */}
+        <section className="sheet" id={panelId('hero')} role="tabpanel" aria-labelledby={tabId('hero')} hidden={hidden('hero')}>
+          <div className="box hero-box">
+            <div className="hero-head">
+              <span className="avatar big" aria-hidden="true">
+                <PixelSvg art={WALKER.down[0]!} size={64} />
+              </span>
+              <div>
+                <h2 className="box-title">{t('hero.title')}</h2>
+                <p className="hero-today">
+                  {t('hero.today')}: <strong>{todaySteps.toLocaleString(locale)}</strong>
+                </p>
+                <p className="hint">{t('hero.goal', { goal: settings.targetSteps.toLocaleString(locale) })}</p>
+              </div>
+            </div>
+            <div className="hp-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={todayPct} aria-label={t('hero.progress', { pct: todayPct })}>
+              <span style={{ width: `${todayPct}%` }} />
+            </div>
+            <p className="hint">{t('hero.progress', { pct: todayPct })}</p>
+            <p className="hint">{t('hero.note')}</p>
+          </div>
+          <div className="box">
             <label className="field">
               <span className="box-title">{t('stride.label')}</span>
               <span className="input-row">
@@ -469,75 +616,31 @@ export default function App() {
               </span>
             </label>
             <FieldNote id="stride-note" note={strideNote} outOfRange={strideOutOfRange} invalid={strideTyped.kind === 'invalid'} prefix="stride" range={strideRange} format={(v) => v.toLocaleString(locale)} />
-            <p className="hint">{t('stride.hint', { steps: settings.targetSteps.toLocaleString(locale), km })}</p>
-            <div className="actions">
-              <button type="button" className="pix-btn primary" disabled={!world || planning || (settings.mode === 'oneway' && !end)} onClick={() => plan(seed)}>
-                {planning ? t('action.planning') : t('action.generate')}
-              </button>
-              {settings.mode === 'loop' && result && (
-                <button type="button" className="pix-btn" disabled={planning} onClick={() => plan(seed + 1)}>
-                  {t('action.reroll')}
-                </button>
-              )}
+            <p className="hint" data-testid="km-hint">{t('stride.hint', { steps: settings.targetSteps.toLocaleString(locale), km })}</p>
+          </div>
+        </section>
+
+        {/* Settings: sound, language, map data and help. */}
+        <section className="sheet" id={panelId('settings')} role="tabpanel" aria-labelledby={tabId('settings')} hidden={hidden('settings')}>
+          <div className="box">
+            <h2 className="box-title">{t('settings.sound')}</h2>
+            <div className="sound-inline">
+              <SoundControls />
             </div>
           </div>
-
-          <AvoidStreetsBox
-            avoid={avoid}
-            onAvoid={(name) => changeAvoid(addAvoid(avoid, name))}
-            onUnavoid={(name) => changeAvoid(removeAvoid(avoid, name))}
-            streets={streets}
-            picking={pickingAvoid}
-            onPick={(on) => {
-              setPickingAvoid(on)
-              setPickNote(undefined)
-            }}
-            pickNote={pickNote}
-          />
-          <ResultBox result={result} onUseSteps={(steps) => setSteps(clampSteps(steps))} />
-          {safePlan && result && (
-            <SafetyNotice
-              plan={safePlan}
-              usingNormal={usingNormal}
-              onUseNormal={() => {
-                if (!safePlan.normal) return
-                setUsingNormal(true)
-                setResult(safePlan.normal)
-              }}
-            />
-          )}
-
-          {result?.ok && (
-            <div className="box quest-start">
-              <button type="button" className="pix-btn primary big" onClick={startQuest}>
-                ▶ {t('quest.start')}
-              </button>
-              <label className="check">
-                <input type="checkbox" checked={simulate} onChange={(e) => setSimulate(e.target.checked)} />
-                <span>{t('quest.simulate')}</span>
-              </label>
-              {simulate && (
-                <div className="sim-options">
-                  <p className="hint">{t('quest.simulateHint')}</p>
-                  <label className="field inline">
-                    <span className="hint">{t('quest.simSpeed')}</span>
-                    <select value={simSpeed} onChange={(e) => setSimSpeed(Number(e.target.value))} aria-label={t('quest.simSpeed')}>
-                      {SIM_SPEEDS.map((x) => (
-                        <option key={x} value={x}>
-                          {t('quest.simSpeedValue', { x })}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="check">
-                    <input type="checkbox" checked={simNoise} onChange={(e) => setSimNoise(e.target.checked)} />
-                    <span>{t('quest.simNoise')}</span>
-                  </label>
-                </div>
-              )}
-            </div>
-          )}
-
+          <div className="box">
+            <label className="field lang">
+              <span className="box-title">{t('settings.language')}</span>
+              <select value={locale} onChange={(e) => setLocale(e.target.value as Locale)} aria-label={t('lang.switchTo')}>
+                <option value="es">Español</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+          </div>
+          <div className="box">
+            <h2 className="box-title">{t('settings.about')}</h2>
+            <InfoMenu place={start} now={today} />
+          </div>
           <div className="box">
             <h2 className="box-title">{t('data.label')}</h2>
             <p className="hint">{isDemo ? t('data.demo', { name: DEMO_AREA.name }) : t('data.live', { lat: fmt(start.lat), lon: fmt(start.lon) })}</p>
@@ -560,8 +663,10 @@ export default function App() {
             {live.status.state === 'error' && <p className="msg bad">{t(`data.err.${live.status.code}`)}</p>}
           </div>
           <p className="footer">{t('app.contestLine')} · {t('app.phase')}</p>
-        </aside>
+        </section>
       </main>
+
+      <TabBar tab={tab} onTab={setTab} />
     </div>
   )
 }

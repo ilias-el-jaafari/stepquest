@@ -85,7 +85,13 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 - [x] 47. Overpass query and demo extract with street names, lighting, sidewalks, industrial land and shops/amenities (codec v3)
 - [x] 48. Tests: cost function, street search and nearest street, avoid list, safe/normal/avoid fallbacks, sun times, codec round trip, safety box UI; screenshots in `screenshots/safe-route/`
 
+## Mobile design
+
+- [x] 49. App frame: header with title and steps today, full-height map, framed planner above a bottom tab bar (Map, Bag, Hero, Settings) with original pixel icons; side rail on wide screens; existing panels moved into tabs and sheets; iPhone safe areas, web app manifest and home-screen icons; quest dialogue kept clear of the map credit line
+- [ ] 50. Route drawn as footprints, speech bubbles on the map
+- [ ] 51. New tile art
+
 ## Phase 5 — Submission
 
-- [ ] 49. Onboarding, logo, PWA manifest
-- [ ] 50. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up
+- [ ] 52. Onboarding, logo
+- [ ] 53. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up

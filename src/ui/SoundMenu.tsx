@@ -50,7 +50,7 @@ type Props = {
  * move into an options menu later.
  */
 export function SoundMenu({ placement = 'down', showLabel = true }: Props) {
-  const { t, locale } = useI18n()
+  const { t } = useI18n()
   const { settings, engine } = useAudio()
   const [open, setOpen] = useState(false)
   const panelId = useId()
@@ -92,58 +92,71 @@ export function SoundMenu({ placement = 'down', showLabel = true }: Props) {
       </button>
       {open && (
         <div className="sound-panel" id={panelId} role="group" aria-label={t('sound.title')} data-testid="sound-panel">
-          <div className="sound-toggles">
-            <label className="check">
-              <input type="checkbox" checked={settings.muted} onChange={(e) => engine.updateSettings({ muted: e.target.checked })} />
-              <span>{t('sound.mute')}</span>
-            </label>
-            <label className="check">
-              <input type="checkbox" checked={settings.voiceOnly} disabled={settings.muted} onChange={(e) => engine.updateSettings({ voiceOnly: e.target.checked })} />
-              <span>{t('sound.voiceOnly')}</span>
-            </label>
-          </div>
-          {VOLUME_CHANNELS.map((ch) => {
-            const disabled = settings.muted || (settings.voiceOnly && (ch === 'music' || ch === 'sfx'))
-            const value = Math.round(settings[ch] * 100)
-            return (
-              <label key={ch} className={`sound-slider ${disabled ? 'disabled' : ''}`}>
-                <span className="sound-label">{t(LABELS[ch])}</span>
-                <input
-                  type="range"
-                  className="pix-range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={value}
-                  disabled={disabled}
-                  aria-valuetext={`${value} %`}
-                  data-testid={`volume-${ch}`}
-                  onChange={(e) => engine.updateSettings({ [ch]: Number(e.target.value) / 100 })}
-                />
-                <span className="sound-value">{value}</span>
-              </label>
-            )
-          })}
-          <div className="sound-actions">
-            <button
-              type="button"
-              className="pix-btn small-text"
-              disabled={settings.muted}
-              onClick={() => {
-                engine.unlock()
-                engine.playSfx('gem')
-                engine.say(t('voice.test', { n: 3, total: 10 }), locale, 9)
-              }}
-            >
-              {t('sound.test')}
-            </button>
-            <button type="button" className="pix-btn small-text" onClick={() => setOpen(false)}>
-              {t('sound.close')}
-            </button>
-          </div>
-          <p className="sound-hint">{t('sound.hint')}</p>
+          <SoundControls onClose={() => setOpen(false)} />
         </div>
       )}
     </div>
+  )
+}
+
+/** The sound settings themselves (mute, voice only, volumes, test), shown in the pop-up or inline in Settings. */
+export function SoundControls({ onClose }: { onClose?: () => void }) {
+  const { t, locale } = useI18n()
+  const { settings, engine } = useAudio()
+  return (
+    <>
+      <div className="sound-toggles">
+        <label className="check">
+          <input type="checkbox" checked={settings.muted} onChange={(e) => engine.updateSettings({ muted: e.target.checked })} />
+          <span>{t('sound.mute')}</span>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={settings.voiceOnly} disabled={settings.muted} onChange={(e) => engine.updateSettings({ voiceOnly: e.target.checked })} />
+          <span>{t('sound.voiceOnly')}</span>
+        </label>
+      </div>
+      {VOLUME_CHANNELS.map((ch) => {
+        const disabled = settings.muted || (settings.voiceOnly && (ch === 'music' || ch === 'sfx'))
+        const value = Math.round(settings[ch] * 100)
+        return (
+          <label key={ch} className={`sound-slider ${disabled ? 'disabled' : ''}`}>
+            <span className="sound-label">{t(LABELS[ch])}</span>
+            <input
+              type="range"
+              className="pix-range"
+              min={0}
+              max={100}
+              step={5}
+              value={value}
+              disabled={disabled}
+              aria-valuetext={`${value} %`}
+              data-testid={`volume-${ch}`}
+              onChange={(e) => engine.updateSettings({ [ch]: Number(e.target.value) / 100 })}
+            />
+            <span className="sound-value">{value}</span>
+          </label>
+        )
+      })}
+      <div className="sound-actions">
+        <button
+          type="button"
+          className="pix-btn small-text"
+          disabled={settings.muted}
+          onClick={() => {
+            engine.unlock()
+            engine.playSfx('gem')
+            engine.say(t('voice.test', { n: 3, total: 10 }), locale, 9)
+          }}
+        >
+          {t('sound.test')}
+        </button>
+        {onClose && (
+          <button type="button" className="pix-btn small-text" onClick={onClose}>
+            {t('sound.close')}
+          </button>
+        )}
+      </div>
+      <p className="sound-hint">{t('sound.hint')}</p>
+    </>
   )
 }

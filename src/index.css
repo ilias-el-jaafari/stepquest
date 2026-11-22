@@ -439,25 +439,6 @@ input[aria-invalid='true'] {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-@media (min-width: 900px) {
-  .app {
-    height: 100%;
-  }
-
-  .layout {
-    grid-template-rows: none;
-    grid-template-columns: 1fr 380px;
-  }
-
-  .map-wrap {
-    border-bottom: none;
-    border-right: 4px solid #000;
-  }
-
-  .panel {
-    overflow-y: auto;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .pix-btn:active:not(:disabled) {
@@ -668,7 +649,8 @@ input[aria-invalid='true'] {
   position: absolute;
   left: 8px;
   right: 8px;
-  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 112px);
+  /* Above the bottom HUD and the map credit line (which sits at +104 px). */
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 126px);
   z-index: 4;
   display: flex;
   justify-content: center;
@@ -1082,16 +1064,476 @@ button.hud-msg.sound-resume {
   font-size: 8px;
   line-height: 1.7;
 }
-@media (max-width: 600px) {
-  .info-label {
+
+/* ============================================================
+   Mobile-first app frame: header, full-height map, framed planner
+   above a bottom tab bar; other tabs open as sheets over the map.
+   Wide screens: the tab bar becomes a side rail and the active tab
+   shows in a right-hand column next to the map.
+   ============================================================ */
+
+.app {
+  height: 100%;
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.topbar {
+  flex: none;
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  background: #1c2a4a;
+  border-bottom: 4px solid #000;
+  box-shadow: inset 0 -3px 0 #2c3f6b;
+}
+
+.logo {
+  font-size: 18px;
+  color: #fff;
+  text-shadow: 3px 3px 0 #000;
+}
+
+.tagline {
+  margin-top: 6px;
+  font-size: 7px;
+  line-height: 1.5;
+  color: #7fe07a;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #74c45a;
+  border: 3px solid #000;
+  box-shadow: inset 0 0 0 2px #fff;
+  overflow: hidden;
+}
+
+.avatar svg {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.avatar.big {
+  width: 76px;
+  height: 76px;
+}
+
+.steps-pill {
+  padding: 6px 10px;
+  font-size: 8px;
+  line-height: 1.4;
+  color: #fff;
+  background: #2c3f6b;
+  border: 3px solid #000;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px #7fe07a;
+  white-space: nowrap;
+}
+
+.steps-pill strong {
+  color: var(--gold);
+  font-weight: normal;
+}
+
+.layout {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 0;
+}
+
+.map-wrap {
+  flex: 1;
+  min-height: 160px;
+  border-bottom: none;
+}
+
+/* Credit line top-left, clear of the planner and the zoom buttons. */
+.layout .map-attribution {
+  top: 0;
+  bottom: auto;
+  border-radius: 0 0 4px 0;
+}
+
+.map-banner {
+  position: absolute;
+  left: 8px;
+  right: 64px;
+  bottom: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 8px;
+  background: var(--paper);
+  border: 3px solid #000;
+  box-shadow: 3px 3px 0 #000;
+}
+
+.map-banner span {
+  flex: 1;
+}
+
+.map-buttons .pixel-icon {
+  display: block;
+  margin: auto;
+  image-rendering: pixelated;
+}
+
+/* Sheets: one per tab. Non-map tabs cover the map area on phones. */
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.sheet[hidden] {
+  display: none;
+}
+
+.sheet:not(.planner) {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background:
+    radial-gradient(circle at 2px 2px, #2d2b52 1px, transparent 1.5px) 0 0 / 8px 8px,
+    var(--ink);
+}
+
+/* The planner: a grassy strip with an ornate framed box, like a handheld RPG menu. */
+.sheet.planner {
+  flex: none;
+  max-height: 58%;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.05) 0 4px, transparent 4px 8px),
+    #3f9a3a;
+  border-top: 4px solid #000;
+  box-shadow: inset 0 3px 0 #74c45a;
+}
+
+.planner-box {
+  position: relative;
+  padding: 10px 12px;
+}
+
+/* Ornamental pixel corners (four gold L shapes). */
+.planner-box::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  pointer-events: none;
+  --c: var(--gold);
+  background:
+    linear-gradient(var(--c), var(--c)) top left / 10px 3px no-repeat,
+    linear-gradient(var(--c), var(--c)) top left / 3px 10px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 10px 3px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 3px 10px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 10px 3px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 3px 10px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 10px 3px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 3px 10px no-repeat;
+}
+
+.planner-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.segmented.small {
+  flex: 1;
+  gap: 4px;
+}
+
+.segmented.small .pix-btn {
+  min-height: 32px;
+  padding: 4px 6px;
+  font-size: 8px;
+}
+
+.planner .field .box-title {
+  margin-bottom: 4px;
+}
+
+.planner .pix-range {
+  margin: 6px 0 2px;
+}
+
+.planner .presets {
+  margin-top: 4px;
+}
+
+.route-line {
+  margin: 8px 0 0;
+  font-size: 8px;
+}
+
+.route-line.ok {
+  color: var(--good);
+}
+
+.route-line.bad {
+  color: var(--bad);
+}
+
+.planner .actions {
+  margin-top: 8px;
+}
+
+.planner .pix-btn.primary {
+  background: #2fb3a6;
+  color: #fff;
+  text-shadow: 2px 2px 0 #12665e;
+  box-shadow: inset -3px -3px 0 #1d7f75, inset 3px 3px 0 #8ff0e4;
+}
+
+.start-btn {
+  margin-top: 8px;
+}
+
+.planner .quest-start {
+  margin-top: 6px;
+}
+
+.planner .quest-start .check {
+  font-size: 8px;
+}
+
+/* Tab bar: navy, pixel icons, the selected tab on a highlighted tile. */
+.tabbar {
+  flex: none;
+  background: #1c2a4a;
+  border-top: 4px solid #000;
+  box-shadow: inset 0 3px 0 #2c3f6b;
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.tabbar-list {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 60px;
+  padding: 6px 2px 6px;
+  font: inherit;
+  font-size: 7px;
+  color: #c9d4ef;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.tab-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 32px;
+  border: 3px solid transparent;
+}
+
+.tab-icon svg {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.tab.on {
+  color: var(--gold);
+}
+
+.tab.on .tab-icon {
+  background: #3d5a9c;
+  border-color: #000;
+  box-shadow: inset 0 0 0 2px var(--gold);
+}
+
+.tab:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: -3px;
+}
+
+/* Hero tab. */
+.hero-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.hero-today {
+  margin: 0;
+  font-size: 10px;
+}
+
+.hero-today strong {
+  font-weight: normal;
+  color: var(--accent-dark);
+}
+
+.hp-bar {
+  height: 16px;
+  margin-top: 12px;
+  background: #3a3950;
+  border: 3px solid #000;
+  box-shadow: inset 0 0 0 2px #fff;
+}
+
+.hp-bar span {
+  display: block;
+  height: 100%;
+  background: repeating-linear-gradient(90deg, #7fe07a 0 6px, #5cbf55 6px 8px);
+}
+
+/* Settings: the sound controls inline instead of a pop-up. */
+.sound-inline {
+  font-size: 8px;
+}
+
+.field.lang select {
+  width: 100%;
+}
+
+.sheet .footer {
+  margin: 0;
+  padding: 4px 0 8px;
+}
+
+/* Phones: the presets and the number field are enough; the slider stays on wider screens. */
+@media (max-width: 599px) {
+  .planner .pix-range {
     display: none;
   }
-  /* The Info button is not at the screen edge on phones: pin the panel to the viewport. */
+  .planner .actions .pix-btn.small-text {
+    flex: 1;
+  }
+}
+
+/* Info / FAQ opens as a full sheet on phones, above the tab bar. */
+@media (max-width: 899px) {
   .info-menu.down .info-panel {
     position: fixed;
-    top: 72px;
+    top: calc(env(safe-area-inset-top) + 12px);
+    bottom: calc(env(safe-area-inset-bottom) + 84px);
     left: 12px;
     right: 12px;
     width: auto;
+    max-height: none;
+    z-index: 40;
+  }
+}
+
+@media (min-width: 900px) {
+  .app {
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'head head'
+      'rail main';
+  }
+
+  .topbar {
+    grid-area: head;
+    padding: 10px 20px;
+  }
+
+  .logo {
+    font-size: 22px;
+  }
+
+  .tagline {
+    font-size: 8px;
+  }
+
+  .layout {
+    grid-area: main;
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    grid-template-rows: 1fr;
+  }
+
+  .map-wrap {
+    grid-column: 1;
+    grid-row: 1;
+    border-right: 4px solid #000;
+  }
+
+  .sheet,
+  .sheet:not(.planner),
+  .sheet.planner {
+    grid-column: 2;
+    grid-row: 1;
+    position: static;
+    max-height: none;
+    min-height: 0;
+    padding: 16px;
+    border-top: none;
+  }
+
+  .sheet.planner {
+    justify-content: flex-start;
+  }
+
+  .tabbar {
+    grid-area: rail;
+    border-top: none;
+    border-right: 4px solid #000;
+    box-shadow: inset -3px 0 0 #2c3f6b;
+    padding: 12px 0;
+  }
+
+  .tabbar-list {
+    grid-template-columns: none;
+    grid-auto-rows: min-content;
+    gap: 8px;
+  }
+
+  .tab {
+    min-height: 76px;
+    font-size: 8px;
+  }
+
+  .tab-icon {
+    width: 48px;
+    height: 42px;
+  }
+
+  .tab-icon svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .map-banner {
+    right: 70px;
   }
 }

@@ -161,6 +161,50 @@ describe('active quest UI', () => {
     expect(menu).toHaveBeenCalled()
     expect(audioEngine().getSnapshot().musicMode).toBe('menu')
     expect(localStorage.getItem(QUEST_STORAGE_KEY)).toBeNull()
+    // A simulated walk does not count as steps walked today.
+    expect(host.querySelector('[data-testid="steps-today"] strong')!.textContent).toBe('0')
+  })
+
+  it('has a bottom tab bar that switches between map, bag, hero and settings', async () => {
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!button('Plan quest'))
+    const panel = (name: string) => host.querySelector<HTMLElement>(`#tabpanel-${name}`)!
+    const tab = (name: string) => host.querySelector<HTMLButtonElement>(`[data-testid="tab-${name}"]`)!
+    expect(tab('map').getAttribute('aria-selected')).toBe('true')
+    expect(panel('map').hidden).toBe(false)
+    for (const name of ['bag', 'hero', 'settings', 'map']) {
+      await act(async () => tab(name).click())
+      for (const other of ['map', 'bag', 'hero', 'settings']) {
+        expect(panel(other).hidden).toBe(other !== name)
+        expect(tab(other).getAttribute('aria-selected')).toBe(String(other === name))
+      }
+    }
+    // Settings holds the sound controls, the language and the help; Hero holds the stride.
+    expect(panel('settings').querySelector('[data-testid="volume-master"]')).not.toBeNull()
+    expect(panel('settings').querySelector('[data-testid="info-button"]')).not.toBeNull()
+    expect(panel('hero').querySelector('input[name="stride"]')).not.toBeNull()
+    expect(panel('bag').querySelector('[data-testid="avoid-streets"]')).not.toBeNull()
+    // The map tab keeps only the planner: steps and the plan button.
+    expect(panel('map').querySelector('input[name="steps"]')).not.toBeNull()
+    expect(panel('map').querySelector('[data-testid="avoid-streets"]')).toBeNull()
+    // Picking a street to avoid jumps to the map and shows a banner with Cancel.
+    await act(async () => tab('bag').click())
+    await act(async () => button('Pick on map')!.click())
+    expect(panel('map').hidden).toBe(false)
+    expect(host.querySelector('.map-banner')?.textContent).toContain('Tap a street on the map')
+    await act(async () => [...host.querySelectorAll<HTMLButtonElement>('.map-banner button')][0]!.click())
+    expect(panel('bag').hidden).toBe(false)
+    expect(host.querySelector('.map-banner')).toBeNull()
+  })
+
+  it('shows today\'s steps in the header', async () => {
+    const d = new Date()
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    localStorage.setItem('stepquest.dailySteps', JSON.stringify({ day, steps: 12450 }))
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!button('Plan quest'))
+    expect(host.querySelector('[data-testid="steps-today"]')!.textContent).toContain('Steps today: 12,450')
+    expect(host.querySelector('[role="progressbar"]')!.getAttribute('aria-valuenow')).toBe('100')
   })
 
   it('shows the finish dialogue, stops watchPosition and hides signal warnings when a real quest ends', async () => {
@@ -210,6 +254,11 @@ describe('active quest UI', () => {
     })
     expect(host.querySelector('.hud-msg.warn, .hud-msg.bad')).toBeNull()
     expect(host.textContent).not.toContain('Signal lost')
+    // Back to planning: the real walk counts towards today's steps in the header.
+    await act(async () => button('New quest')!.click())
+    await waitFor(() => !!host.querySelector('[data-testid="steps-today"]'))
+    const today = Number(host.querySelector('[data-testid="steps-today"] strong')!.textContent!.replace(/[^\d]/g, ''))
+    expect(today).toBeGreaterThan(Math.round((finish.distanceM - 4) / 0.75) - 5)
   })
 
   it('uses singular wording in Spanish for a one-checkpoint quest and shows no lost-signal banner', async () => {
