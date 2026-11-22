@@ -86,3 +86,14 @@ describe('placeholders', () => {
     }
   })
 })
+
+describe('fallback wording', () => {
+  it('keeps the "fits your goal on any street" fallback neutral (safety is a default, not a mode)', () => {
+    for (const dict of [en, es] as Record<string, string>[]) {
+      for (const key of ['safety.infeasible', 'safety.useNormal', 'safety.usingNormal']) {
+        expect(dict[key], key).toBeDefined()
+        expect(dict[key]!.toLowerCase(), key).not.toMatch(/safe|segur|normal/)
+      }
+    }
+  })
+})
