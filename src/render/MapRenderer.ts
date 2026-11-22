@@ -30,6 +30,8 @@ export type QuestOverlay = {
   accuracyM: number | undefined
   collected: number
   alongM: number
+  /** Walked stretches of earlier routes (before a reroute), drawn as walked footprints. */
+  walkedBefore?: readonly (readonly LatLon[])[]
 }
 
 const PICKUP_MS = 900
@@ -89,6 +91,7 @@ export class MapRenderer {
   private route: RouteShape | undefined
   private routeCells: RouteCell[] = []
   private routeLine: (RouteCell & { cx: number; cy: number })[] = []
+  private walkedLines: (RouteCell & { cx: number; cy: number })[][] = []
   /** Avoided streets in tile coordinates. */
   private avoided: { x: number; y: number }[][] = []
   /** Walker animation: facing, tween between fixes, and when it last moved. */
@@ -148,6 +151,11 @@ export class MapRenderer {
 
   setQuest(quest: QuestOverlay | undefined): void {
     const prev = this.quest?.player
+    if (quest?.walkedBefore !== this.quest?.walkedBefore) {
+      this.walkedLines = (quest?.walkedBefore ?? [])
+        .filter((l) => l.length > 1)
+        .map((l) => smoothPolyline(routeCells(l.map((p) => this.grid.toTileXY(p)), cumulativeDistances([...l]))))
+    }
     this.quest = quest
     const next = quest?.player
     if (next) this.moveWalker(this.grid.toTileXY(next), prev ? this.grid.toTileXY(prev) : undefined)
@@ -470,7 +478,7 @@ export class MapRenderer {
     if (this.avoided.length) this.drawAvoided(ctx, scale, toScreen, w, h, dpr)
 
     // Route: red pixel footprints along the path (darker where already walked).
-    if (this.routeCells.length) this.drawRoute(ctx, scale, toScreen, w, h, dpr)
+    if (this.routeCells.length || this.walkedLines.length) this.drawRoute(ctx, scale, toScreen, w, h, dpr)
 
     const spriteScale = Math.max(1, Math.round((this.zoom >= 16 ? this.zoom / 16 : 1.5) * dpr))
     const drawSprite = (sprite: Sprite, p: LatLon, anchorY = 0.85) => {
@@ -673,16 +681,27 @@ export class MapRenderer {
     h: number,
     dpr: number,
   ): void {
-    const line = this.routeLine
-    const walked = this.quest?.alongM ?? -1
     const detail = this.zoom >= DETAIL_ZOOM
     // One art pixel in device pixels.
     const unit = detail ? Math.max(1, Math.round(scale / 16)) : Math.max(1, Math.round(dpr))
     const margin = 12 * unit
     const visible = (p: { x: number; y: number }) => p.x > -margin && p.y > -margin && p.x < w + margin && p.y < h + margin
-    // Footprints: bright red ahead, darker and faded where already walked.
-    const pts = line.map((c) => ({ ...toScreen(c.cx, c.cy), along: c.along }))
     const px = detail ? unit : Math.max(1, Math.round(dpr * (this.zoom >= 8 ? 1.5 : 1)))
+    // Walked stretches of routes left behind by a reroute: all walked, under the current route.
+    for (const line of this.walkedLines) this.drawFootprints(ctx, line, Infinity, toScreen, px, visible)
+    // Footprints: bright red ahead, darker and faded where already walked.
+    this.drawFootprints(ctx, this.routeLine, this.quest?.alongM ?? -1, toScreen, px, visible)
+  }
+
+  private drawFootprints(
+    ctx: CanvasRenderingContext2D,
+    line: readonly { cx: number; cy: number; along: number }[],
+    walked: number,
+    toScreen: (x: number, y: number) => { x: number; y: number },
+    px: number,
+    visible: (p: { x: number; y: number }) => boolean,
+  ): void {
+    const pts = line.map((c) => ({ ...toScreen(c.cx, c.cy), along: c.along }))
     const prints = footprints(pts, 7 * px, 2 * px)
     const size = 9 * px
     for (const f of prints) {

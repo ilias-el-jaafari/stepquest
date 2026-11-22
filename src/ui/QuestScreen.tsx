@@ -66,8 +66,8 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
   const next = nextCheckpoint(quest)
   const player = quest.player
   const overlay = useMemo(
-    () => ({ player: quest.player, accuracyM: quest.simulated ? undefined : quest.accuracy, collected: quest.collected, alongM: quest.alongM }),
-    [quest.player, quest.accuracy, quest.collected, quest.alongM, quest.simulated],
+    () => ({ player: quest.player, accuracyM: quest.simulated ? undefined : quest.accuracy, collected: quest.collected, alongM: quest.alongM, walkedBefore: quest.walkedBefore }),
+    [quest.player, quest.accuracy, quest.collected, quest.alongM, quest.simulated, quest.walkedBefore],
   )
   const markers = useMemo(() => ({}), [])
   // Frame the walker once when the quest screen opens (the parent keys this component by quest id).

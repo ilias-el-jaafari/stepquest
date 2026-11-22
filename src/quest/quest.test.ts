@@ -231,6 +231,16 @@ describe('persistence and resume', () => {
     expect(done.collected).toBe(4)
     expect(done.finishedAt).toBeDefined()
   })
+  it('keeps walked footprints from before a reroute, and drops them if malformed', () => {
+    const store = memory()
+    const trail = [origin, destination(origin, 90, 30)]
+    saveQuest({ ...newQuest(), walkedBefore: [trail] }, store)
+    expect(loadQuest(0, store)!.walkedBefore).toEqual(JSON.parse(JSON.stringify([trail])))
+    store.setItem(QUEST_STORAGE_KEY, JSON.stringify({ ...newQuest(), walkedBefore: [[{ lat: 'x' }]] }))
+    const q = loadQuest(0, store)!
+    expect(q).toBeDefined()
+    expect(q.walkedBefore).toBeUndefined()
+  })
   it('discards corrupt, foreign-version or stale saves', () => {
     const store = memory()
     store.setItem(QUEST_STORAGE_KEY, '{not json')
@@ -418,5 +428,21 @@ describe('distance to the next checkpoint', () => {
     expect(ahead.metres).toBeGreaterThan(500)
     expect(ahead.metres).toBeLessThan(530)
     expect(compassPoint(bearingBetween(q.player!, ahead.toward))).toBe('N')
+  })
+})
+
+describe('headOf', () => {
+  it('cuts a polyline after the walked distance', async () => {
+    const { headOf } = await import('../routing/checkpoints.ts')
+    const pts = [
+      { lat: 0, lon: 0 },
+      { lat: 0, lon: 0.001 },
+      { lat: 0, lon: 0.002 },
+    ]
+    expect(headOf(pts, 0)).toEqual([])
+    const h = headOf(pts, 150)
+    expect(h).toHaveLength(3)
+    expect(h[2]!.lon).toBeCloseTo(0.001349, 5)
+    expect(headOf(pts, 1e6)).toEqual(pts)
   })
 })

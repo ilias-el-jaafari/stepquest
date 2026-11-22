@@ -5,6 +5,7 @@ import type { OsmData } from '../osm/types.ts'
 import type { WalkGraph } from '../routing/graph.ts'
 import { planWithSafety } from '../routing/safePlanner.ts'
 import { nearestStreet, type SafetyContext } from '../routing/safety.ts'
+import { headOf } from '../routing/checkpoints.ts'
 import type { QuestState } from './quest.ts'
 
 export type RerouteWorld = { graph: WalkGraph; ctx: SafetyContext; data: OsmData; bbox: BBox }
@@ -16,7 +17,7 @@ const MIN_REMAINING_STEPS = 150
  * The rest of the quest from where the walker is now: a safety-weighted walk
  * to the finish that keeps the remaining step budget (±5 %), places the
  * uncollected checkpoints evenly on it and avoids the street they just left.
- * Collected checkpoints and walked distance stay. Undefined when no route fits.
+ * Collected checkpoints, walked distance and the walked footprints stay. Undefined when no route fits.
  */
 export function rerouteQuest(state: QuestState, world: RerouteWorld, opts: { avoid: readonly string[]; now: number }): QuestState | undefined {
   const here = state.player
@@ -42,6 +43,7 @@ export function rerouteQuest(state: QuestState, world: RerouteWorld, opts: { avo
   if (!r || Math.abs(r.steps - remaining) > remaining * TARGET_TOLERANCE + 1) return undefined
   const done = route.checkpoints.slice(0, state.collected)
   const next = r.checkpoints.map((c) => ({ ...c, index: c.index + state.collected }))
+  const walked = headOf(route.points, state.alongM)
   return {
     ...state,
     route: { ...route, points: r.points, distanceM: r.distanceM, steps: Math.round(walkedSteps + r.steps), checkpoints: [...done, ...next] },
@@ -52,6 +54,7 @@ export function rerouteQuest(state: QuestState, world: RerouteWorld, opts: { avo
     lost: false,
     player: here,
     rerouted: (state.rerouted ?? 0) + 1,
+    walkedBefore: walked.length > 1 ? [...(state.walkedBefore ?? []), walked] : state.walkedBefore,
   }
 }
 

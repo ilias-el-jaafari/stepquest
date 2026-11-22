@@ -144,6 +144,15 @@ describe('rerouting on the demo map', () => {
     expect(next!.alongM).toBe(0)
     expect(next!.offRoute || next!.lost).toBe(false)
     expect(next!.rerouted).toBe(1)
+    // The walked stretch of the old route stays, to be drawn as walked footprints.
+    const kept = next!.walkedBefore ?? []
+    expect(kept).toHaveLength(1)
+    expect(kept[0]![0]).toEqual(route.points[0])
+    const keptM = kept[0]!.slice(1).reduce((m, p, i) => m + haversine(kept[0]![i]!, p), 0)
+    expect(Math.abs(keptM - q.alongM)).toBeLessThan(1)
+    // A second reroute adds to it rather than replacing it.
+    const again = rerouteQuest({ ...next!, alongM: 50 }, world, { avoid: [], now: Date.UTC(2026, 10, 22, 12) })
+    if (again) expect(again.walkedBefore).toHaveLength(2)
     // The street they left is avoided when another way fits.
     const left = nearestStreet(data, q.offStart!.from)
     if (left) {

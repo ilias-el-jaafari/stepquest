@@ -18,6 +18,17 @@ export function cumulativeDistances(points: LatLon[]): number[] {
   return out
 }
 
+/** The first `distance` metres of a polyline (empty when nothing was covered). */
+export function headOf(points: LatLon[], distance: number): LatLon[] {
+  if (points.length < 2 || distance <= 0) return []
+  const cumulative = cumulativeDistances(points)
+  if (distance >= cumulative[cumulative.length - 1]!) return [...points]
+  const out: LatLon[] = []
+  for (let i = 0; i < points.length && cumulative[i]! < distance; i++) out.push(points[i]!)
+  out.push(pointAlong(points, cumulative, distance))
+  return out
+}
+
 /** Point at `distance` metres along a polyline (clamped to its ends). */
 export function pointAlong(points: LatLon[], cumulative: number[], distance: number): LatLon {
   if (points.length === 0) throw new Error('empty polyline')

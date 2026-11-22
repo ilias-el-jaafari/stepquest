@@ -67,6 +67,10 @@ export function loadQuest(now: number, store: StorageLike | undefined = storage(
     if (!isQuest(parsed)) throw new Error('invalid')
     const last = parsed.finishedAt ?? parsed.lastFixAt ?? parsed.startedAt
     if (now - last > QUEST_MAX_AGE_MS) throw new Error('stale')
+    // Walked footprints from before a reroute are only decoration: drop them if malformed.
+    const wb: unknown = parsed.walkedBefore
+    const okTrail = (l: unknown) => Array.isArray(l) && l.every((p: { lat?: unknown; lon?: unknown } | null) => typeof p?.lat === 'number' && typeof p.lon === 'number')
+    if (wb !== undefined && !(Array.isArray(wb) && wb.every(okTrail))) return { ...parsed, walkedBefore: undefined }
     return parsed
   } catch {
     clearQuest(store)

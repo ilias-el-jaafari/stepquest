@@ -40,6 +40,8 @@ export type QuestState = {
   lost?: boolean
   /** How many times the rest of the route was recalculated. */
   rerouted?: number
+  /** Walked stretches of the routes left behind by reroutes, so their footprints stay on the map. */
+  walkedBefore?: LatLon[][]
   /** Position to draw the walker at (snapped to the route when on it). */
   player: LatLon | undefined
   /** Accuracy of the last accepted fix, metres. */
