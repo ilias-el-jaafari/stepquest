@@ -17,3 +17,7 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 ## Mobile design
 
 - [x] 50. Speech bubbles on the map: the phrase on air (from the voice queue, so it always matches what is spoken) is drawn as a pixel-art bubble next to the walker in the app language and removed when the phrase ends or is cut; muted or locked audio still shows it for a time based on text length
+
+## Property-based tests
+
+- [x] 59. Speech bubble property tests (P-V1, P-V2 in `design.md`). No source bug found.

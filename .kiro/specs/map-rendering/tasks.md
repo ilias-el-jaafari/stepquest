@@ -31,3 +31,7 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 
 - [x] 50b. Map without holes: ground colour instead of black, time-budgeted nearest-first chunk painting with town-map stand-ins, idle prefetch ring, size-limited chunk cache that keeps on-screen chunks, automatic loading of the area under a rested view (debounced, one request at a time, no retry storms) when no route would be lost; tests for chunk planning, cache, auto-load rule and renderer fills
 - [ ] 51. New tile art
+
+## Property-based tests
+
+- [x] 58. Codec and chunk-plan property tests (P-M1, P-D1, P-D2 in `design.md`). No source bug found.

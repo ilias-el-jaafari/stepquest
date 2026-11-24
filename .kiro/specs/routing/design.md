@@ -37,3 +37,17 @@ Part of the StepQuest specs; see [../README.md](../README.md). See also: [safety
 ## Error handling: planner failures
 
 - Planner failures return a reason plus min/max steps and the closest route for preview; the UI offers a one-tap "Use N steps".
+
+## Correctness properties (task 56)
+
+Checked with fast-check (`*.property.test.ts`, fixed seed `20261204`, so a failure prints the counterexample and reruns the same way) on the bundled Benicalap map. Requirement ids refer to `requirements.md` in this folder.
+
+- **P-R1 Budget or infeasible.** For every request (mode, start, end, step goal 1,500–14,000, stride 0.5–1.0 m, seed), `planRoute` returns either a route whose real length differs from `steps × stride` by at most 5 %, or `ok: false` with a reason (and, for `tooShort`, a positive `minSteps`; a `closest` preview is never flagged as within tolerance). Validates 3.2, 3.3, 3.4, 3.5.
+- **P-R2 Chain of edges.** `route.nodes` are consecutive neighbours in the walking graph; a loop starts and ends at the same node; `distanceM` equals the sum of the real edge lengths and the haversine length of `points`. Validates 3.2, 3.6.
+- **P-R3 Gems in order and evenly spaced.** Checkpoint k of N sits at k/N of the route length (within 1e-6), strictly increasing, on the polyline at its stated distance, the last one at the finish; N is between 1 and 30. Holds for any polyline (`placeCheckpoints`) and for every planned route. Validates 4.1, 4.2.
+- **P-R4 Weights never change real length.** For any combination of safe, night and avoided streets, and for any positive per-edge weights given to `shortestPath`, the reported length is the sum of real edge lengths, steps follow from that length, and edge costs stay within `[MIN_FACTOR, MAX_FACTOR]`. Validates 3.1, 7b.5.
+- **P-RA1 Island never crossed, ring stays connected.** For random roundabouts (8–40 ring nodes, radius 8–60 m, 0–8 cut points, reversed arcs, 1–6 entry roads, an optional footway across the island with or without a centre node), no graph edge has a sample point more than 0.5 m inside the island (checked with an independent disc test), every ring edge is in the graph, and the ring and all entry roads are one connected component. Validates 7b.2, 7b.4.
+- **P-RA2 Detection ignores the split.** For the same ring cut into ways at different places (and with arcs reversed), `findRoundabouts` returns one roundabout with the same node set and island area, and the walking graph has the same size. A single round untagged ring of 20–220 m is detected. Validates 7b.1.
+- **P-RR1 Gem order kept.** For a walker at a random place along a planned loop and a random off-route position 25–120 m away, any patch from `planReroute` keeps the gem count and indices, leaves collected gems untouched and gives the uncollected ones strictly increasing distances ending at the finish; a local patch leaves each uncollected gem where it was. Validates 7c.4.
+- **P-RR2 Never behind the walker, never past the next gem.** A local patch is a short leg plus the old route from a vertex that lies between the walker's position along the route and the next gem; it starts within the snap distance of the walker and ends at the old finish. Validates 7c.4.
+- **P-RR3 Budget or full replan.** Any patch leaves the remaining steps within ±5 % (+1 step) of the steps left; with `local: false` the kind is `full` and its gems are evenly spaced; with fewer than 150 steps left no patch is made. The test fails if it never exercises both kinds. Validates 7c.5.

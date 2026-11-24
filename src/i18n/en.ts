@@ -203,7 +203,7 @@ export const en = {
   'dlg.start1': 'Your quest begins! Collect {n} {n|gem|gems} along the pink path.',
   'dlg.startFlag': 'Your quest begins! Walk to the flag.',
   'dlg.start2': 'Follow the arrows. The flag is the finish!',
-  'dlg.pickup': 'You found gem {n} of {total}! {left} to go.',
+  'dlg.pickup': 'You found gem {n} of {total}! {left|# to go.|# to go.}',
   'dlg.pickupLast': 'You found gem {n} of {total}! Now head for the flag.',
   'dlg.finish1': 'You reached the flag! Quest complete!',
   'dlg.finish2': '{km} walked, {steps} {steps|step|steps}. Well done!',

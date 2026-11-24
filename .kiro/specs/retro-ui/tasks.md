@@ -31,3 +31,7 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 
 - [ ] 52. Onboarding, logo
 - [ ] 53. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up
+
+## Property-based tests
+
+- [x] 57. i18n property tests (P-I1, P-I2 in `design.md`). Bug found and fixed: `dlg.pickup` had a plural `{left|Queda #.|Quedan #.}` in Spanish but a plain `{left}` in English; the English text now uses `{left|# to go.|# to go.}` (same output, same plural form set).
