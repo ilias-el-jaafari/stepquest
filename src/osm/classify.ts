@@ -26,15 +26,9 @@ export function isRailTrack(tags: Tags): boolean {
   return tags.railway !== undefined && RAIL_TRACKS.has(tags.railway)
 }
 
-/** Underground track: tunnel=yes/building_passage… (a cutting with tunnel=no stays visible). */
-function isUndergroundTrack(tags: Tags): boolean {
-  if (tags.tunnel !== undefined) return tags.tunnel !== 'no'
-  return Number(tags.layer ?? 0) < 0
-}
-
 export function classifyWay(tags: Tags): FeatureKind | undefined {
   // Tracks win over any highway tag: they are drawn as rails and are never walkable.
-  if (isRailTrack(tags)) return isUndergroundTrack(tags) ? undefined : 'rail'
+  if (isRailTrack(tags)) return isTunnel(tags) ? undefined : 'rail'
   const hw = tags.highway
   if (hw) {
     if (ROAD_HIGHWAYS.has(hw)) return 'road'
@@ -138,8 +132,20 @@ export function isCrossing(tags: Tags): boolean {
   return tags.footway === 'crossing' || tags.highway === 'crossing' || (tags.crossing !== undefined && tags.crossing !== 'no' && tags.highway !== undefined && tags.highway !== 'cycleway')
 }
 
+/**
+ * Underground way. An explicit `tunnel` tag wins (`tunnel=no` with `layer=-1`
+ * is a way in a cutting, still visible); without one, a negative `layer`
+ * counts. A way that is also a bridge is never underground.
+ */
 export function isTunnel(tags: Tags): boolean {
-  return (tags.tunnel !== undefined && tags.tunnel !== 'no') || Number(tags.layer ?? 0) < 0
+  if (isBridge(tags)) return false
+  if (tags.tunnel !== undefined) return tags.tunnel !== 'no'
+  return Number(tags.layer ?? 0) < 0
+}
+
+/** A bridge or viaduct (bridge=yes, viaduct, movable…). `bridge=no` is not one. */
+export function isBridge(tags: Tags): boolean {
+  return tags.bridge !== undefined && tags.bridge !== 'no' && tags.bridge !== ''
 }
 
 const ALLEY_SERVICE = new Set(['alley', 'driveway', 'parking_aisle', 'drive-through'])

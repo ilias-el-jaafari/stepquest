@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { decodeOsm, encodeOsm } from './codec.ts'
+import { CorruptDataError, decodeOsm, encodeOsm, type CompactOsm } from './codec.ts'
 import { loadDemoOsm } from './demo.ts'
 import { FEATURE_KINDS, LANDMARK_KINDS, type OsmData, type OsmWay } from './types.ts'
 
@@ -18,6 +18,8 @@ const dataArb: fc.Arbitrary<OsmData> = fc.integer({ min: 2, max: 30 }).chain((co
     area: fc.boolean(),
     tunnel: fc.boolean(),
     crossing: fc.boolean(),
+    bridge: fc.option(fc.constant(true), { nil: undefined }),
+    holes: fc.option(fc.array(fc.array(fc.integer({ min: 0, max: count - 1 }), { minLength: 4, maxLength: 8 }), { minLength: 1, maxLength: 3 }), { nil: undefined }),
     roundabout: fc.option(fc.constant(true), { nil: undefined }),
     sub: fc.option(text, { nil: undefined }),
     nodes: fc.array(fc.integer({ min: 0, max: count - 1 }), { minLength: 2, maxLength: 12 }),
@@ -71,5 +73,28 @@ describe('codec properties', () => {
     expect([...again.lat]).toEqual([...demo.lat])
     expect([...again.lon]).toEqual([...demo.lon])
     expect(again.pois).toEqual(demo.pois)
+  })
+})
+
+describe('codec robustness (task 66.5)', () => {
+  it('P-M2: damaged compact data is rejected with CorruptDataError or decodes to valid indices, never garbage', () => {
+    fc.assert(
+      fc.property(dataArb, fc.nat({ max: 5 }), fc.integer({ min: -5, max: 1e6 }), (data, which, junk) => {
+        const compact = JSON.parse(JSON.stringify(encodeOsm(data))) as CompactOsm
+        if (which === 0) compact.dlon.push(junk)
+        else if (which === 1 && compact.ways[0]) compact.ways[0]![0] = junk
+        else if (which === 2 && compact.ways[0]) compact.ways[0].push(junk)
+        else if (which === 3) compact.dlat = compact.dlat.slice(0, -1)
+        else if (which === 4) compact.bbox = [1, 2, 3] as unknown as CompactOsm['bbox']
+        else compact.v = junk as unknown as CompactOsm['v']
+        try {
+          const out = decodeOsm(compact)
+          for (const way of out.ways) for (const n of way.nodes) expect(n >= 0 && n < out.lat.length).toBe(true)
+        } catch (error) {
+          expect(error).toBeInstanceOf(CorruptDataError)
+        }
+      }),
+      { seed: SEED, numRuns: 300 },
+    )
   })
 })

@@ -63,3 +63,26 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 - [x] 63.10 Spec results (before and after timings, visible changes), README index, final `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
   - _Requirements: 12.7_
 
+
+## OSM data and rasterizer rework (Nov 2026, requirements 14 to 16)
+
+- [x] 66.1 Safety net: pinned hash of the Benicalap grid (layers, terrain, styles, barriers, rails; same value on the code before the rework), golden frames kept, benchmark test on a 36 km² synthetic area with a continental forest and river (before numbers in `design.md`)
+  - _Requirements: 16.1, 16.6_
+- [x] 66.2 `geo.ts`: antimeridian wrap and polar guard in `LocalProjection`, `bboxAround` clipped to valid coordinates, `isValidBBox`, exact spherical area; round trip, error-by-latitude and box properties (P-G1 to P-G3)
+  - _Requirements: 14.1, 14.2, 16.7_
+- [x] 66.3 `rasterize.ts`: grid bounds, per-row crossing buckets, `fillRings` with holes, row-limited `thickSegment`, `line4` that clips and always steps towards its end tile, non-finite and collinear guards, bridge flag and `cutRailsAtBridges`; regression tests on small hand-made areas and properties P-T1 to P-T6
+  - _Requirements: 16.1 to 16.6_
+- [x] 66.4 `normalize.ts`, `multipolygon.ts`, `classify.ts`: coordinate validation, degenerate areas, multipolygon relations with holes, claimed outer ways, `isTunnel` with explicit tags first, `isBridge`
+  - _Requirements: 15.1 to 15.5, 15.9_
+- [x] 66.5 `codec.ts` version 4 (bridge flag, holes), `CODEC_VERSION`, `CorruptDataError` and shape checks on decode; round trip with holes and bridges, damage property (P-M2)
+  - _Requirements: 15.6, 15.7_
+- [x] 66.6 `overpass.ts`, `cache.ts`: box validation and snapping, versioned keys, damaged entries as misses, index validation, clock skew, quota, pruning, IndexedDB reopen, `badArea` message in both languages
+  - _Requirements: 14.1 to 14.8, 14.10_
+- [x] 66.7 `download.ts`, `demoArea.ts`: answer shape check, timeout remark first, query refuses invalid boxes; one request per mirror unchanged
+  - _Requirements: 14.9_
+- [x] 66.8 Town layout reviewed (courtyards, grid edge, landmarks, park gates, cost): no defect found; courtyard test added
+  - _Requirements: 16.2_
+- [x] 66.9 `scripts/build-fixture.ts`: input check, relation merge, newest timestamp, decode check, no empty output
+  - _Requirements: 15.8_
+- [x] 66.10 Spec results (before and after timings), README index, `osm-etiquette.md` notes, final `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
+  - _Requirements: 16.1_

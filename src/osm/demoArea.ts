@@ -1,4 +1,4 @@
-import type { BBox, LatLon } from '../geo/geo.ts'
+import { isValidBBox, type BBox, type LatLon } from '../geo/geo.ts'
 
 /** Bundled offline area: Benicalap, Valencia (about 3.2 × 3.2 km). */
 export const DEMO_AREA: { name: string; center: LatLon; bbox: BBox; defaultStart: LatLon; defaultEnd: LatLon } = {
@@ -10,8 +10,14 @@ export const DEMO_AREA: { name: string; center: LatLon; bbox: BBox; defaultStart
   defaultEnd: { lat: 39.4825, lon: -0.3800 },
 }
 
-/** Overpass QL for an area (live mode). The fixture was built from an equivalent query over DEMO_AREA.bbox. */
+/**
+ * Overpass QL for an area (live mode). The fixture was built from an equivalent query over DEMO_AREA.bbox.
+ * Ways only, in one request: multipolygon relations (buildings with courtyards, parks with ponds) are not
+ * asked for, to keep the answer small (see osm-etiquette.md); the parser still reads them when present.
+ * Throws RangeError for a box Overpass would reject (NaN, inverted, outside ±90 / ±180).
+ */
 export function overpassQuery(b: BBox, timeoutS = 60): string {
+  if (!isValidBBox(b)) throw new RangeError('Invalid bounding box')
   const box = `${b.south.toFixed(5)},${b.west.toFixed(5)},${b.north.toFixed(5)},${b.east.toFixed(5)}`
   return `[out:json][timeout:${timeoutS}];
 (

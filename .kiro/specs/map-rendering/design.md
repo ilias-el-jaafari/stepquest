@@ -88,7 +88,7 @@ flowchart LR
 
 ## Error handling: Overpass
 
-- Overpass errors map to `busy`, `rateLimited`, `tooLarge`, `network`, `badResponse`, each with a translated message.
+- Overpass errors map to `busy`, `rateLimited`, `tooLarge`, `network`, `badResponse` and `badArea` (invalid box, task 66), each with a translated message.
 
 ## Testing strategy
 
@@ -229,3 +229,95 @@ Property tests added (fast-check, seed `20261204`): P-C1 to P-C4 camera and back
 - **P-D3** every device pixel of the loaded area on screen is covered by a chunk or stand-in, for ratios 1 to 3, zoom 8 to 48, any camera, with all chunks painted or one.
 - **P-T1** masks stay in the 47 blob masks and diagonals need both neighbouring cardinals. **P-T2** the map edge is connected. **P-T3** the 4-bit mask is the cardinal part of the 8-bit one. **P-T4** a mask depends only on its 3 × 3 neighbourhood. **P-T5** rotating the grid 90° rotates the masks. **P-T6** one terrain has no borders.
 - **P-L5** from 15:00 to 23:30 the mean colour of a painted frame changes by under 5.1 levels per minute (the 0.02 of P-L3), and night is darker than noon with the same chunk cache.
+
+## OSM data and rasterizer review (Nov 2026)
+
+Scope: `src/osm/**`, `src/tiles/**`, `src/town/layout.ts`, `src/geo/geo.ts`, `scripts/build-fixture.ts`, `osm-etiquette.md`. Method: read the code against requirements 1, 2 and 6a, check each suspicion with a small hand-made area or a scratch run on the code before the change ("verified" means it failed or misbehaved there), then fix with a regression test (tasks 66.x). Requirements 14 to 16 hold the resulting rules. Overpass etiquette is unchanged: one request per mirror, one download at a time, 10 s gap, 36 km² cap, cache first; every new step in this section works on local data.
+
+### Current structure
+
+- `osm/`: `demoArea.ts` (query), `download.ts` (mirror race, answer check), `download.worker.ts` (runs it off the main thread), `normalize.ts` (Overpass JSON to `OsmData`), `classify.ts` (tags), `codec.ts` (compact JSON, bundled fixture and cache form), `cache.ts` (IndexedDB), `overpass.ts` (client: cache, index, spacing, cap).
+- `tiles/`: `grid.ts` (layers, terrain priority), `rasterize.ts` (polygon fill, thick segments, 4-connected lines), `autotile.ts`, `diagonal.ts`. `town/layout.ts` builds houses and landmarks on the resolved terrain.
+- The routing graph reads `OsmData.ways` directly (walkable ways clipped to the bbox), so everything `normalize` lets through reaches both the picture and the planner.
+
+### Findings
+
+| Id | Finding | Effect |
+| --- | --- | --- |
+| D1 | A NaN, inverted or out-of-range box: `NaN > 36` is false, so the cap passes; the query text then contains `NaN` (verified) | A bad coordinate from the UI downloads nothing useful and can be cached |
+| D2 | Area uses the width of the south edge only (small error, but it is the only check of the cap); the cap was tested on the request while the downloaded box and the cache key were different boxes. The key rounded to the nearest 0.001°, so an entry could miss up to 50 m of a request that mapped to it | Edge of the map missing after a cache hit; a request just over the cap could pass or fail by rounding |
+| D3 | `decodeOsm` of a damaged or old entry throws a plain `Error` inside `cached()`; the entry stays (verified: `loadArea` rejects with "Unsupported map data version 9") | Every load of that area fails until the entry expires after 7 days |
+| D4 | The area index is parsed without checking its records; a `null` record throws a `TypeError` in `contains` | The same failure, from `localStorage` |
+| D5 | Nothing is ever deleted: expired areas, areas that fell off the 40-record index, and entries of older cache versions stay in IndexedDB | Storage grows for ever; quota errors later |
+| D6 | An entry with a saved-at time in the future (clock set back) counts as fresh until the clock passes it | Stale map for much longer than 7 days |
+| D7 | A failed `indexedDB.open` is remembered for the session; a write that ends in `abort` without `error` leaves its promise pending, and the client stays `busy` for ever | No cache for the session; hardening, not reproduced in a test |
+| D8 | The key prefix `v3` is typed by hand and has no link to the codec version | A format change keeps serving old data lacking the new fields |
+| D9 | `decodeOsm` repairs what it cannot read: an unknown kind becomes a road (verified), an out-of-range node index reads `?? 0` (a point at 0°, 0°), missing arrays throw later in the renderer | Damaged data draws wrong things instead of failing |
+| D10 | An answer without `elements` (an empty object, `null`, a page that happens to parse) is normalized to an empty map and cached for a week (verified) | "No streets here" for 7 days |
+| D11 | Only `null` geometry points are gaps; `NaN` or 1e9 is accepted, and a building of two points and back is kept | Chords across the map; coordinates 1e9 away make every later step slow |
+| D12 | The query asks for ways only, so multipolygon relations never arrive: a building with a courtyard or a park with a pond mapped as a relation is missing when its outer way is untagged (the usual case). The model has no inner rings | Missing large buildings and parks in live maps; no holes anywhere |
+| D13 | `isTunnel` lets `layer=-1` win over an explicit `tunnel=no` (verified), which also drops the way from the picture and sets the COVERED safety flag; there is no bridge information, so rail tracks are drawn across bridge decks | Cuttings vanish; tracks run over road bridges |
+| D14 | The local projection subtracts longitudes directly: 0.01° across the antimeridian gives 38 134 km (verified). `bboxAround` returns longitudes above 180 and latitudes above 90, which Overpass rejects. Near a pole `cos(lat)` reaches 0 and the inverse divides by zero | Fiji, Chukotka and polar users get nonsense; none in the Benicalap demo |
+| R1 | Rasterization visits every tile of a feature's own extent, inside the grid or not. Overpass returns whole ways, so a forest or river that merely touches the area costs its full size: a 110 km square forest took 5.1 s for a 6 × 6 km area; a 20 000 × 20 000 tile polygon makes 400 million visits in 1.35 s (verified); a coordinate of infinity never ends | Freezes the phone (the worker only covers the download, not the grid) |
+| R2 | `thickSegment` tests every tile of the segment's bounding box: a long diagonal costs length², not length × width | Slow long rivers and roads |
+| R3 | `line4` with a slope that rounds to zero (denormal) gets `NaN` step distances and walks away from its end tile (verified: tiles 0,0 to 0,-3 for a line to (-5e-324, 0)); rounding can also overshoot the end column | Broken 4-connection on near-axis lines; found by the property test |
+| R4 | A ring whose corners are on one line paints the tiles whose centres lie exactly on it | Stray lines from zero-area buildings (rare) |
+| R5 | No holes (see D12), so a courtyard cannot exist | |
+| R6 | Rails are drawn after the chunks, whatever lies over them | See D13 |
+| R7 | Not changed on purpose: area-tagged ways that are not closed are filled with a closing chord (a mapping error, and the answer is whole ways, so the closed case is the common one); the equirectangular projection error is below 0.3 % at 6 km up to latitude 80°, so the scale stays at the north-west corner | Documented, covered by `geo.test.ts` |
+| T1 | Town layout: blocks are 4-connected components of building tiles, lots are cut from the block's rectangle and masked by the block, so courtyards and a grid edge stay empty. No defect found; cost is one-off (below) | Courtyard test added |
+
+Reviewed without change: worker protocol (a new worker per download, progress throttled), mirror race (each mirror gets one request, the winner aborts the rest, 429 and 504 map to `rateLimited`, timeouts abort), `Promise.any` error priority, key spacing and `busy` rule, `areaForWalk` formula, attribution.
+
+### Design
+
+- `geo.ts`: `wrapDeltaLon`, `wrapLon` (identity for values already in range, so existing coordinates keep their bits and the golden frames stay), `MAX_LAT` guard in `LocalProjection`, `bboxAround` clipped to ±90 and ±180, `isValidBBox`, `bboxAreaSphereKm2`. A walk next to the antimeridian gets a box trimmed at 180°; the grid and graph are per box and never wrap.
+- `overpass.ts`: `snapBBox` grows a request outwards to the 0.001° grid with a `1e-7` float guard; the client downloads, keys, indexes and caps that box. `areaForWalk` caps its radius at 2.85 km (was 3 km) so the grown box stays under 36 km² (a 2.9 km radius gave 36.05 km² after growing; 2.85 km stays under 36 at the equator, 40° and 60°, tested). Only walks above about 13 km of target distance are affected. `cacheKey` is `v${CODEC_VERSION}:…`. `readEntry` decodes with a `try`, deletes what it cannot read and reports a miss. `prune` runs after a successful save: it drops expired and overflow index records and their data, and once per session deletes keys without the current prefix. `AreaCache` gains optional `delete` and `keys`.
+- `cache.ts`: `isFresh(savedAt, now)` (number, under 7 days, at most 5 minutes in the future); `IndexedDbCache` forgets a failed or closed connection, rejects on `abort` and `blocked`, and implements `delete` and `keys`.
+- `download.ts`: `isOverpassResponse`; the timeout remark is checked before the shape, so a remark-only answer is `busy`.
+- `normalize.ts`: `validPoint` (finite, ±90, ±180) decides gaps; areas need three different corners; relations of kind building, park or water with `type=multipolygon` go through `multipolygon.ts` (`assembleRings` joins member ways by equal end coordinates, `buildPolygons` gives each inner ring to the smallest containing outer ring), producing one area way per outer ring with `holes`; outer members that are also tagged on their own are skipped (`claimed`). Roads and paths with `bridge=*` get `bridge`. Relation nodes are indexed by coordinate and not shared with way nodes, because relation members carry no node ids; areas never join the walking graph.
+- `classify.ts`: `isTunnel` (bridge never, explicit `tunnel` tag first, then negative `layer`) also serves the rail rule; `isBridge`.
+- `codec.ts`: version 4 adds flag 32 (bridge) and `holes: {w, r}[]` (delta-coded rings). `validate` checks shape, kinds and every node index before decoding and throws `CorruptDataError`. Encoding is deterministic, so the stability property holds. The bundled fixture stays at version 3 (rebuilding needs the original Overpass answers, which are not in the repository); it decodes unchanged, so `bridge` and `holes` are absent there.
+- `rasterize.ts` (public API, all pure): `fillRings(rings, visit, bounds?)` (even-odd over several rings; crossings bucketed per row, so cost is edges × rows crossed; rows and columns clamped to `bounds`), `fillPolygon` (one ring), `thickSegment(a, b, half, visit, bounds?)` (per row, only the columns of the strip around the line are tested, then the same exact distance test as before, so output is identical), `line4(a, b, visit, bounds?)` (clips to one tile outside the grid, always steps towards the end tile), `clipSegment`, `cutRailsAtBridges`, `rasterizeOsm`, `buildTileGrid`. `TileGrid.bridge` marks bridge-deck tiles; `rasterizeOsm` cuts the rail polylines there, in half-tile steps, only for polylines that touch a deck.
+- Town: no code change.
+
+Alternatives considered. (1) Add `rel` clauses for multipolygons to the live query: rejected for now. It is still one request, but it enlarges every answer and the steering file says ways only; the parser, codec and rasterizer are ready, so it is a one-line query change once the owner agrees. (2) Clip polygons geometrically (Sutherland–Hodgman) before filling: rejected; clamping rows and columns gives identical tiles with less code. (3) Serve a stale cache entry when the network fails: useful offline, but it changes requirement 1.3; left as a suggestion. (4) Scale the projection at the box centre: error gain below 0.1 %, but it would move grid sizes and every golden frame; not done.
+
+### Correctness properties (task 66)
+
+Fast-check, fixed seed `20261204`.
+
+- **P-G1 Projection round trip.** `toLatLon(toXY(p))` returns `p` for origins and points anywhere, across the antimeridian. Validates 16.7.
+- **P-G2 Scale.** Within 6 km up to latitude 70°, the projected distance is within 0.5 % of haversine. Validates 16.7.
+- **P-G3 Box validity.** `bboxAround` of any point and radius is valid and contains the point. Validates 14.1.
+- **P-M1 (extended) Codec round trip** on random maps now with holes and bridge flags, through JSON text; encoding is stable.
+- **P-M2 Damage.** A damaged compact value either throws `CorruptDataError` or decodes with every node index in range. Validates 15.7.
+- **P-T1 Area.** A filled convex polygon has as many tiles as its area, within half its perimeter. Validates 16.1.
+- **P-T2 Bounds.** Filling with bounds equals filling without them, restricted to the bounds. Validates 16.1.
+- **P-T3 Holes.** Outer minus hole is exactly `w·h − iw·ih` tiles and every hole tile is empty. Validates 16.2.
+- **P-T4 Translation.** Moving a polygon by whole tiles moves its fill. Validates 16.1.
+- **P-T5 Thick segment.** The row-limited version marks exactly the tiles of the brute-force test plus the centre line. Validates 16.4.
+- **P-T6 Clipped line.** A line from inside the grid to anywhere stays 4-connected, within one tile of the grid and keeps its inside end. Validates 16.1, 16.4.
+
+### Results
+
+Measured on one machine (Node 24, median of 7 runs for Benicalap, a single run for the synthetic areas; pure functions, no canvas). The 36 km² area is synthetic: 6 × 6 km, 6128 street segments and about 1900 buildings, 1198 × 1199 tiles.
+
+| Case | Before | After |
+| --- | --- | --- |
+| Rasterize Benicalap (635 × 645, 15 457 ways) | 37 ms | 33 ms |
+| Rasterize 3 × 3 km synthetic (600 × 600) | 11 ms | 12 ms |
+| Rasterize 6 × 6 km synthetic (the cap) | 26 ms | 23 ms |
+| The same plus a 110 km forest and a 70 km river through it | 5109 ms | 49 ms |
+| Fill of a 20 000 × 20 000 tile polygon | 400 000 000 visits, 1347 ms | 10 000 visits (bounded to a 100 × 100 grid), under 1 ms |
+| Decode the Benicalap extract (96 k nodes) | 2.6 ms | 6.3 ms (shape check) |
+| Encode the Benicalap extract | 6 ms | 6 ms |
+| Town layout, Benicalap / 36 km² synthetic | 119 ms / 236 ms | unchanged code: 114 ms / 243 ms |
+
+The decode check costs about 4 ms once per map and guards every cache read and every download. The town layout is a one-off cost (about 70 % is the per-lot ramp and corner test, 5.6 ms is landmarks, 22 ms park gates, 8 ms the block search); it was measured and left alone. The bundled Benicalap grid hashes to the same value as before (`rasterize.regression.test.ts`), and the golden frames are unchanged.
+
+Visible changes: none in the bundled demo. In live data: courtyards and ponds appear when relation geometry is present; rails stop at bridge decks; `tunnel=no` ways with a negative layer are drawn; boxes near ±180° or the poles are valid.
+
+Cross-reference to routing: the graph is unchanged. It still takes walkable ways clipped to the bbox, and `holes` and `bridge` are not read by it. Two effects reach it through `normalize`: ways with a bad coordinate are split at the gap (they used to put NaN into the node table), and a `tunnel=no` way with a negative layer is no longer flagged covered, so it counts as open air in the night weights.
+
+Limits kept: no walk is planned across the antimeridian (the box is trimmed at 180°); a live area still has no relations (D12); an unclosed area-tagged way is filled with a closing chord.

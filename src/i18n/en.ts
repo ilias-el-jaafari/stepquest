@@ -160,6 +160,7 @@ export const en = {
   'data.err.tooLarge': 'That area is too big. Lower the step goal.',
   'data.err.network': 'Could not reach the map server. Check your connection.',
   'data.err.badResponse': 'The map server returned an error. Try again later.',
+  'data.err.badArea': 'That area is not valid. Pick another start.',
   'loc.use': 'Use my location',
   'loc.locating': 'Finding you…',
   'loc.found': 'Start set to your location (±{m} m).',

@@ -59,6 +59,8 @@ export class TileGrid {
   readonly style: Uint8Array
   /** Fence, hedge or wall line through the tile, see BARRIERS. */
   readonly barrier: Uint8Array
+  /** 1 where a bridge deck (a bridge=* road or path) covers the tile; tracks underneath are not drawn there. */
+  readonly bridge: Uint8Array
   /** Landmark points from the map data. */
   pois: Poi[] = []
   /** Above-ground tram, metro and train tracks as tile-coordinate polylines. */
@@ -76,6 +78,7 @@ export class TileGrid {
     this.terrain = new Uint8Array(this.cols * this.rows)
     this.style = new Uint8Array(this.cols * this.rows)
     this.barrier = new Uint8Array(this.cols * this.rows)
+    this.bridge = new Uint8Array(this.cols * this.rows)
   }
 
   set(arr: Uint8Array, tx: number, ty: number, value: number): void {
@@ -109,6 +112,10 @@ export class TileGrid {
   has(tx: number, ty: number, bits: number): boolean {
     if (!this.inBounds(tx, ty)) return false
     return ((this.layers[this.index(tx, ty)] ?? 0) & bits) !== 0
+  }
+
+  bridgeAt(tx: number, ty: number): boolean {
+    return this.inBounds(tx, ty) && this.bridge[this.index(tx, ty)] === 1
   }
 
   terrainAt(tx: number, ty: number): TerrainId | undefined {

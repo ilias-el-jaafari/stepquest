@@ -148,3 +148,56 @@ Owner: this spec. The night-from-sunset rule (`isDark`, sunrise/sunset in `src/g
 2. THE SYSTEM SHALL keep Web Audio, React and routing out of these modules; the pure ones SHALL NOT touch the DOM.
 3. THE SYSTEM SHALL contain no code that nothing calls (route chevrons, unused getters and constants).
 
+
+### Requirement 14 (task 66): Map data client and cache
+
+**User Story:** As a walker on a patchy connection, I want a damaged cache, a full disk or a half-finished answer to cost me a retry, not a broken map, so that the next press of "Load this area" works.
+
+Related: 1.3 and 1.4 (cache, one request, 10 s gap, 36 km² cap, mirrors), [routing](../routing/requirements.md) (the graph reads the decoded data).
+
+#### Acceptance Criteria
+
+1. WHEN a box is not finite, not ordered (south < north, west < east) or outside latitude ±90 and longitude ±180, THE SYSTEM SHALL refuse it with the error `badArea` before any cache or network access, and SHALL NOT build an Overpass query for it.
+2. THE SYSTEM SHALL measure the area of a box exactly on the sphere, SHALL grow the box outwards to the 0.001° cache grid before downloading, and SHALL apply the 36 km² cap to that grown box; the box `areaForWalk` returns SHALL fit under the cap after growing.
+3. THE SYSTEM SHALL key cache entries by the codec version and the grown box, so that an entry covers every request with its key and a new data format never reads old entries.
+4. WHEN a cache entry cannot be decoded (damaged, from another version, wrong shape), THE SYSTEM SHALL delete it, treat it as a miss and download, and SHALL NOT surface the decoding error.
+5. WHEN an entry or an area-index record has a saved-at time that is not a number, older than 7 days, or more than 5 minutes in the future, THE SYSTEM SHALL treat it as expired; index records of the wrong shape SHALL be ignored one by one.
+6. WHEN the cache cannot write (quota exceeded, blocked, aborted), THE SYSTEM SHALL still return the downloaded map and SHALL NOT record the area in the index.
+7. WHEN a download has been saved, THE SYSTEM SHALL delete the data of index records that expired or fell off the end of the index, and once per session the entries written under an older cache version; this SHALL use local storage only and SHALL NOT send any request.
+8. THE SYSTEM SHALL decode an answer before caching it and SHALL NOT cache one it cannot read; an unreadable answer SHALL be reported as `badResponse`.
+9. WHEN Overpass answers with something that is not a JSON object with an `elements` array, or with a timeout remark (`runtime error`, `timed out`, `out of memory`), THE SYSTEM SHALL NOT treat it as a map: the first is `badResponse`, the second `busy`. Status 429 and 504 SHALL stay `rateLimited`, and every mirror SHALL still get exactly one request.
+10. WHEN the IndexedDB connection fails to open or is closed by the browser, THE SYSTEM SHALL open it again on the next use instead of remembering the failure for the session.
+
+### Requirement 15 (task 66): OSM parsing and the compact format
+
+**User Story:** As the maintainer, I want every way the parser accepts to be usable by the rasterizer and the graph, so that one odd OSM object cannot draw a chord across the map.
+
+Related: [routing](../routing/requirements.md) (walkable ways, tunnels, roundabouts).
+
+#### Acceptance Criteria
+
+1. WHEN a way point has a missing, non-finite or out-of-range coordinate, THE SYSTEM SHALL treat it as a gap and split lines there (as it does for a point outside the query).
+2. THE SYSTEM SHALL drop an area way (building, park, water, area road or path) with fewer than three different corners.
+3. WHEN a multipolygon relation with a building, park or water tag arrives with member geometry, THE SYSTEM SHALL join its outer ways into closed rings, give every inner ring to the smallest outer ring that contains it, and produce one area way per outer ring with its `holes`; rings that cannot close SHALL be dropped, and a separately tagged building inside a courtyard SHALL stay.
+4. WHEN an outer member of such a relation is also tagged on its own with the same kind, THE SYSTEM SHALL keep only the relation, so the hole is not filled again.
+5. THE SYSTEM SHALL decide `tunnel` from an explicit `tunnel` tag first (`tunnel=no` is not underground even with `layer=-1`), then from a negative `layer`, and a way with `bridge=*` (other than `no`) SHALL NOT be a tunnel; roads and paths on a bridge SHALL carry `bridge`.
+6. THE SYSTEM SHALL write the compact format with a version number (`CODEC_VERSION`, now 4: adds the bridge flag and holes) and SHALL decode versions 1 to 4.
+7. WHEN compact data has an unknown version, a feature kind outside the known list, a node index outside the coordinate list, mismatched coordinate arrays, a bad bounding box or fewer ids than ways, THE SYSTEM SHALL throw `CorruptDataError` and SHALL NOT replace the damaged part by a default (an unknown kind used to become a road).
+8. THE fixture build script (`scripts/build-fixture.ts`) SHALL refuse an input without an `elements` array, merge relation members, keep the newest timestamp, check that the encoded file decodes, and never overwrite the fixture with an empty map.
+9. THE SYSTEM SHALL keep the Overpass query to ways and nodes (no relations), because adding relations raises the answer size; relation geometry is parsed whenever an extract contains it (for example one saved for `npm run fixture`). Adding relations to the live query needs a decision from the owner and an update to `osm-etiquette.md`.
+
+### Requirement 16 (task 66): Tile rasterizer
+
+**User Story:** As a walker, I want a courtyard to look like a courtyard and a bridge like a bridge, and I want a large area to load without freezing the phone.
+
+Related: 2.1 to 2.3 (layers, terrain priority, 4-connected paths), 6a.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL visit only tiles inside the grid when rasterizing, so the cost follows the area drawn and not the size of the features: a polygon or line that reaches far outside the grid SHALL cost no more than one that ends at the edge, and a 6 × 6 km area (the cap) SHALL rasterize in under one second.
+2. WHEN a polygon way has holes, THE SYSTEM SHALL leave the tiles of every hole empty (even-odd fill), and a self-crossing outline SHALL follow the even-odd rule.
+3. THE SYSTEM SHALL ignore points that are not finite, SHALL paint nothing for a ring whose corners are on one line, and SHALL NOT loop or throw for a zero-length segment.
+4. THE SYSTEM SHALL step a 4-connected line from its first tile to its last tile whatever the slope (including slopes that round to zero), never away from the end tile.
+5. THE SYSTEM SHALL NOT paint tunnels over the surface, SHALL paint bridge roads and paths over water and buildings, and SHALL NOT draw rail tracks on top of a tile covered by a bridge deck; rails that meet no bridge SHALL be left unchanged.
+6. THE SYSTEM SHALL keep the rasterized layers, terrain, styles, barriers and rails of the bundled Benicalap fixture identical to those before task 66, and SHALL keep every golden frame.
+7. THE SYSTEM SHALL wrap longitude differences at the antimeridian in the local projection, keep the east-west scale finite next to a pole, and keep a box around any point inside the valid coordinate range; its distance error SHALL stay under 0.5 % within 6 km up to latitude 70°.

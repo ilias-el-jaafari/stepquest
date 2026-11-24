@@ -26,15 +26,57 @@ export function destination(from: LatLon, bearingDeg: number, distance: number):
   return { lat: lat2 / DEG, lon: lon2 / DEG }
 }
 
+/** The east-west scale is computed at most this far from the equator, so cos(lat) never reaches 0 at a pole. */
+export const MAX_LAT = 85
+
+/** Wrap a longitude difference to (-180, 180] so points either side of the antimeridian stay close; differences already inside are returned bit for bit. */
+export function wrapDeltaLon(d: number): number {
+  if (d > 180 || d <= -180) {
+    const w = ((((d + 180) % 360) + 360) % 360) - 180
+    return w === -180 ? 180 : w
+  }
+  return d
+}
+
+/** Wrap a longitude into [-180, 180]; a value already inside is returned bit for bit. */
+export function wrapLon(lon: number): number {
+  if (lon >= -180 && lon <= 180) return lon
+  const w = ((((lon + 180) % 360) + 360) % 360) - 180
+  return w === -180 ? 180 : w
+}
+
+/**
+ * Square-ish box of half-side `radiusM` around a point, clipped to the valid
+ * range (latitude ±90, longitude ±180). A walk next to the antimeridian or a
+ * pole gets a trimmed box instead of an invalid one (Overpass rejects
+ * longitudes outside ±180); the grid and graph are built per box, so a box
+ * never wraps.
+ */
 export function bboxAround(center: LatLon, radiusM: number): BBox {
   const dLat = radiusM / 111_320
-  const dLon = radiusM / (111_320 * Math.cos(center.lat * DEG))
+  const lat = Math.max(-MAX_LAT, Math.min(MAX_LAT, center.lat))
+  const dLon = radiusM / (111_320 * Math.cos(lat * DEG))
   return {
-    south: center.lat - dLat,
-    north: center.lat + dLat,
-    west: center.lon - dLon,
-    east: center.lon + dLon,
+    south: Math.max(-90, center.lat - dLat),
+    north: Math.min(90, center.lat + dLat),
+    west: Math.max(-180, center.lon - dLon),
+    east: Math.min(180, center.lon + dLon),
   }
+}
+
+/** Finite, ordered and inside the valid coordinate range. */
+export function isValidBBox(b: BBox): boolean {
+  return (
+    [b.south, b.west, b.north, b.east].every(Number.isFinite) &&
+    b.south >= -90 && b.north <= 90 && b.west >= -180 && b.east <= 180 &&
+    b.south < b.north && b.west < b.east
+  )
+}
+
+/** Exact area of a lat/lon box on the sphere in km² (the width shrinks towards the pole). */
+export function bboxAreaSphereKm2(b: BBox): number {
+  const r = EARTH_RADIUS_M / 1000
+  return r * r * (b.east - b.west) * DEG * (Math.sin(b.north * DEG) - Math.sin(b.south * DEG))
 }
 
 export function bboxContains(box: BBox, p: LatLon): boolean {
@@ -47,8 +89,10 @@ export function bboxCenter(box: BBox): LatLon {
 
 /**
  * Local equirectangular projection around an origin. Accurate to well under a
- * tile over the few kilometres a walk covers. x grows east, y grows south
- * (screen order), both in metres.
+ * tile over the few kilometres a walk covers (see geo.test.ts for the error at
+ * several latitudes). x grows east, y grows south (screen order), both in
+ * metres. Longitude differences wrap at the antimeridian, and the east-west
+ * scale stops shrinking at ±{@link MAX_LAT}° so the inverse never divides by zero.
  */
 export class LocalProjection {
   readonly origin: LatLon
@@ -58,12 +102,12 @@ export class LocalProjection {
   constructor(origin: LatLon) {
     this.origin = origin
     this.mPerDegLat = EARTH_RADIUS_M * DEG
-    this.mPerDegLon = EARTH_RADIUS_M * DEG * Math.cos(origin.lat * DEG)
+    this.mPerDegLon = EARTH_RADIUS_M * DEG * Math.cos(Math.max(-MAX_LAT, Math.min(MAX_LAT, origin.lat)) * DEG)
   }
 
   toXY(p: LatLon): { x: number; y: number } {
     return {
-      x: (p.lon - this.origin.lon) * this.mPerDegLon,
+      x: wrapDeltaLon(p.lon - this.origin.lon) * this.mPerDegLon,
       y: (this.origin.lat - p.lat) * this.mPerDegLat,
     }
   }
@@ -71,7 +115,7 @@ export class LocalProjection {
   toLatLon(x: number, y: number): LatLon {
     return {
       lat: this.origin.lat - y / this.mPerDegLat,
-      lon: this.origin.lon + x / this.mPerDegLon,
+      lon: wrapLon(this.origin.lon + x / this.mPerDegLon),
     }
   }
 }

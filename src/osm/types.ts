@@ -27,6 +27,13 @@ export type OsmWay = {
   area: boolean
   /** Underground (tunnel=yes); drawn as nothing but still routable when walkable. */
   tunnel: boolean
+  /** On a bridge or viaduct (bridge=*): painted over water and over tracks, which pass underneath. Absent in data built before codec v4. */
+  bridge?: boolean
+  /**
+   * Inner rings of a multipolygon (courtyards, ponds): closed rings of node
+   * indices that are cut out of this way's polygon. Only on `area` ways.
+   */
+  holes?: number[][]
   /** Ring (or one arc of the ring) of a roundabout (junction=roundabout or circular); its inside is an island that is never walked across. */
   roundabout?: boolean
   /** A marked pedestrian crossing over a road (footway=crossing). */

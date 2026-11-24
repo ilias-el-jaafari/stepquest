@@ -56,8 +56,19 @@ async function fromMirror(endpoint: string, bbox: BBox, fetchFn: FetchLike, sign
   } catch (error) {
     throw new DownloadError(signal.aborted ? 'network' : 'badResponse', error instanceof Error ? error.message : String(error))
   }
-  if (json.remark && /runtime error|timed out|out of memory/i.test(json.remark)) throw new DownloadError('busy', json.remark)
+  // A timed-out query answers 200 with a remark and (maybe partial) elements: never use it.
+  if (typeof json?.remark === 'string' && /runtime error|timed out|out of memory/i.test(json.remark)) throw new DownloadError('busy', json.remark)
+  if (!isOverpassResponse(json)) throw new DownloadError('badResponse', 'Overpass answered something that is not a map extract')
   return json
+}
+
+/**
+ * A usable answer is a JSON object with an `elements` array. Without one (an
+ * HTML error page that parsed, `null`, a bare remark) the area would look empty
+ * and be cached for a week as "no streets here".
+ */
+export function isOverpassResponse(json: unknown): json is OverpassResponse {
+  return !!json && typeof json === 'object' && Array.isArray((json as OverpassResponse).elements)
 }
 
 const PRIORITY: DownloadErrorCode[] = ['network', 'badResponse', 'busy', 'rateLimited']

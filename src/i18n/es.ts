@@ -161,6 +161,7 @@ export const es: Record<MessageKey, string> = {
   'data.err.tooLarge': 'Esa zona es demasiado grande. Baja el objetivo de pasos.',
   'data.err.network': 'No se puede contactar con el servidor de mapas. Revisa la conexión.',
   'data.err.badResponse': 'El servidor de mapas ha devuelto un error. Prueba más tarde.',
+  'data.err.badArea': 'Esa zona no es válida. Elige otro punto de partida.',
   'loc.use': 'Usar mi ubicación',
   'loc.locating': 'Buscándote…',
   'loc.found': 'Salida en tu ubicación (±{m} m).',
