@@ -25,16 +25,18 @@ type Paint = { rec: CellRecord; coarse: boolean }
  *   growing walking graph, and drawn where nothing better is there;
  * - drawn records (vector-tile detail, requirement 21): tiles and town only;
  * - coarse records (low-zoom vector tiles): tiles only, the placeholder.
- * A cell paints, in this order of preference: a complete graph record, a drawn record, a partial graph
- * record, a coarse record (`best`). Adding cells never changes what an earlier `World` snapshot holds,
+ * A cell paints, in this order of preference: a complete graph record, a drawn record, a coarse record,
+ * a partial graph record (`best`); only a whole-cell record counts as covered (`hasAny`). Adding cells never changes what an earlier `World` snapshot holds,
  * so a renderer and an active quest keep running while the map grows. Implements `MapSource`.
  */
 export class LiveWorld implements MapSource {
   /** The drawn frame. Replaced by `recentre` when the view leaves it (requirement 20.17); the data and graph are kept. */
   tiles: TileWorld
   private stopTiles: () => void
-  /** Cells whose best record is not painted into the current frame yet (after a `recentre`). */
+  /** Cells whose best record is not painted into the current frame yet (after a `recentre`); they count as not covered. */
   private readonly unpainted = new Set<string>()
+  /** Cells that show an older record than their best one (after `setWide`); their old paint still counts. */
+  private readonly repaint = new Set<string>()
   private readonly frameListeners = new Set<() => void>()
   /** Bumped by every `recentre`. */
   frameVersion = 0
@@ -85,14 +87,33 @@ export class LiveWorld implements MapSource {
     return { i: (this.tiles.i0 + this.tiles.i1) / 2, j: (this.tiles.j0 + this.tiles.j1) / 2 }
   }
 
+  /** The view is at or below `FAR_ZOOM`: the coarse layer paints every cell that has one (requirement 21.7). */
+  private wide = false
+
+  /**
+   * Switch between the far-zoom look (coarse tiles everywhere they exist) and the close look. The
+   * cells whose best record changes are queued for `paintNext`; until then they keep their old paint
+   * (still a whole-cell picture, so readiness does not drop).
+   */
+  setWide(wide: boolean): void {
+    if (wide === this.wide) return
+    this.wide = wide
+    for (const k of this.painted.keys()) if (this.best(k)?.rec !== this.painted.get(k)) this.repaint.add(k)
+  }
+
   private best(k: string): Paint | undefined {
+    if (this.wide) {
+      const coarse = this.coarse.get(k)
+      if (coarse) return { rec: coarse, coarse: true }
+    }
     const rec = this.records.get(k)
     if (rec && isComplete(rec)) return { rec, coarse: false }
     const drawn = this.drawn.get(k)
     if (drawn) return { rec: drawn, coarse: false }
-    if (rec) return { rec, coarse: false }
+    // A whole-cell tile record beats a graph record that covers only part of the cell (requirement 21.7).
     const coarse = this.coarse.get(k)
-    return coarse ? { rec: coarse, coarse: true } : undefined
+    if (coarse) return { rec: coarse, coarse: true }
+    return rec ? { rec, coarse: false } : undefined
   }
 
   /** Paint the cell's best record if it is not what the cell shows. Returns whether the tiles changed. */
@@ -100,6 +121,7 @@ export class LiveWorld implements MapSource {
     const cell = parseCellKey(k)!
     if (!this.inFrame(cell)) return false
     this.unpainted.delete(k)
+    this.repaint.delete(k)
     const b = this.best(k)
     if (!b) {
       if (!this.painted.has(k)) return false
@@ -128,15 +150,24 @@ export class LiveWorld implements MapSource {
     return !r || !isComplete(r)
   }
 
-  /** Something is painted for the cell now. */
+  /** The whole cell is painted now (requirement 21.14): a record that covers only part of it does not count. */
   hasAny(c: CellId): boolean {
-    return this.inFrame(c) && this.painted.has(cellKey(c))
+    if (!this.inFrame(c)) return false
+    const r = this.painted.get(cellKey(c))
+    return r !== undefined && isComplete(r)
   }
 
-  /** The cell has no record of any kind, so the coarse layer would fill it. */
+  /** The cell has its coarse record (the far-zoom look needs one for every visible cell). */
+  hasCoarse(c: CellId): boolean {
+    return this.coarse.has(cellKey(c))
+  }
+
+  /** No whole-cell record is there, so the coarse layer would fill the cell (also next to a partial graph record). */
   needsCoarse(c: CellId): boolean {
+    if (!this.inFrame(c)) return false
     const k = cellKey(c)
-    return this.inFrame(c) && !this.coarse.has(k) && !this.records.has(k) && !this.drawn.has(k)
+    const r = this.records.get(k)
+    return !this.coarse.has(k) && !this.drawn.has(k) && !(r && isComplete(r))
   }
 
   private commit(changed: CellId[]): CellId[] {
@@ -239,6 +270,7 @@ export class LiveWorld implements MapSource {
     for (const m of [this.drawn, this.coarse]) for (const k of [...m.keys()]) if (!this.tiles.inFrame(parseCellKey(k)!)) m.delete(k)
     this.painted.clear()
     this.unpainted.clear()
+    this.repaint.clear()
     for (const k of new Set([...this.records.keys(), ...this.drawn.keys(), ...this.coarse.keys()])) if (this.tiles.inFrame(parseCellKey(k)!)) this.unpainted.add(k)
     this.loadingRects = []
     this.snap = undefined
@@ -247,15 +279,21 @@ export class LiveWorld implements MapSource {
     for (const fn of this.frameListeners) fn()
   }
 
-  /** Paint the waiting cell nearest to `p`. Returns the cell, or undefined when none is left. */
-  paintNext(p: LatLon): CellId | undefined {
+  /**
+   * Paint the waiting cell nearest to `p` (after a `recentre` or a `setWide`); with `only`, only among
+   * those cell keys (the visible cells go first). Returns the cell, or undefined when none is left.
+   */
+  paintNext(p: LatLon, only?: ReadonlySet<string>): CellId | undefined {
     let best: string | undefined
     let bestD = Infinity
-    for (const k of this.unpainted) {
-      const d = cellDistanceM(parseCellKey(k)!, p)
-      if (d < bestD) {
-        bestD = d
-        best = k
+    for (const set of [this.unpainted, this.repaint]) {
+      for (const k of set) {
+        if (only && !only.has(k)) continue
+        const d = cellDistanceM(parseCellKey(k)!, p)
+        if (d < bestD) {
+          bestD = d
+          best = k
+        }
       }
     }
     if (best === undefined) return undefined

@@ -72,7 +72,7 @@ describe('useStreaming', () => {
     act(() => root.render(<Probe first={first} client={c} enabled />))
     act(() => onView!({ ...cellBBox(E), south: cellBBox(E).south + 1e-4, north: cellBBox(E).north - 1e-4, west: cellBBox(E).west + 1e-4, east: cellBBox(E).east - 1e-4 }, { lat: 39.495, lon: -0.385 }, 16))
     await act(async () => vi.advanceTimersByTimeAsync(SETTLE_MS + 5000))
-    expect(c.asked.some((k) => k.startsWith('12/'))).toBe(true)
+    expect(c.asked.some((k) => k.startsWith('13/'))).toBe(true)
     expect(c.asked.some((k) => k.startsWith('14/'))).toBe(true)
     expect(lw.hasAny(E)).toBe(true)
     expect(lw.needs(E)).toBe(false)

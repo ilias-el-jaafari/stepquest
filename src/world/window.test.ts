@@ -4,7 +4,7 @@ import { FAR_ZOOM, ZOOM_LEVELS } from '../render/camera.ts'
 import { cellsInBBox } from './cells.ts'
 import { COARSE_Z, DETAIL_Z } from '../vector/assemble.ts'
 import { tilesInBBox } from '../vector/tileMath.ts'
-import { FRAME_CELLS, QUEST_WINDOW_TILES, questMinZoom, worstCellsAlong, worstTilesTouched } from './window.ts'
+import { FRAME_CELLS, QUEST_WINDOW_COARSE_TILES, QUEST_WINDOW_TILES, questMinZoom, worstCellsAlong, worstTilesTouched } from './window.ts'
 
 const M_PER_DEG = 111_320
 const VALENCIA = 39.48
@@ -18,8 +18,9 @@ function box(lat: number, lon: number, wM: number, hM: number) {
 }
 
 describe('quest window (requirement 21.11)', () => {
-  it('budgets six tiles of the layer a zoom draws from, and a view that fits the 9 × 9-cell frame', () => {
+  it('budgets 12 coarse (z13) or 6 detail (z14) tiles, and a view that fits the 9 × 9-cell frame', () => {
     expect(QUEST_WINDOW_TILES).toBe(6)
+    expect(QUEST_WINDOW_COARSE_TILES).toBe(12)
     expect(FRAME_CELLS).toBe(9)
   })
 
@@ -65,7 +66,7 @@ describe('quest window (requirement 21.11)', () => {
           const z = questMinZoom(w, h, TILE_M, lat)
           expect((ZOOM_LEVELS as readonly number[]).includes(z)).toBe(true)
           const view = box(lat, lon, (w / z) * TILE_M, (h / z) * TILE_M)
-          expect(tilesInBBox(view, z <= FAR_ZOOM ? COARSE_Z : DETAIL_Z).length).toBeLessThanOrEqual(QUEST_WINDOW_TILES)
+          expect(tilesInBBox(view, z <= FAR_ZOOM ? COARSE_Z : DETAIL_Z).length).toBeLessThanOrEqual(z <= FAR_ZOOM ? QUEST_WINDOW_COARSE_TILES : QUEST_WINDOW_TILES)
           const along = worstCellsAlong((w / z) * TILE_M, (h / z) * TILE_M, lat)
           expect(Math.max(along.w, along.h)).toBeLessThanOrEqual(FRAME_CELLS)
           // The next level out breaks a rule (the floor is the lowest allowed).
@@ -74,7 +75,7 @@ describe('quest window (requirement 21.11)', () => {
             const bw = (w / below) * TILE_M
             const bh = (h / below) * TILE_M
             const a = worstCellsAlong(bw, bh, lat)
-            const tooMany = worstTilesTouched(bw, bh, lat, below <= FAR_ZOOM ? COARSE_Z : DETAIL_Z) > QUEST_WINDOW_TILES
+            const tooMany = below <= FAR_ZOOM ? worstTilesTouched(bw, bh, lat, COARSE_Z) > QUEST_WINDOW_COARSE_TILES : worstTilesTouched(bw, bh, lat, DETAIL_Z) > QUEST_WINDOW_TILES
             expect(tooMany || a.w > FRAME_CELLS || a.h > FRAME_CELLS).toBe(true)
           }
         },
@@ -91,10 +92,10 @@ describe('quest window (requirement 21.11)', () => {
     )
   })
 
-  it('lifts the floor on the 390 × 844 phone of the field check (the coarse tiles are 7.5 km), and keeps a wide screen inside the frame', () => {
+  it('lifts the floor on the 390 × 844 phone of the field check (z13 tiles are 3.8 km), and keeps a wide screen inside the frame', () => {
     expect(questMinZoom(390, 844, TILE_M, VALENCIA)).toBe(ZOOM_LEVELS[0])
-    // The furthest phone view touches at most six coarse tiles.
-    expect(worstTilesTouched((390 / 0.5) * TILE_M, (844 / 0.5) * TILE_M, VALENCIA, COARSE_Z)).toBeLessThanOrEqual(QUEST_WINDOW_TILES)
+    // The furthest phone view touches at most 12 coarse tiles (worst alignment; the field check asked for 8).
+    expect(worstTilesTouched((390 / 0.5) * TILE_M, (844 / 0.5) * TILE_M, VALENCIA, COARSE_Z)).toBe(QUEST_WINDOW_COARSE_TILES)
     // A 1280 × 800 window would be wider than the frame at 0.5 and 0.75.
     expect(questMinZoom(1280, 800, TILE_M, VALENCIA)).toBe(1)
   })

@@ -126,8 +126,8 @@ describe('streamer: what it asks for (requirements 21.4, 21.5, 21.8)', () => {
     await settle(10_000)
     expect(srv.log.length).toBeGreaterThan(0)
     expect(srv.log.every((l) => l.t.z === COARSE_Z)).toBe(true)
-    // A 5 × 5-cell view is one or two z12 tiles.
-    expect(srv.log.length).toBeLessThanOrEqual(4)
+    // A 5 × 5-cell view (5.5 × 4.3 km) is at most 3 × 3 z13 tiles.
+    expect(srv.log.length).toBeLessThanOrEqual(9)
     expect(world.needs(C)).toBe(true)
     expect(world.hasAny(C)).toBe(true)
     expect(s.status()).toEqual({ ready: 'full', pending: 0 })
@@ -312,6 +312,60 @@ describe('streamer: what the map shows (requirement 20.15)', () => {
     await settle(10_000)
     expect(batches.length).toBeGreaterThanOrEqual(18)
     expect(batches.every((n) => n === 1)).toBe(true)
+    s.dispose()
+  })
+})
+
+describe('readiness counts whole cells only (requirement 21.14, field check of f1632f2)', () => {
+  /** A graph record that covers only the south tenth of cell C (like the edge cells of the bundled extract). */
+  const partial = () => {
+    const b = cellBBox(C)
+    return makeRecord(C, [], {}, { ...b, north: b.south + (b.north - b.south) / 10 })
+  }
+
+  it('does not say full or coarse for a cell that only a partial record paints, while its tiles fail', async () => {
+    const srv = tileServer({ fail: () => new TileError('network', 'timed out') })
+    const world = new LiveWorld(C, [partial()])
+    const s = new Streamer({ tiles: srv.source, world, online: () => true, random: () => 0.5 })
+    s.setView(shrink(cellBBox(C)), centreOf(C), FAR)
+    await settle(5_000)
+    expect(world.hasAny(C)).toBe(false)
+    expect(s.status()).toEqual({ ready: 'loading', pending: 1 })
+    // And it asked for the coarse tile of that cell (a partial record does not stop the coarse layer).
+    expect(srv.log.some((l) => l.t.z === COARSE_Z)).toBe(true)
+    s.dispose()
+  })
+
+  it('paints the coarse tile over a partial record once it comes, and only then says full', async () => {
+    const srv = tileServer()
+    const world = new LiveWorld(C, [partial()])
+    const s = new Streamer({ tiles: srv.source, world, online: () => true })
+    s.setView(shrink(cellBBox(C)), centreOf(C), FAR)
+    await settle(5_000)
+    expect(world.hasAny(C)).toBe(true)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
+    // The graph keeps the partial record for routing.
+    expect(world.needsGraph(C)).toBe(true)
+    s.dispose()
+  })
+
+  it('draws every cell from its coarse tile at far zooms, also a cell with a complete graph record, and goes back when zoomed in', async () => {
+    const srv = tileServer()
+    const full = makeRecord(C, [{ id: 1, pts: [[39.4951, -0.399], [39.4951, -0.391]] }])
+    const world = new LiveWorld(C, [full])
+    const own = world.tiles.ownedRect(C)!
+    const roadAt = () => world.grid.terrainAt(own.x + Math.round(own.w * 0.5), world.grid.toTileXY({ lat: 39.4951, lon: -0.395 }).y | 0)
+    const before = roadAt()
+    const s = new Streamer({ tiles: srv.source, world, online: () => true })
+    s.setView(shrink(cellBBox(C)), centreOf(C), FAR)
+    await settle(5_000)
+    // The coarse tile (empty here) replaced the graph drawing: one source at far zoom.
+    expect(srv.log.some((l) => l.t.z === COARSE_Z)).toBe(true)
+    expect(roadAt()).not.toBe(before)
+    s.setView(shrink(cellBBox(C)), centreOf(C), DETAIL)
+    await settle(5_000)
+    expect(roadAt()).toBe(before)
+    expect(world.world().data.ways).toHaveLength(1)
     s.dispose()
   })
 })

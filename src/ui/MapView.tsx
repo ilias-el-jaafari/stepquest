@@ -231,16 +231,19 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
         {hasMore && moreOpen && <div className="map-more" data-testid="map-more-row">{plan.more.map(button)}</div>}
       </div>
       {/* Required credits (requirement 21.12): the map is drawn from OpenFreeMap tiles in the OpenMapTiles schema, made from OpenStreetMap data. */}
+      {/* One inline span: the credit strip is a flex box, and a flex box drops the spaces between its items. */}
       <p className="map-attribution" data-testid="map-attribution">
-        <a href="https://openfreemap.org" target="_blank" rel="noopener noreferrer">
-          {t('map.creditTiles')}
-        </a>{' '}
-        <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener noreferrer">
-          {t('map.creditSchema')}
-        </a>{' '}
-        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
-          {t('map.attribution')}
-        </a>
+        <span>
+          <a href="https://openfreemap.org" target="_blank" rel="noopener noreferrer">
+            {t('map.creditTiles')}
+          </a>{' '}
+          <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener noreferrer">
+            {t('map.creditSchema')}
+          </a>{' '}
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
+            {t('map.attribution')}
+          </a>
+        </span>
       </p>
     </div>
   )

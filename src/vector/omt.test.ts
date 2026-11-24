@@ -92,11 +92,10 @@ describe('OpenMapTiles to the map model (requirement 21.3)', () => {
     expect(data.bbox).toEqual(b)
   })
 
-  it('keeps only the coarse layer for a coarse tile: streets, big green, water and rail', () => {
+  it('keeps every way of a coarse tile, so the far zooms look like the detail (requirement 21.4), and no landmarks', () => {
     const coarse = tileToOsm(fixture(), T, { coarse: true })
-    const k = new Set(coarse.ways.map((w) => w.kind))
-    expect([...k].sort()).toEqual(['park', 'rail', 'road', 'water', 'waterway'])
-    expect(coarse.ways.some((w) => w.sub === 'grass' || w.sub === 'pitch')).toBe(false)
+    expect(coarse.ways.map((w) => w.kind)).toEqual(data.ways.map((w) => w.kind))
+    expect(new Set(coarse.ways.map((w) => w.kind))).toContain('building')
     expect(coarse.pois).toEqual([])
   })
 

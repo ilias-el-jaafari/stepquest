@@ -5,10 +5,12 @@ import { CELL_DEG } from './cells.ts'
 import { MAX_RADIUS_CELLS } from './tileWorld.ts'
 
 /**
- * Most vector tiles a quest view may touch (requirement 21.11, which replaces 19.20 and 20.13): at or
- * below `FAR_ZOOM` coarse tiles (z12, about 7.5 km), above it detail tiles (z14, about 1.9 km).
+ * Most vector tiles a quest view may touch (requirement 21.11, which replaces 19.20 and 20.13): above
+ * `FAR_ZOOM` detail tiles (z14, about 1.9 km), at or below it coarse tiles (z13, about 3.8 km; 12 in
+ * the worst alignment of the furthest phone view, 6 in a typical one).
  */
 export const QUEST_WINDOW_TILES = 6
+export const QUEST_WINDOW_COARSE_TILES = 12
 /** Cells the frame spans on each axis: a view wider or taller than this cannot be drawn whole. */
 export const FRAME_CELLS = 2 * MAX_RADIUS_CELLS + 1
 
@@ -31,17 +33,17 @@ export function worstTilesTouched(widthM: number, heightM: number, lat: number, 
 
 /**
  * The smallest zoom (CSS px per tile) on the ladder at which a `cssW` × `cssH` quest view stays
- * drawable: it touches at most `budget` tiles of the layer that zoom draws from, and fits in the frame
+ * drawable: it touches at most `coarseBudget` coarse or `budget` detail tiles (the layer that zoom draws from), and fits in the frame
  * (at most `FRAME_CELLS` cells per axis). The top level when none does.
  */
-export function questMinZoom(cssW: number, cssH: number, metresPerTile: number, lat: number, budget = QUEST_WINDOW_TILES): number {
+export function questMinZoom(cssW: number, cssH: number, metresPerTile: number, lat: number, budget = QUEST_WINDOW_TILES, coarseBudget = QUEST_WINDOW_COARSE_TILES): number {
   if (!(cssW > 0 && cssH > 0)) return ZOOM_LEVELS[0]
   for (const z of ZOOM_LEVELS) {
     const w = (cssW / z) * metresPerTile
     const h = (cssH / z) * metresPerTile
     const cells = worstCellsAlong(w, h, lat)
     if (cells.w > FRAME_CELLS || cells.h > FRAME_CELLS) continue
-    if (worstTilesTouched(w, h, lat, z <= FAR_ZOOM ? COARSE_Z : DETAIL_Z) <= budget) return z
+    if (z <= FAR_ZOOM ? worstTilesTouched(w, h, lat, COARSE_Z) <= coarseBudget : worstTilesTouched(w, h, lat, DETAIL_Z) <= budget) return z
   }
   return ZOOM_LEVELS[ZOOM_LEVELS.length - 1]!
 }

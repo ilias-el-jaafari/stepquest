@@ -6,8 +6,11 @@ import { tileBBox, tileKey, tilesInBBox, type TileId } from './tileMath.ts'
 
 /** Vector tiles that draw the detail layer (buildings, paths, landmarks): the most detailed zoom OpenFreeMap serves. */
 export const DETAIL_Z = 14
-/** Vector tiles that draw the coarse layer (streets, green, water; no buildings at this zoom): one tile is about 7.5 km. */
-export const COARSE_Z = 12
+/**
+ * Vector tiles that draw the coarse layer (requirement 21.4): z13, about 3.8 km, the first zoom with
+ * buildings and every street class, so the far zooms look the same wherever the data came from.
+ */
+export const COARSE_Z = 13
 /**
  * A detail cell is assembled from the tiles that meet the cell grown by this much (about 400 m), so a
  * building that crosses a tile seam is seen whole by every cell it touches (requirement 21.6); the

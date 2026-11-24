@@ -99,6 +99,12 @@ describe('credit and button stack', () => {
     )
     const credit = host.querySelector<HTMLElement>('.map-attribution')!
     expect(credit.textContent).toBe(OSM_ATTRIBUTION)
+    // The strip is a flex box, which drops whitespace between its items ("OpenFreeMap© OpenMapTiles©"
+    // in the field check): the links and the spaces between them sit in one inline span.
+    expect(credit.children).toHaveLength(1)
+    expect(credit.firstElementChild!.tagName).toBe('SPAN')
+    expect([...credit.childNodes].every((n) => n.nodeType === 1)).toBe(true)
+    expect(credit.firstElementChild!.textContent).toBe(OSM_ATTRIBUTION)
     const links = [...credit.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')])
     expect(links).toEqual([
       ['OpenFreeMap', 'https://openfreemap.org'],

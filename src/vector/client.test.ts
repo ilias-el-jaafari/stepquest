@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryCache } from '../osm/cache.ts'
 import { MAX_TILES_IN_FLIGHT, TILE_DEADLINE_MS, TILEJSON_TTL_MS, TILEJSON_URL, tileCacheKey, VectorTileClient } from './client.ts'
+import { MAX_TILE_CONCURRENT } from '../world/streamer.ts'
 import { encodeMvt } from './testing.ts'
 
 const T = { z: 14, x: 8174, y: 6232 }
@@ -70,7 +71,9 @@ describe('vector tile client (requirements 21.2 and 21.8)', () => {
     expect((await empty.loadTile(T)).ways).toEqual([])
   })
 
-  it('runs at most MAX_TILES_IN_FLIGHT downloads and refuses the next one as busy', async () => {
+  it('runs at most MAX_TILES_IN_FLIGHT (4, OpenFreeMap’s limit) downloads and refuses the next one as busy', async () => {
+    expect(MAX_TILES_IN_FLIGHT).toBe(4)
+    expect(MAX_TILE_CONCURRENT).toBe(MAX_TILES_IN_FLIGHT)
     const releases: (() => void)[] = []
     const c = new VectorTileClient({
       cache: new MemoryCache(),

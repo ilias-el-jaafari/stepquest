@@ -8,7 +8,7 @@ import { planRoute } from '../routing/planner.ts'
 import { cellBBox, cellKey, cellOf } from './cells.ts'
 import { LiveWorld, MAX_RESIDENT_CELLS, subtract } from './liveWorld.ts'
 import { Terrain } from '../tiles/grid.ts'
-import { sliceToCells } from './slice.ts'
+import { isComplete, sliceToCells } from './slice.ts'
 import { makeRecord } from './testing.ts'
 
 const records = sliceToCells(loadDemoOsm())
@@ -253,7 +253,9 @@ describe('moving the frame (requirement 20.17)', () => {
     const order: string[] = []
     for (let c = lw.paintNext({ lat: p.south, lon: p.west }); c; c = lw.paintNext({ lat: p.south, lon: p.west })) order.push(cellKey(c))
     expect(order).toHaveLength(inside.length)
-    expect(inside.every((r) => lw.hasAny(r.cell))).toBe(true)
+    // Painted again; a cell the extract covers only partly does not count as covered (requirement 21.14).
+    for (const r of inside) expect(lw.hasAny(r.cell)).toBe(isComplete(r))
+    expect(inside.some((r) => !isComplete(r))).toBe(true)
     // Nearest first.
     const d = order.map((k) => { const [i, j] = k.split(',').map(Number); return Math.hypot(i! - next.i, j! - next.j) })
     expect(d[0]).toBeLessThanOrEqual(Math.min(...d) + 1)

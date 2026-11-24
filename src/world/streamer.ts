@@ -14,9 +14,9 @@ import type { CellRecord } from './slice.ts'
 
 /** The view must rest this long before tiles are requested from the network (cached data shows at once). */
 export const SETTLE_MS = 400
-/** Tile downloads at once (requirement 21.8); equal to the client's `MAX_TILES_IN_FLIGHT`. */
-export const MAX_TILE_CONCURRENT = 6
-/** A safety net, not a pace: at most this many tile downloads start in any 60 s (a full phone view needs about 8). */
+/** Tile downloads at once (requirement 21.8); equal to the client's `MAX_TILES_IN_FLIGHT` (a test keeps them together). */
+export const MAX_TILE_CONCURRENT = 4
+/** A safety net, not a pace: at most this many tile downloads start in any 60 s (a full phone view needs about 6 z13 and 6 z14). */
 export const MAX_TILES_PER_MINUTE = 60
 export const MINUTE_MS = 60_000
 /** After a failure a tile waits about this long (±25 %), doubling per failure up to BACKOFF_MAX_MS. */
@@ -51,7 +51,7 @@ export const IDLE_LOAD: MapLoad = { ready: 'full', pending: 0 }
 
 /** The Overpass side: only the walking graph (requirement 21.10). */
 export type GraphClient = Pick<OverpassClient, 'loadCells' | 'cachedCell' | 'busy' | 'waitMs'>
-export type StreamTarget = Pick<LiveWorld, 'needs' | 'needsGraph' | 'needsCoarse' | 'hasAny' | 'add' | 'addDrawn' | 'addCoarse' | 'setLoading' | 'touch' | 'evict' | 'inFrame' | 'recentre' | 'paintNext' | 'anchor'>
+export type StreamTarget = Pick<LiveWorld, 'needs' | 'needsGraph' | 'needsCoarse' | 'hasCoarse' | 'setWide' | 'hasAny' | 'add' | 'addDrawn' | 'addCoarse' | 'setLoading' | 'touch' | 'evict' | 'inFrame' | 'recentre' | 'paintNext' | 'anchor'>
 
 export type StreamerOptions = {
   /** Vector tiles: everything the map draws. */
@@ -113,7 +113,7 @@ const codeOf = (error: unknown): OverpassErrorCode | TileErrorCode => (error ins
 
 /**
  * Loads what the camera shows (requirement 21). Painting comes only from vector tiles: the coarse
- * layer (z12, streets, green, water) for every cell in view, then the detail layer (z14, buildings,
+ * layer (z13, everything but points of interest) for every cell in view, then the detail layer (z14, buildings,
  * paths, landmarks) for the cells in view at zooms above `FAR_ZOOM`, then the route ahead. A cell is
  * painted as soon as every tile it is assembled from is in (`tilesForCell`). Overpass is asked only
  * for graph cells along the route ahead, in a lane of its own that never delays a tile and never
@@ -176,6 +176,7 @@ export class Streamer {
     this.box = box
     this.centre = centre
     this.zoom = zoom
+    this.o.world.setWide(!wantsDetail(zoom))
     const key = this.plan()
     this.showLoading()
     this.publish()
@@ -271,9 +272,12 @@ export class Streamer {
     this.pumping = true
     try {
       if (this.o.now() >= this.settledAt && this.offFrame()) await this.moveFrame()
+      // Visible cells waiting for a repaint first, then data, then the rest of the frame.
+      await this.drain(new Set(this.viewCells.map(cellKey)))
       await this.cachePass()
       await this.assemble()
       if (!this.disposed) this.launch()
+      await this.drain()
     } finally {
       this.pumping = false
     }
@@ -302,9 +306,13 @@ export class Streamer {
     this.o.onChange?.([])
     this.showLoading()
     this.publish()
+  }
+
+  /** Repaint the cells that wait for it (a moved frame, a switch of look), nearest first, one per task. */
+  private async drain(only?: ReadonlySet<string>): Promise<void> {
     for (;;) {
-      if (this.disposed) return
-      const cell = world.paintNext(this.centre ?? centre)
+      if (this.disposed || !this.centre) return
+      const cell = this.o.world.paintNext(this.centre, only)
       if (!cell) break
       this.o.onChange?.([cell])
       this.publish()
@@ -341,7 +349,9 @@ export class Streamer {
   private wanted(): { cell: CellId; detail: boolean }[] {
     const { world } = this.o
     const out: { cell: CellId; detail: boolean }[] = []
-    for (const c of this.viewCells) if (world.needsCoarse(c)) out.push({ cell: c, detail: false })
+    // At far zooms every visible cell is drawn from its coarse tiles (one look, requirement 21.7).
+    const wide = !this.detailWanted()
+    for (const c of this.viewCells) if (wide ? !world.hasCoarse(c) : world.needsCoarse(c)) out.push({ cell: c, detail: false })
     if (this.detailWanted()) {
       for (const c of this.viewCells) if (world.needs(c)) out.push({ cell: c, detail: true })
       const inView = new Set(this.viewCells.map(cellKey))
@@ -409,7 +419,7 @@ export class Streamer {
       const loaded = ids.map((id) => this.store.get(`t:${tileKey(id)}`))
       if (loaded.some((t) => !t)) continue
       // Still wanted? (an earlier step of this loop may have changed it)
-      if (w.detail ? !world.needs(w.cell) : !world.needsCoarse(w.cell)) continue
+      if (w.detail ? !world.needs(w.cell) : world.hasCoarse(w.cell)) continue
       const rec = cellFromTiles(w.cell, loaded as LoadedTile[], w.detail)
       if (!rec) continue
       const done = w.detail ? world.addDrawn([rec]) : world.addCoarse([rec])

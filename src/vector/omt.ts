@@ -1,7 +1,6 @@
 import { VectorTile, classifyRings } from '@mapbox/vector-tile'
 import { PbfReader } from 'pbf'
 import { classifyWay, isBridge, isTunnel, isWalkable, wayStyle, type Tags } from '../osm/classify.ts'
-import { isCoarseWay } from '../osm/coarse.ts'
 import { dedupePois, landmarkKind } from '../osm/landmarks.ts'
 import type { OsmData, OsmWay, Poi } from '../osm/types.ts'
 import { latOf, lonOf, tileBBox, type TileId } from './tileMath.ts'
@@ -218,7 +217,7 @@ function clipSegment(a: P, b: P, e: number): [P, P] | undefined {
 }
 
 export type TileOptions = {
-  /** Keep only the coarse layer (requirement 21.4). */
+  /** A coarse tile (requirement 21.4): every way, no points of interest (a coarse cell gets no town). */
   coarse?: boolean
 }
 
@@ -314,7 +313,7 @@ export function tileToOsm(bytes: Uint8Array, t: TileId, opts: TileOptions = {}):
     bbox: tileBBox(t),
     lat: Float64Array.from(lat),
     lon: Float64Array.from(lon),
-    ways: opts.coarse ? ways.filter(isCoarseWay) : ways,
+    ways,
     pois: opts.coarse ? [] : dedupePois(candidates),
     industrial: [],
     activity: [],

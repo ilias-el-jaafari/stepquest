@@ -184,3 +184,17 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
   - [x] 74.8 Credit "OpenFreeMap © OpenMapTiles © OpenStreetMap contributors" with three links, narrow sans font, `OSM_ATTRIBUTION`; fit test at 320 px
     - _Requirements: 21.12_
   - [x] 74.9 Dead code of the Overpass drawing path removed (coarse query, regions, `loadCoarse`, horizon); steering (`osm-etiquette.md` tile use, `tech.md`, `structure.md`, `copy-voice.md`), README; `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
+
+- [x] 75 Field check of f1632f2 (quest, fully zoomed out): flat bands with readiness `full`, a visible square, credit spacing, tile concurrency
+  - [x] 75.1 Spec: requirement 21 criteria 4, 7, 8, 11, 12, 14 amended, criterion 15 added; design "Field check of f1632f2"
+  - [x] 75.2 `world/liveWorld.ts`: paint order (coarse over a partial graph record), whole-cell coverage for readiness, far-zoom look from coarse tiles everywhere (`setWide`, repaint nearest first)
+    - _Requirements: 21.7, 21.14_
+  - [x] 75.3 `vector/assemble.ts`, `vector/omt.ts`: coarse layer from z13 with every way (the coarse filter module removed); `world/window.ts` coarse budget 12 z13 tiles
+    - _Requirements: 21.4, 21.11_
+  - [x] 75.4 `world/streamer.ts`: coarse tiles for every visible cell at far zoom, repaint lane (visible cells first); 4 tiles at once (`vector/client.ts`)
+    - _Requirements: 21.7, 21.8_
+  - [x] 75.5 Credit in one inline span (a flex box drops the spaces between items)
+    - _Requirements: 21.12_
+  - [x] 75.6 Tests: `world/zoomOutCoverage.test.ts` (every pixel row and column at the quest's lowest zoom, under the HUD too; never `full` with a visible tile missing), readiness over partial records, far-zoom look, credit structure, concurrency; `osm-etiquette.md`
+    - _Requirements: 21.7, 21.8, 21.12, 21.14, 21.15_
+

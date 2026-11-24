@@ -742,3 +742,26 @@ The z14 `transportation` layer has `class`, `subclass`, `brunnel`, `oneway`, `ra
 ### Testing
 
 `vector/omt.test.ts` (tile maths, layer mapping, landmarks, coordinates, coarse filter, codec, clipping, shared edge), `vector/assemble.test.ts` (seam, anchors, whole building, order), `vector/client.test.ts` (TileJSON at run time and stale fallback, cache before network in a new session, 204/404/429/5xx, six slots, deadline with a fetch that ignores abort, stuck cache), `world/streamer.test.ts` (coarse before detail, far zoom coarse only, cache at once, route ahead, painting reaches `full` while every Overpass request fails, graph cells when it answers, failing and hanging tiles keep the placeholder and retry, 429 pause, offline, load state, one cell per notice), `world/panAway.test.ts` (the pan-away field case on tiles), `world/window.test.ts` (floor), `ui/attribution.test.ts` (credit text, links, fit at 320 px). Tiles in tests are encoded by `vector/testing.ts`; no test uses the network.
+
+### Field check of f1632f2 (task 75)
+
+Preview build, Spanish, 390 × 844, quest with a simulated walk, fully zoomed out (0.5) without panning, at 12:00 and 22:30. `data-map-ready` went to `full` after 1 s, but (1) the bottom of the view and a strip at the top left were flat no-data ground, (2) the bundled planning area stood out as a dense square with dithered borders inside a sparse map of street lines, (3) the credit read "OpenFreeMap© OpenMapTiles© …", (4) OpenFreeMap's quick start asks for at most 4 parallel requests.
+
+**Root cause, reproduced** (the field view, the demo world, the real z13/z12 tiles of the area read from disk, the software canvas; counts are flat no-data pixels per row band). Before the fix the streamer reported `full`, 0 pending, with rows 240 and 560 to 680 of 844 100 % flat, and rows 280 to 520 40 to 74 % flat.
+
+1. **The flat bands were the edge cells of the bundled extract**, which covers only part of them: row 3947 has 100 m of the extract and 900 m of nothing (the extract starts at 39.479), row 3950 stops at 39.508, column −42 has 50 m. The paint order of 21.7 put a partial graph record ahead of the coarse tile, so the rest of those cells stayed flat, and `LiveWorld.hasAny` counted any painted record, so readiness said covered. It was not the view box (it already spans the whole canvas, including the part under the HUD) and not the z12 coverage (both needed z12 tiles were asked for).
+2. **The square** was two looks side by side: inside the extract, the far overview drew every street, path, building and lawn from the graph data; outside, the z12 coarse filter kept only main streets and big areas. Partial edge cells added a dithered frontier inside the cell around their covered part.
+3. **The credit**: `.map-attribution` is a flex box, and a flex box drops whitespace-only text between its items, so the `{' '}` between the three links vanished. The DOM test read `textContent`, which keeps the spaces, so it did not catch it.
+
+**Fix.**
+
+- A partial graph record is painted only while the cell has no tile record (coarse beats it), and a cell counts as covered only when its painted record covers the whole cell (`hasAny`), so readiness and `pending` follow what is really on screen.
+- The coarse layer is z13 with every way (buildings, all streets and paths, landcover, pitches, water, rail; no points of interest), and at zooms at or below `FAR_ZOOM` every cell with a coarse record is painted from it, including the cells of the bundled extract (`LiveWorld.setWide`). Graph records stay in the data and the graph for routing; when the view zooms back in they are painted again. The repaint runs one cell per task, visible cells first, nearest the centre first, and keeps the old picture until the new one is in. Rendered on the software canvas, the field view now has no flat pixel, no square and no fog band.
+- Tile concurrency 4 (`MAX_TILES_IN_FLIGHT`, `MAX_TILE_CONCURRENT`).
+- The three links sit in one inline `span`; a test checks the strip has that single child.
+
+**Numbers (this sandbox, planet `20261122_124456_pt`).** z13 tile over Benicalap 4087/3116: 168 KB decoded, 2855 features (`building` as 1 merged polygon of 25 434 points, 2601 `transportation` lines including 1223 `minor`). The field view at 0.5 needs 8 z13 tiles (worst alignment 12; 2 z12 tiles before). So the quest's coarse budget is 12 z13 tiles (`QUEST_WINDOW_COARSE_TILES`), which keeps 0.5 reachable on the reference phone; detail stays at 6 z14 tiles. A cold start at that view is 8 requests of about 100 KB at 4 at a time.
+
+**Rejected.** Blending the planning area's border (fading the square into the coarse map): it hides the edge but keeps two looks, and the dither is what made the border visible. z12 with fills added: z12 has no buildings at all, so the extract would still stand out. z14 for the far zooms: 15 to 24 tiles of 0.4 to 0.9 MB for one phone view.
+
+**Known limits.** At far zoom the bundled area now shows z13 data: features that OpenMapTiles drops at z13 (small farmland and lawns, a surface light-rail line) are not drawn there until the view zooms in past `FAR_ZOOM`. Offline, with no coarse tiles cached, the extract is drawn from its own data as before and its edge cells stay partly flat; readiness then says `loading`, which is true.

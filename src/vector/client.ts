@@ -16,8 +16,8 @@ export const TILEJSON_URL = 'https://tiles.openfreemap.org/planet'
 export const TILEJSON_TTL_MS = 24 * 60 * 60 * 1000
 export const TILEJSON_TIMEOUT_MS = 8_000
 const TILEJSON_KEY = 'stepquest.tilejson'
-/** Tile downloads at once from this tab (requirement 21.8): a CDN serves several in parallel; six is what a browser opens per host. */
-export const MAX_TILES_IN_FLIGHT = 6
+/** Tile downloads at once from this tab (requirement 21.8): OpenFreeMap asks for at most 4 parallel requests (openfreemap.org, quick start). */
+export const MAX_TILES_IN_FLIGHT = 4
 /** No tile holds its slot longer than this, whatever the worker or the network do. */
 export const TILE_DEADLINE_MS = 25_000
 /** Tiles kept in IndexedDB; oldest saved go first. A dense z14 tile is 0.4 to 0.9 MB in the compact form (measured over València), so about 50 MB at most. */
