@@ -321,3 +321,59 @@ Visible changes: none in the bundled demo. In live data: courtyards and ponds ap
 Cross-reference to routing: the graph is unchanged. It still takes walkable ways clipped to the bbox, and `holes` and `bridge` are not read by it. Two effects reach it through `normalize`: ways with a bad coordinate are split at the gap (they used to put NaN into the node table), and a `tunnel=no` way with a negative layer is no longer flagged covered, so it counts as open air in the night weights.
 
 Limits kept: no walk is planned across the antimeridian (the box is trimmed at 180°); a live area still has no relations (D12); an unclosed area-tagged way is filled with a closing chord.
+
+
+## Town layout review (Nov 2026)
+
+Scope: `src/town/layout.ts` (395 lines, one file) and its callers `render/chunkLayer.ts`, `overview.ts`, `structures.ts`, `lights.ts`. Requirement 17, tasks 69.1 to 69.7.
+
+### Current structure (before)
+
+`layoutTown(grid)`: `placeLandmarks` (grid points in data order, three passes of three sizes within 9 tiles) → `findParkGates` → connected building blocks → BSP lots → up to three largest rectangles per lot → front yards (fence, gate) → trees. All in one file, with a `Set` of block tiles per block.
+
+### Findings
+
+| Id | Finding | Effect |
+| --- | --- | --- |
+| B1 | Landmarks were placed in the order of `grid.pois`, and each one reserves its tiles. Two points that compete for a spot give a different town when the data order changes (Overpass does not promise an order; the fixture builder merges extracts). | Station and market near (194, 375) on the Benicalap map moved with the order. |
+| B2 | Points of one kind on one tile, or one inside the footprint of another, each got a landmark (the second one next door). | Two schools drawn side by side for one OSM school. |
+| B3 | A point with an unknown kind threw `LANDMARK_SIZES[kind] is not iterable`; one with NaN coordinates was only skipped by luck of `inBounds(NaN)`. | A bad cached extract would stop the whole map drawing. |
+| B4 | Park gates were found after landmarks without looking at them, and houses were placed on the tiles of a gate's arch row (`houseAt` and `landmarkAt` both set). | House and arch painted on the same tiles. A landmark overlap did not occur in tests but was possible by construction. |
+| B5 | A horizontal gate at map row 1 had `y = -1`; the code later guarded the index but the painter still received a rectangle outside the map. | Arch clipped or painted at row -1. |
+| B6 | A front-yard fence under the removed column of a side garden (`w - 1`) had no house above it, so the "tile under a house stays clear" rule did not protect it and a tree could stand on the fence. | Tree through a fence. |
+
+Checked and found correct: houses are cut from a mask of building tiles, so they never cover roads, water or plazas, and `largestRect` clearing keeps them disjoint (property test confirms, 60 random maps). A front-yard row lies inside the lot. The door column is always inside the house. Block order is the scan order of the first tile, so seeds do not depend on traversal order. `Math.max(...)` and `Set` iteration do not leak into results (the `trees`, `fences` and `gates` sets are only read by membership).
+
+By design (documented, not changed): lots are cut from the bounding box of a block, so a concave block is covered by the pieces of up to three rectangles per lot and an L-shaped leftover stays building tiles; blocks thinner than 2 tiles or under 4 tiles get no house; a landmark can move up to 9 tiles (45 m) from its OSM point.
+
+### Performance
+
+Linear. `layoutBench.test.ts` (printed, one machine, ms, median of 3 runs after, single run before): Benicalap demo 635 × 645 tiles 137 → 110; 600 × 600 tiles of 40-tile blocks 158 → 147; one 600 × 600 block 283 → 182. The saving comes from a tile-to-block `Int32Array` instead of a `Set` per block and a flood fill without a closure per tile. The 36 km² cap is 1200 × 1200 tiles, about four times these grids.
+
+### Target design
+
+```
+types.ts      House, Landmark, TownLayout, Rect, LOT, colour counts
+random.ts     rng (mulberry32), hash2
+blocks.ts     components, analyseBlocks (blocks + owner array), subdivide (BSP), largestRect
+landmarks.ts  landmarkSites (sorted, deduplicated), placeLandmarks, findParkGates, LANDMARK_SIZES
+houses.ts     placeHouses (lots, houses, yards, trees), houseKind
+layout.ts     layoutTown, townFor, re-exports of the names the renderer and tests import
+```
+
+- `landmarkSites(grid)` returns the usable points sorted by kind (`LANDMARK_KINDS` order), then row, then column, with duplicates removed. Placement walks that list, so the result depends on the map, not on the data order.
+- `reserved` (a `Uint8Array`) is the single record of tiles that landmarks and gates have taken; houses are placed only on building tiles outside it.
+- Trees keep their random draws: `scatterTrees` draws for the same tiles as before and only refuses to store a tree on a fence tile.
+
+### Behaviour changes (all deliberate)
+
+- Landmark order in `TownLayout.landmarks` is now by kind (healing, station, school, greenMarket, market), then position, instead of data order, so `landmarkAt` indices differ. Nothing outside the renderer reads the index.
+- On the Benicalap map one station and one market moved by one or two tiles, because they compete for the same space and the winner no longer depends on the data order. This changes one golden frame (`far zoom town map`, night frame at zoom 0.5: `23e2e9c8` to the new hash in `golden.test.ts.snap`). The other four scenes keep their hashes. Confirmed by restoring data-order placement: the old hash returns.
+- Gate tiles are reserved, so up to a 3 × 2 patch of building tiles under an arch no longer holds a house.
+
+### Properties (fast-check)
+
+- **P-Y1** for random maps with random points: every house tile is a building tile, houses are pairwise disjoint and do not touch a landmark or gate, landmarks and gates are inside the map and disjoint.
+- **P-Y2** shuffling `grid.pois` leaves `landmarks` and `houses` equal.
+- **P-Y3** at most one landmark per distinct (kind, tile) point, and each landmark lies near a point of its own kind.
+- **P-Y4** no tree on a house, fence or gate tile.

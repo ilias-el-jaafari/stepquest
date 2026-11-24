@@ -1,5 +1,5 @@
 import { SETTINGS_STORAGE_KEY } from '../config/brand.ts'
-import { clampStride, DEFAULT_STRIDE_M, MAX_STEPS, MIN_STEPS } from '../geo/steps.ts'
+import { DEFAULT_STRIDE_M, MAX_STEPS, MIN_STEPS, roundStride } from '../geo/steps.ts'
 import type { RouteMode } from '../routing/planner.ts'
 
 export type Settings = {
@@ -20,7 +20,7 @@ export function sanitizeSettings(raw: unknown): Settings {
   return {
     mode: value.mode === 'oneway' ? 'oneway' : 'loop',
     targetSteps: typeof value.targetSteps === 'number' ? clampSteps(value.targetSteps) : DEFAULT_SETTINGS.targetSteps,
-    strideM: typeof value.strideM === 'number' ? clampStride(value.strideM) : DEFAULT_SETTINGS.strideM,
+    strideM: typeof value.strideM === 'number' ? roundStride(value.strideM) : DEFAULT_SETTINGS.strideM,
   }
 }
 

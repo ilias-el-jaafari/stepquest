@@ -112,3 +112,13 @@ flowchart LR
 - Known limit: the first odometer anchor is a raw fix, so a standing walker can gain one threshold-sized chunk (up to about 13 m at 4 m noise) at the start, never more over time.
 - Not done on purpose: the walker is not told in the UI when a saved live-map quest could not be resumed because its map failed to load (needs new EN and ES strings); moving time versus elapsed time.
 - Tests: `runnerReview.test.ts` (regressions), `persistence.test.ts`, `session.test.ts`, `signal.test.ts`, `wakeLock.test.ts`, `sources.test.ts`, `trace.property.test.ts` (random noisy traces), and additions to `useQuestRunner.test.tsx`. A mutation check (odometer factor 2 to 0.5) makes the standing-still tests fail, as it should.
+
+## Step counting review (Nov 2026)
+
+Scope: `src/geo/steps.ts`, `ui/settings.ts`, `ui/numberInput.ts`. Requirement 6c, tasks 69.11 and 69.12.
+
+- **B14** Typed strides were rounded to 1 cm (`commitStride`), but a saved stride went only through `clampStride`, so a stored 0.7549 showed as 0.75 and planned with 0.7549. New `roundStride` (clamp then round to 1 cm); `sanitizeSettings` uses it.
+- Checked and correct: steps ↔ metres round trip is exact for every goal 100 to 60,000 and stride 0.40 to 1.20 in 1 cm steps (property test; the division and multiplication error is far below half a step). `withinTolerance` is exact at the 5 % edge for integer goals (checked for all goals 100 to 60,000). `strideFromHeightCm` never leaves the bounds and does not decrease with height, also for NaN and infinities.
+- Not changed: `stepsToMetres` and `metresToSteps` still clamp their stride argument silently, so a caller that skips `roundStride` gets the clamped value. The app's entry points all go through `clampSteps`, `commitStride` or `sanitizeSettings`.
+
+Tests: `geo/review.test.ts`, `ui/settings.test.ts`.

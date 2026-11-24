@@ -45,3 +45,13 @@ Related: [routing](../routing/requirements.md) (rerouting, Requirement 7c), [voi
 15. THE SYSTEM SHALL keep the quest rules (filter, odometer, gems, off-route, finish, persistence format, step credit, reroute tickets) in pure modules without React or browser APIs, and the React hook SHALL only connect the location source, sound, wake lock and rendering to them.
 16. WHEN the quest ends, the page is closed or the hook unmounts, THE SYSTEM SHALL stop the location source and the simulator (also in the middle of a tick), release the wake lock, drop pending reroute answers and ignore late errors and fixes.
 17. WHEN the user runs the demo walk at ×1 to ×120, THE SYSTEM SHALL still collect every gem in order and finish, with and without GPS noise and glitches; a gentle reroute toward the next gem SHALL still not show "you left the route".
+
+### Requirement 6c (task 69): Step counting
+
+**User Story:** As a walker, I want the steps on screen to be the steps the app counts, so that 10,000 means the same everywhere.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL keep the stride between 0.4 m and 1.2 m in whole centimetres wherever it is stored or typed (saved settings included), so the stride shown is the stride used.
+2. THE SYSTEM SHALL convert metres to steps by rounding to the nearest whole step, and steps to metres without rounding; steps → metres → steps SHALL return the same number for every goal from 100 to 60,000 steps and every stride in whole centimetres.
+3. WHEN the stride or the height is not a finite number, THE SYSTEM SHALL use the default stride.

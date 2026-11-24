@@ -4,6 +4,9 @@ export type BBox = { south: number; west: number; north: number; east: number }
 export const EARTH_RADIUS_M = 6_371_008.8
 const DEG = Math.PI / 180
 
+/** Metres per degree of latitude on the sphere used by every helper here (111 195 m). */
+export const M_PER_DEG_LAT = EARTH_RADIUS_M * DEG
+
 /** Great-circle distance in metres. */
 export function haversine(a: LatLon, b: LatLon): number {
   const dLat = (b.lat - a.lat) * DEG
@@ -23,7 +26,7 @@ export function destination(from: LatLon, bearingDeg: number, distance: number):
   const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(b))
   const lon2 =
     lon1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(lat1), Math.cos(d) - Math.sin(lat1) * Math.sin(lat2))
-  return { lat: lat2 / DEG, lon: lon2 / DEG }
+  return { lat: lat2 / DEG, lon: wrapLon(lon2 / DEG) }
 }
 
 /** The east-west scale is computed at most this far from the equator, so cos(lat) never reaches 0 at a pole. */
@@ -40,7 +43,7 @@ export function wrapDeltaLon(d: number): number {
 
 /** Wrap a longitude into [-180, 180]; a value already inside is returned bit for bit. */
 export function wrapLon(lon: number): number {
-  if (lon >= -180 && lon <= 180) return lon
+  if (!Number.isFinite(lon) || (lon >= -180 && lon <= 180)) return lon
   const w = ((((lon + 180) % 360) + 360) % 360) - 180
   return w === -180 ? 180 : w
 }
@@ -53,9 +56,9 @@ export function wrapLon(lon: number): number {
  * never wraps.
  */
 export function bboxAround(center: LatLon, radiusM: number): BBox {
-  const dLat = radiusM / 111_320
+  const dLat = radiusM / M_PER_DEG_LAT
   const lat = Math.max(-MAX_LAT, Math.min(MAX_LAT, center.lat))
-  const dLon = radiusM / (111_320 * Math.cos(lat * DEG))
+  const dLon = radiusM / (M_PER_DEG_LAT * Math.cos(lat * DEG))
   return {
     south: Math.max(-90, center.lat - dLat),
     north: Math.min(90, center.lat + dLat),
@@ -101,7 +104,7 @@ export class LocalProjection {
 
   constructor(origin: LatLon) {
     this.origin = origin
-    this.mPerDegLat = EARTH_RADIUS_M * DEG
+    this.mPerDegLat = M_PER_DEG_LAT
     this.mPerDegLon = EARTH_RADIUS_M * DEG * Math.cos(Math.max(-MAX_LAT, Math.min(MAX_LAT, origin.lat)) * DEG)
   }
 

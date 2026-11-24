@@ -201,3 +201,19 @@ Related: 2.1 to 2.3 (layers, terrain priority, 4-connected paths), 6a.
 5. THE SYSTEM SHALL NOT paint tunnels over the surface, SHALL paint bridge roads and paths over water and buildings, and SHALL NOT draw rail tracks on top of a tile covered by a bridge deck; rails that meet no bridge SHALL be left unchanged.
 6. THE SYSTEM SHALL keep the rasterized layers, terrain, styles, barriers and rails of the bundled Benicalap fixture identical to those before task 66, and SHALL keep every golden frame.
 7. THE SYSTEM SHALL wrap longitude differences at the antimeridian in the local projection, keep the east-west scale finite next to a pole, and keep a box around any point inside the valid coordinate range; its distance error SHALL stay under 0.5 % within 6 km up to latitude 70°.
+
+### Requirement 17 (task 69): Town layout
+
+**User Story:** As a walker, I want the houses, special buildings and park gates to sit where the map says, the same every time, so that my street looks like itself and nothing is drawn on top of anything else.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL produce the same town (houses, gardens, landmarks, gates, trees) for the same map data whatever the order of the landmark points in that data.
+2. THE SYSTEM SHALL put a house only on building tiles that no landmark or park gate has taken, and houses SHALL NOT overlap one another, roads, water, plazas or landmarks.
+3. WHEN a landmark point has an unknown kind, a non-finite position or lies outside the map, THE SYSTEM SHALL ignore it and SHALL NOT fail. WHEN several points of one kind share a tile, or a point lies inside a landmark of its own kind, THE SYSTEM SHALL draw one landmark for them.
+4. THE SYSTEM SHALL place every landmark wholly inside the map, on free tiles, within 9 tiles of its point, and SHALL NOT let two landmarks or gates overlap.
+5. THE SYSTEM SHALL keep park gates inside the map and off landmarks, houses and other gates.
+6. THE SYSTEM SHALL NOT put a garden tree on a house, fence or gate tile.
+7. WHEN a block is too small or too thin for a 2 × 2 house, THE SYSTEM SHALL leave it as plain building tiles.
+8. THE SYSTEM SHALL lay out a 600 × 600 tile map (3 km square, a quarter of the 36 km² cap) in a time that grows linearly with the number of tiles (`layoutBench.test.ts` reports it and fails above a generous budget).
+9. THE SYSTEM SHALL keep the town layout in small modules (types, random, block analysis, landmarks and gates, houses) behind `layout.ts`, whose public names do not change.

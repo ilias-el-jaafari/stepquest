@@ -86,3 +86,20 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
   - _Requirements: 15.8_
 - [x] 66.10 Spec results (before and after timings), README index, `osm-etiquette.md` notes, final `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
   - _Requirements: 16.1_
+
+## Town layout review (Nov 2026, requirement 17)
+
+- [x] 69.1 Review of `town/layout.ts` written into `design.md` ("Town layout review"): findings B1 to B6, checked-correct list, performance, target modules
+  - _Requirements: 17.1 to 17.9_
+- [x] 69.2 Split `layout.ts` into `types.ts`, `random.ts`, `blocks.ts` (block analysis, BSP, largest rectangle), `landmarks.ts`, `houses.ts`; `layout.ts` keeps `layoutTown`, `townFor` and the public names; tile-to-block array instead of a `Set` per block
+  - _Requirements: 17.9_
+- [x] 69.3 Landmarks independent of data order, deduplicated per kind and tile, unknown kinds and bad coordinates ignored (B1, B2, B3); regression tests `town/review.test.ts` failed before the fix
+  - _Requirements: 17.1, 17.3, 17.4_
+- [x] 69.4 Park gates reserve their tiles, stay inside the map and off landmarks and houses (B4, B5)
+  - _Requirements: 17.2, 17.5_
+- [x] 69.5 No tree on a fence tile (B6), random draws unchanged
+  - _Requirements: 17.6_
+- [x] 69.6 Property tests P-Y1 to P-Y4 on random maps with random points
+  - _Requirements: 17.1 to 17.6_
+- [x] 69.7 `layoutBench.test.ts` timings (before and after in `design.md`), golden hash of the night far-zoom frame updated with the reason documented
+  - _Requirements: 17.8_

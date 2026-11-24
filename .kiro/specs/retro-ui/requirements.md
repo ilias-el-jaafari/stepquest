@@ -81,3 +81,14 @@ Related: [quest](../quest/requirements.md) (HUD content, resume after reload), [
 11. THE SYSTEM SHALL keep every tab label and every word of a button label inside its control on a 390 px wide screen with the pixel font, in both languages, and an automated check SHALL fail when a new label is too long.
 12. THE SYSTEM SHALL NOT show raw error text from the network, the map servers, the location service or a worker to the user; each failure SHALL map to a code with a translated message.
 13. THE SYSTEM SHALL have no translation key that no code uses.
+
+### Requirement 15 (task 69): Hero look
+
+**User Story:** As a walker, I want my chosen walker to come back as I left it, and never to break the map, whatever my browser has stored.
+
+#### Acceptance Criteria
+
+1. WHEN the saved look is missing, is not JSON, is not an object, or holds an unknown body or a palette index that is not a whole number inside its palette (negative, too large, fractional, `-0`, text), THE SYSTEM SHALL use the default for each bad part, keep the good parts, and SHALL NOT throw.
+2. THE SYSTEM SHALL keep only a repaired look in memory and in storage, so every screen shows the same walker the next start shows.
+3. THE SYSTEM SHALL build and cache the walker's sprites from the repaired look, so that a look with invalid parts cannot put wrong sprites under another look's cache key.
+4. WHEN storage is unavailable or full, THE SYSTEM SHALL keep the chosen look for the session.

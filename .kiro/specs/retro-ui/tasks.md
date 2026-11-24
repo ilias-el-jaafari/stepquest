@@ -86,3 +86,12 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
     - _Requirements: 5c.17_
   - [x] 67.11 Spec and steering sync: requirements 5c, this list, design review, `structure.md` and `tech.md`
 
+
+## Hero look review (Nov 2026, requirement 15)
+
+- [x] 69.8 Review of `hero/**` written into `design.md` (B7 to B9, open points)
+  - _Requirements: 15.1 to 15.4_
+- [x] 69.9 `-0` repaired, sprites built from the repaired look, `setLook` stores the repaired look (failing tests first)
+  - _Requirements: 15.1, 15.2, 15.3_
+- [x] 69.10 Property tests: any JSON value gives a valid look, valid looks are unchanged, one bad part repairs only that part
+  - _Requirements: 15.1_

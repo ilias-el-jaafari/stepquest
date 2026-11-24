@@ -31,7 +31,8 @@ export function lighten(hex: string, amount: number): string {
   return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0')}`
 }
 
-export function lookColors(look: Look): WalkerColors {
+export function lookColors(value: Look): WalkerColors {
+  const look = normalizeLook(value)
   const pick = (part: LookPart) => PALETTES[part][look[part]] ?? PALETTES[part][0]!
   return {
     ...DEFAULT_WALKER_COLORS,
@@ -48,8 +49,10 @@ export function lookColors(look: Look): WalkerColors {
 const cache = new Map<string, Record<Facing, Sprite[]>>()
 
 /** The walker's sprites for a look (the same object for the same look). */
-export function walkerFor(look: Look): Record<Facing, Sprite[]> {
-  const key = JSON.stringify(normalizeLook(look))
+export function walkerFor(value: Look): Record<Facing, Sprite[]> {
+  // Always build from the repaired look, so the cache key and the sprites cannot disagree.
+  const look = normalizeLook(value)
+  const key = JSON.stringify(look)
   let w = cache.get(key)
   if (!w) {
     w = buildWalker(look.body, lookColors(look))
@@ -64,7 +67,8 @@ export function normalizeLook(value: unknown): Look {
   const out: Look = { ...DEFAULT_LOOK, body: BODIES.includes(v.body as Body) ? (v.body as Body) : DEFAULT_LOOK.body }
   for (const part of LOOK_PARTS) {
     const i = v[part]
-    out[part] = typeof i === 'number' && Number.isInteger(i) && i >= 0 && i < PALETTES[part].length ? i : 0
+    // `+ 0` turns -0 (which JSON can hold) into 0.
+    out[part] = typeof i === 'number' && Number.isInteger(i) && i >= 0 && i < PALETTES[part].length ? i + 0 : 0
   }
   return out
 }

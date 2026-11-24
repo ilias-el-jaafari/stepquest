@@ -50,3 +50,9 @@ Each bug task starts with a failing regression test (fixture-based, Benicalap, n
 - [x] 61.12 Document the pedestrian-direction gap: add a short note to `.kiro/steering/routing.md`'s OSM tags section stating that `oneway`/`oneway:foot`/`foot:forward`/`foot:backward` are not read and the graph is undirected by design for the common case (no behaviour change)
   - _Requirements: 8.8_
 
+## Geodesy review (Nov 2026, requirement 11)
+
+- [x] 69.13 Review of `geo/geo.ts` written into `design.md` (B10 to B13); one metres-per-degree constant, wrapped longitudes, clamped boxes, finite projection at the poles (failing tests first)
+  - _Requirements: 11.1, 11.2, 11.3_
+- [x] 69.14 Property tests: projection round trip and distance accuracy against haversine
+  - _Requirements: 11.4_

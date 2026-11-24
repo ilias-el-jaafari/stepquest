@@ -13,6 +13,10 @@ describe('settings', () => {
   it('drops the old safe-route and night switches (always on now)', () => {
     expect(sanitizeSettings({ mode: 'loop', targetSteps: 8000, strideM: 0.8, safeRoute: false, nightAware: false })).toEqual({ mode: 'loop', targetSteps: 8000, strideM: 0.8 })
   })
+  it('B14: a saved stride is kept in whole centimetres, as the stride field shows it', () => {
+    expect(sanitizeSettings({ strideM: 0.7549 }).strideM).toBe(0.75)
+    expect(sanitizeSettings({ strideM: 0.755 }).strideM).toBe(0.76)
+  })
   it('sanitizes garbage', () => {
     expect(sanitizeSettings({ mode: 'fly', targetSteps: 'x', strideM: 9 })).toEqual({ ...DEFAULT_SETTINGS, strideM: 1.2 })
     expect(sanitizeSettings(null)).toEqual(DEFAULT_SETTINGS)

@@ -215,3 +215,21 @@ ui/                     AppHeader, PlannerPanel, BagContent, HeroContent, Settin
 - Safe-area insets cannot be emulated by headless Chrome; the CSS is checked by text, not on a device.
 - The service worker is built and linted but was not run in a browser during this review.
 - Onboarding, Info and Sound pop-ups are not yet announced to screen readers when they open beyond the dialog role (focus moves into onboarding; the pop-ups keep focus on their button).
+
+## Hero look review (Nov 2026)
+
+Scope: `src/hero/look.ts`, `useLook.ts`. Requirement 15, tasks 69.8 to 69.10.
+
+### Findings
+
+| Id | Finding | Fix |
+| --- | --- | --- |
+| B7 | `JSON.parse('{"skin":-0}')` gives `-0`, which passed `Number.isInteger(i) && i >= 0` and stayed `-0`. `toEqual` and `Object.is` see it as not `0`. | `i + 0`. |
+| B8 | `walkerFor` made its cache key from the repaired look but built sprites from the raw one. A look typed loosely (`shirt: '2'` indexes the palette as `PALETTES.shirt['2']`, or `body: 'robot'`) cached sprites for the wrong colours under the default key, so the default walker changed colour for the rest of the session. | `walkerFor` and `lookColors` repair first. |
+| B9 | `setLook` stored the object it was given; only the saved copy was repaired, so memory and storage disagreed until the next start. | `setLook` stores `normalizeLook(look)`. |
+
+Checked and correct: corrupt JSON, a throwing `getItem`, `null`, arrays and primitives all give a valid look (property test over `fc.jsonValue()`). Each part is repaired alone: a bad cap leaves the shirt as chosen.
+
+Open points, not changed: the sprite cache is not bounded (at most 2 × 6 × 7 × 8 × 8 × 6 = 32 256 looks, only the ones shown are built); another tab's change is not seen until reload (no `storage` listener); the saved look has no version, so reordering a palette later would change colours silently (add a version then).
+
+Tests: `look.review.test.ts`, `useLook.test.ts`.

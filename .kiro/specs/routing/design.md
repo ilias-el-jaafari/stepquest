@@ -127,3 +127,18 @@ Not implemented. Idea: lower the cost of a way flagged `crossing` slightly (or a
 ### Open question: `place=square`
 
 Squares tagged only `place=square` (21 on Benicalap, no `highway`) are drawn as plazas but are not walkable, so routes go around them. Making them walkable would add edges and chords across many open squares. It was not changed because it alters the graph far more than the review's scope. Needs a decision.
+
+## Geodesy review (Nov 2026)
+
+Scope: `src/geo/geo.ts` (the coordinate helpers live here; there is no `coords.ts`). Requirement 11, tasks 69.13 and 69.14.
+
+| Id | Finding | Fix |
+| --- | --- | --- |
+| B10 | `destination` returned a longitude up to 180.009 after crossing the antimeridian. | `wrapLon`. |
+| B11 | `bboxAround` used 111 320 m per degree, the projection 111 195 m, so a box was 0.11 % too small for its radius (1 m per km). | Both use `M_PER_DEG_LAT`; boxes grow by 0.11 %. |
+| B12 | Near a pole `cos(lat)` goes to 0: `bboxAround` returned infinite longitudes and latitudes above 90. | `cos` floored at 1e-6, latitudes and longitudes clamped. |
+| B13 | `LocalProjection` with a pole origin divided by zero in `toLatLon`; across the antimeridian `toXY` returned a point 40 000 km away. | Same floor; longitude difference wrapped. |
+
+Checked and correct: haversine is clamped before `asin`; projection round trip is within 1 mm; distance error is under 0.5 % up to 4 km at latitudes up to 60° (property tests). Not changed: the projection is equirectangular, so error grows with latitude and with distance from the origin; a walk area of a few kilometres at the latitudes of the product is far inside the bound.
+
+Tests: `geo/review.test.ts`.

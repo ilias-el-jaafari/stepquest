@@ -11,6 +11,14 @@ export function clampStride(stride: number): number {
   return Math.min(MAX_STRIDE_M, Math.max(MIN_STRIDE_M, stride))
 }
 
+/**
+ * A stride as the app stores and shows it: inside the bounds and in whole
+ * centimetres, so the number on screen is the number the planner uses.
+ */
+export function roundStride(stride: number): number {
+  return Math.round(clampStride(stride) * 100) / 100
+}
+
 export function stepsToMetres(steps: number, strideM: number = DEFAULT_STRIDE_M): number {
   if (!Number.isFinite(steps) || steps <= 0) return 0
   return steps * clampStride(strideM)

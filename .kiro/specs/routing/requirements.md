@@ -90,3 +90,13 @@ Related: [safety-night](../safety-night/requirements.md) (edge weights), [quest]
 1. THE SYSTEM SHALL have a timing test (`planBench.test.ts`), alongside the existing reroute timing test, that measures a warm initial Loop plan and A→B plan on the bundled Benicalap map, counts the nearest-node and A* calls a plan makes, and fails when either exceeds a generous budget.
 2. THE SYSTEM SHALL run A* without allocating per-search arrays (working memory reused across searches), because A* legs, not nearest-node lookups or cost-array copies, dominate a plan's time (see `design.md`, measured).
 
+### Requirement 11 (task 69): Distance and projection maths
+
+**User Story:** As a walker, I want route lengths and map positions to be computed the same way everywhere, so that a 7.5 km route is 7.5 km on every screen and map box.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL use one value for metres per degree of latitude in the projection and in `bboxAround`, so a box of radius r contains the circle of r metres around its centre.
+2. THE SYSTEM SHALL keep longitudes inside [-180, 180] when computing a destination, and SHALL take the short way across the antimeridian when projecting.
+3. WHEN a point or a box is at or near a pole, THE SYSTEM SHALL return finite coordinates inside the valid ranges (boxes are clamped, never wrapped).
+4. THE SYSTEM SHALL project a point and back to within 1 mm for walk-sized offsets, and the projected distance SHALL be within 0.5 % of the great-circle distance up to 4 km at latitudes up to 60°.

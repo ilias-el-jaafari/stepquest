@@ -63,3 +63,10 @@ Findings and rationale: see "Architecture review (Nov 2026)" in [design.md](desi
   - _Requirements: 6b.6, 6b.7, 6b.8, 6b.11_
 - [x] 64.13 Dead code (`remainingM`, unused sentinel listener type, `testWalk.ts` renamed `testWalk.testutil.ts`), spec and README sync
   - _Requirements: 6b.15_
+
+## Step counting review (Nov 2026, requirement 6c)
+
+- [x] 69.11 Review of `geo/steps.ts` and its callers written into `design.md`; `roundStride` used by `sanitizeSettings` (B14)
+  - _Requirements: 6c.1, 6c.3_
+- [x] 69.12 Property tests: steps → metres → steps exact, metres → steps → metres within half a stride, stride and height bounds
+  - _Requirements: 6c.2, 6c.3_
