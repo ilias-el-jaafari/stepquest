@@ -198,3 +198,14 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
   - [x] 75.6 Tests: `world/zoomOutCoverage.test.ts` (every pixel row and column at the quest's lowest zoom, under the HUD too; never `full` with a visible tile missing), readiness over partial records, far-zoom look, credit structure, concurrency; `osm-etiquette.md`
     - _Requirements: 21.7, 21.8, 21.12, 21.14, 21.15_
 
+## Street lamps and night details (requirement 22)
+
+- [x] 76. Visible street lamps and night details
+  - [x] 76.1 Spec: requirement 22, requirement 9.7 amended, design "Street lamps and night details"
+  - [x] 76.2 `lamps.ts`: caps, deterministic subset, flicker function; `fireflies.ts`
+    - _Requirements: 22.2, 22.4, 22.5, 22.6_
+  - [x] 76.3 `lightingLayer.ts`, `MapRenderer.ts`: lamp post sprite, additive pools, overview dots, fireflies, one flicker timer, reduced motion
+    - _Requirements: 22.1, 22.3, 22.5, 22.6, 22.7_
+  - [x] 76.4 Tests: lamp property tests, fireflies, windows, render cost caps, reduced motion, new goldens
+    - _Requirements: 22.2 to 22.9_
+

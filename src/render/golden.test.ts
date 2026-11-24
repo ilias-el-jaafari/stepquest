@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadDemoOsm } from '../osm/demo.ts'
 import { Terrain } from '../tiles/grid.ts'
 import { buildTileGrid } from '../tiles/rasterize.ts'
+import { CHUNK } from './chunkLayer.ts'
+import { firefliesInChunk } from './fireflies.ts'
+import { lampsInChunk } from './lamps.ts'
 import { MapRenderer, type QuestOverlay, type RouteShape } from './MapRenderer.ts'
 import { installSoftCanvas, SoftCanvas } from './testing/softCanvas.ts'
 
@@ -83,6 +86,24 @@ describe('golden frames', () => {
         },
       }),
     ).toMatchSnapshot()
+  })
+  it('night with lamp posts, pools and fireflies at normal quest zoom, and the far-zoom dots', () => {
+    let fly: { x: number; y: number } | undefined
+    for (let j = 0; j * CHUNK < grid.rows && !fly; j++) for (let i = 0; i * CHUNK < grid.cols && !fly; i++) fly = firefliesInChunk(grid, i, j, CHUNK)[0]
+    expect(fly).toBeDefined()
+    const centre = { x: Math.floor(fly!.x), y: Math.floor(fly!.y) }
+    expect(frame({ time: 22 * 60, centre, zoom: 16 })).toMatchSnapshot()
+    let lamp: { x: number; y: number } | undefined
+    for (let j = 0; j * CHUNK < grid.rows && !lamp; j++) for (let i = 0; i * CHUNK < grid.cols && !lamp; i++) lamp = lampsInChunk(grid, i, j, CHUNK)[0]
+    expect(frame({ time: 22 * 60, centre: lamp!, zoom: 16, w: 160, h: 120 })).toMatchSnapshot()
+    expect(frame({ time: 22 * 60, centre: { x: cx, y: cy }, zoom: 1.5 })).toMatchSnapshot()
+  })
+  it('lamp pools are warm and lit at night, and absent by day', () => {
+    let lamp: { x: number; y: number } | undefined
+    for (let j = 0; j * CHUNK < grid.rows && !lamp; j++) for (let i = 0; i * CHUNK < grid.cols && !lamp; i++) lamp = lampsInChunk(grid, i, j, CHUNK)[0]
+    const night = frame({ time: 22 * 60, centre: lamp!, zoom: 16 })
+    const day = frame({ time: 13 * 60, centre: lamp!, zoom: 16 })
+    expect(night).not.toBe(day)
   })
   it('dusk, water frame 1, and tracks', () => {
     vi.spyOn(performance, 'now').mockReturnValue(500)

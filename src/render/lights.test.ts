@@ -30,6 +30,15 @@ describe('lit windows', () => {
   })
 })
 
+describe('lit windows (determinism)', () => {
+  it('depend only on the building, not on object identity or call order', () => {
+    const houses = townFor(grid).houses.slice(0, 200)
+    const first = houses.map((h) => litHouseWindows({ ...h }))
+    const again = [...houses].reverse().map((h) => litHouseWindows({ ...h })).reverse()
+    expect(again).toEqual(first)
+  })
+})
+
 describe('street lamps', () => {
   it('rasterization marks lit=yes roads', () => {
     let lit = 0

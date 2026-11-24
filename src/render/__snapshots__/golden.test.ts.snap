@@ -8,8 +8,14 @@ exports[`golden frames > dusk, water frame 1, and tracks 2`] = `"240x180:708997b
 
 exports[`golden frames > far zoom town map with route, avoided street and walker 1`] = `"240x180:b302f144"`;
 
-exports[`golden frames > far zoom town map with route, avoided street and walker 2`] = `"240x180:f62d580d"`;
+exports[`golden frames > far zoom town map with route, avoided street and walker 2`] = `"240x180:d48d2164"`;
 
-exports[`golden frames > night with lamps, windows, walker, bubble and a pickup, at 2x density 1`] = `"480x360:496103c0"`;
+exports[`golden frames > night with lamp posts, pools and fireflies at normal quest zoom, and the far-zoom dots 1`] = `"240x180:cf5d478f"`;
+
+exports[`golden frames > night with lamp posts, pools and fireflies at normal quest zoom, and the far-zoom dots 2`] = `"160x120:d0fbf918"`;
+
+exports[`golden frames > night with lamp posts, pools and fireflies at normal quest zoom, and the far-zoom dots 3`] = `"240x180:ad681d76"`;
+
+exports[`golden frames > night with lamps, windows, walker, bubble and a pickup, at 2x density 1`] = `"480x360:745b9d65"`;
 
 exports[`golden frames > planning map in daylight at detail zoom 1`] = `"240x180:e17e0e7f"`;

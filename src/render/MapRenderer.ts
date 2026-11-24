@@ -335,7 +335,8 @@ export class MapRenderer {
     if (light.darkness > 0.005) {
       this.lightingLayer.drawTint(ctx, v, light)
       if (frame) this.lightingLayer.drawNightLights(ctx, v, frame.plan, frame.painted, light)
-    }
+      else this.lightingLayer.drawNightDots(ctx, v, light)
+    } else this.lightingLayer.idle()
 
     if (this.overlay.draw(ctx, v, light)) this.requestRender()
     this.reportView(v)

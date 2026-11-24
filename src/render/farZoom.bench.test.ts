@@ -3,6 +3,7 @@ import { cellBBox, type CellId } from '../world/cells.ts'
 import { LiveWorld } from '../world/liveWorld.ts'
 import { makeRecord, type SketchWay } from '../world/testing.ts'
 import { MAX_RADIUS_CELLS } from '../world/tileWorld.ts'
+import { MAX_LAMPS_PER_FRAME } from './lamps.ts'
 import { MapRenderer } from './MapRenderer.ts'
 
 /**
@@ -73,7 +74,7 @@ describe('far-zoom render budget on a full 9 × 9 cell world', () => {
   })
 
   for (const zoom of [0.5, 1, 1.5, 2, 4]) {
-    it(`zoom ${zoom}: one overview draw per frame, nothing per house or tile`, () => {
+    it(`zoom ${zoom}: one overview draw per frame, nothing per house or tile (lamp dots capped)`, () => {
       const { ctx, counts } = stub()
       const canvas = document.createElement('canvas')
       Object.defineProperty(canvas, 'clientWidth', { value: 390 })
@@ -98,7 +99,8 @@ describe('far-zoom render budget on a full 9 × 9 cell world', () => {
       for (const [k, v] of Object.entries(counts)) per[k] = Math.round(v / frames)
       results[`zoom ${zoom}`] = { firstFrameMs: Math.round(firstMs), msPerFrame: Math.round(ms * 100) / 100, counts: per }
       expect(per.drawImage ?? 0).toBeLessThanOrEqual(3)
-      expect(per.fillRect ?? 0).toBeLessThan(20)
+      // At night every lamp is one small dot (requirement 22.3), capped per frame; nothing else is per item.
+      expect(per.fillRect ?? 0).toBeLessThan(20 + MAX_LAMPS_PER_FRAME)
       expect(ms).toBeLessThan(50)
     })
   }

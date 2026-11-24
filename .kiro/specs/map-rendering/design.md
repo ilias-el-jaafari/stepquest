@@ -765,3 +765,35 @@ Preview build, Spanish, 390 × 844, quest with a simulated walk, fully zoomed ou
 **Rejected.** Blending the planning area's border (fading the square into the coarse map): it hides the edge but keeps two looks, and the dither is what made the border visible. z12 with fills added: z12 has no buildings at all, so the extract would still stand out. z14 for the far zooms: 15 to 24 tiles of 0.4 to 0.9 MB for one phone view.
 
 **Known limits.** At far zoom the bundled area now shows z13 data: features that OpenMapTiles drops at z13 (small farmland and lawns, a surface light-rail line) are not drawn there until the view zooms in past `FAR_ZOOM`. Offline, with no coarse tiles cached, the extract is drawn from its own data as before and its edge cells stay partly flat; readiness then says `loading`, which is true.
+
+## Street lamps and night details (requirement 22, task 76)
+
+### What was there
+
+Lamps (`lamps.ts`: kerb tiles of lit or wide streets, 12 tiles per side, cached per chunk), glow sprites (`lights.ts`), lit windows (70 %, found from the real painters) and the tint were in place. Lamps were a pool plus a 2×2 dot, only at detail zoom, uncapped, never animated.
+
+### Data
+
+The Overpass query takes ways only and OpenFreeMap tiles carry no lamp points, so `highway=street_lamp` nodes are not available. Lamps stay procedural. The seam for real nodes is not built (YAGNI); requirement 22.2 says what would happen.
+
+### Changes
+
+- `lamps.ts`: `capLamps(list, cap)` keeps an evenly spaced subset (index `floor(i * n / cap)`), `MAX_LAMPS_PER_CHUNK = 12`, `MAX_LAMPS_PER_FRAME = 1500`, `flicker(lamp, now, reduced)` (pure: 1 − up to 0.08 from a hash of the lamp and the step, in `FLICKER_MS = 500` steps; exactly 1 when reduced). Chunk lists stay cached by `lampsInChunk`.
+- `fireflies.ts` (new, pure): `firefliesInChunk(grid, cx, cy)` picks park-like tiles by a tile hash (about 1 in 40), at most `MAX_FIREFLIES_PER_CHUNK = 6`, cached per grid like lamps (`forgetLamps` clears both); `fireflyLevel(f, now, reduced)` gives the blink strength.
+- `lightingLayer.ts`: the lamp pass is split in `drawLampSprites` (detail: pool, then post sprite, bulb), `drawLampDots` (overview: 1 to 3 px dot with pool alpha, chunks computed from the view rectangle, within the frame cap) and `drawFireflies`. The post sprite (6×10 art pixels) is painted once into a canvas. One `setTimeout` (cleared on each frame, as the water timer does) requests the next frame while something flickers, never with reduced motion.
+- `MapRenderer.render`: the overview branch now also calls the dot pass at night.
+- Draw order is unchanged: tint, lights, then the route overlay, so route, gems and walker stay on top. Pool alpha is at most `light.lamps × 0.5` (glow band 0.5) and fireflies are 1 to 2 art pixels, both below the gem glow.
+
+### Cost
+
+Per frame at detail zoom: visible chunks × ≤12 lamps (one `drawImage` pool and one sprite each). In the overview at most 1500 dots, 1 `fillRect` each, no `drawImage`. Measured by `nightCost.test.ts` through a counting canvas on the demo area: the counts are asserted under the caps. The timer repaints a frame every 500 ms only at night at detail zoom.
+
+### Behaviour changes (deliberate)
+
+- The golden "night with lamps, windows, walker, bubble and a pickup, at 2x density" changes (lamp posts are new). The far-zoom night frame (zoom 0.5, 23:00) changes (dots). Daylight, dusk and the other frames are untouched. New golden frames: night frame with lamps and fireflies at zoom 16, and far zoom 1.5 night.
+- Requirement 9.7 (no animation) is replaced by 22.5 and 22.6.
+
+### Testing
+
+`lamps.property.test.ts` (fast-check: lamps on road tiles, same-side spacing, same input same output, cap keeps an even subset and is idempotent), `fireflies.test.ts`, `lights.test.ts` (windows deterministic), `nightRender.test.ts` (sprite at detail, dots only in the overview, no timer with reduced motion, caps), goldens.
+

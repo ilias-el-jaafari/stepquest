@@ -90,7 +90,7 @@ Owner: this spec. The night-from-sunset rule (`isDark`, sunrise/sunset in `src/g
 4. WHILE it is dusk or night, THE SYSTEM SHALL light about 70 % of the windows of each building in warm yellow, chosen deterministically from the building and window position, and SHALL draw street lamps with soft light pools along streets mapped lit=yes, plus wide main streets (and, when no street in the area carries a lighting tag, every street at least 2 tiles wide), at a regular spacing of 12 tiles per kerb side.
 5. THE SYSTEM SHALL draw the route, checkpoint gems, start and finish marks and the walker after the tint, so they keep their full colours, and SHALL add a small light around the walker and each gem at night.
 6. THE SYSTEM SHALL apply the tint as one multiply fill per frame over the map, SHALL keep the chunk cache independent of the time of day, SHALL draw lights from cached glow sprites, and SHALL repaint for the passing time at most once a minute.
-7. THE SYSTEM SHALL NOT animate the lights (no flicker, nothing that moves with panning), so that reduced-motion preferences need no special case and nothing shimmers when panning.
+7. THE SYSTEM SHALL NOT move any light with panning, and SHALL animate lights only as requirement 22 describes (a slight flicker and firefly glints, both off with reduced motion). *(Amended by 22; it used to forbid all animation.)*
 8. WHERE the page URL has `?time=HH:MM`, THE SYSTEM SHALL use that local time of today for the lighting only, and SHALL leave routing, night safety and the quest untouched.
 9. THE SYSTEM SHALL NOT change any routing weight or planner behaviour.
 
@@ -310,3 +310,22 @@ Related: requirements 19 and 20 (the cells, the frame, readiness, the frame that
 13. THE SYSTEM SHALL decode and convert tiles in one Web Worker kept for the session, and SHALL add one cell per task on the main thread.
 14. THE SYSTEM SHALL keep `data-map-ready` and `data-map-pending` (20.15) over the cells the camera shows, where a cell counts as covered only when the record painted for it covers the whole cell; `data-map-ready` SHALL NOT be `full` (nor `coarse`) while any visible cell lacks a whole-cell record, and every cell that lacks one SHALL be counted in `data-map-pending`. All tests SHALL run without the network (tiles are built in the test).
 15. WHEN `data-map-ready` is `full` at the lowest zoom of a quest, THE SYSTEM SHALL have painted map data on every pixel row and column of the map canvas, including the part under the quest HUD and the panels; no row or column SHALL show only the no-data ground.
+
+
+### Requirement 22 (task 76): Visible street lamps and night details
+
+**User Story:** As a walker out after sunset, I want lamp posts, glowing pools and a few small night details on the map, so that an evening walk looks like an evening and I can still see my route and gems first.
+
+Related: requirement 9 (day cycle, `?time=HH:MM`), [safety-night](../safety-night/requirements.md) (routing weights are untouched).
+
+#### Acceptance Criteria
+
+1. WHILE `lamps` strength is above 0.02 at detail zoom (at or above `DETAIL_ZOOM`), THE SYSTEM SHALL draw a pixel-art lamp post (dark post, cap and a bright bulb) on each lamp's kerb tile, with a warm pool of light on the ground drawn with the additive (`lighter`) blend, over painted chunks only.
+2. THE SYSTEM SHALL place lamps from the tile grid by a pure, deterministic rule (requirement 9.4): the same grid gives the same lamps in the same order, every lamp stands on a road or crossing tile at a kerb, and lamps on one kerb side are `LAMP_SPACING * 2` tiles apart. The map sources carry no `highway=street_lamp` nodes (the walking graph holds ways only, the vector tiles hold no lamp points), so no lamp is read from the data; if a source ever provides lamp nodes, they replace the procedural lamps within their cell.
+3. BELOW `DETAIL_ZOOM` (the overview, including `FAR_ZOOM` and under), THE SYSTEM SHALL draw each lamp as a small light dot of 1 to 3 device pixels (the pool only, no sprite, no window light), from the lamps of the chunks the view touches.
+4. THE SYSTEM SHALL bound the lamp cost: at most `MAX_LAMPS_PER_CHUNK` lamps are drawn per chunk and at most `MAX_LAMPS_PER_FRAME` per frame; when a chunk holds more, it keeps an evenly spaced subset (the same subset every frame). Lamp lists are cached per grid and chunk size, and the lamp sprite and pool are painted once into cached canvases.
+5. WHEN the user does not prefer reduced motion, THE SYSTEM SHALL let each pool flicker by at most 8 % of its strength, in steps of `FLICKER_MS`, each lamp on its own deterministic phase, and SHALL schedule at most one repaint timer for it; WHEN the user prefers reduced motion, THE SYSTEM SHALL draw every pool at full strength with no timer.
+6. WHILE it is dusk or night at detail zoom, THE SYSTEM SHALL draw a few fireflies in parks: at most `MAX_FIREFLIES_PER_CHUNK` per chunk on park, wood, garden and grass tiles chosen from a hash of the tile (deterministic), each a 1 to 2 art-pixel warm green-yellow glint that blinks with reduced motion off and stays steady and dim with it on. There is no traffic and no headlight light.
+7. THE SYSTEM SHALL keep lit windows as in requirement 9.4 (about 70 %, a function of the building and window position only), and SHALL keep every night detail below the route, gems, walker and bubble in the draw order and no brighter than the gem glow, so the route stays the most visible thing.
+8. THE SYSTEM SHALL draw every night detail from code (no image assets, nothing from another game), and SHALL NOT change any routing weight or planner behaviour.
+9. THE SYSTEM SHALL keep the approved golden frames pixel-identical except the frames that show night lamps (the night frame at zoom 24 changes because lamps now have posts); the change is listed in `design.md`, and a new golden pins a night frame with lamps, fireflies and a far-zoom dot frame.

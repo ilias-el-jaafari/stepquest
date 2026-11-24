@@ -1,5 +1,6 @@
 import { Layer, Terrain, type TileGrid } from '../tiles/grid.ts'
 import { chunkKey } from './chunkPlan.ts'
+import { forgetFireflies } from './fireflies.ts'
 
 /**
  * Street lamp positions, derived from the tile grid (deterministic, so nothing
@@ -13,6 +14,30 @@ import { chunkKey } from './chunkPlan.ts'
 export const LAMP_SPACING = 6
 export type Lamp = { x: number; y: number }
 
+/** Cost caps (requirement 22.4): lamps drawn per chunk and per frame. */
+export const MAX_LAMPS_PER_CHUNK = 12
+export const MAX_LAMPS_PER_FRAME = 1500
+/** Flicker steps (ms) and depth (requirement 22.5). */
+export const FLICKER_MS = 500
+export const FLICKER_DEPTH = 0.08
+
+/** At most `cap` items, evenly spaced through the list (the same subset every call; the list itself when it fits). */
+export function evenSubset<T>(list: readonly T[], cap: number): readonly T[] {
+  if (list.length <= cap) return list
+  const out: T[] = []
+  for (let i = 0; i < cap; i++) out.push(list[Math.floor((i * list.length) / cap)]!)
+  return out
+}
+
+/** Pool strength factor of a lamp at time `now`: 1 with reduced motion, else 1 - up to 8 % from a hash of the lamp and the step. */
+export function flicker(lamp: Lamp, now: number, reduced: boolean): number {
+  if (reduced) return 1
+  let h = (Math.imul(lamp.x, 73856093) ^ Math.imul(lamp.y, 19349663) ^ Math.imul(Math.floor(now / FLICKER_MS), 83492791)) >>> 0
+  h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0
+  h = (h ^ (h >>> 13)) >>> 0
+  return 1 - FLICKER_DEPTH * ((h % 1000) / 999)
+}
+
 const isRoad = (t: number) => t === Terrain.road || t === Terrain.crossing
 
 const lampsByGrid = new WeakMap<TileGrid, Lamp[]>()
@@ -24,6 +49,7 @@ const NONE: Lamp[] = []
 export function forgetLamps(grid: TileGrid): void {
   lampsByGrid.delete(grid)
   cache.delete(grid)
+  forgetFireflies(grid)
 }
 
 /** Lamps of one chunk (chunk of `size` tiles). Allocation-free after the first call for a grid and size. */
