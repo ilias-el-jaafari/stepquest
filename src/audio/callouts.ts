@@ -4,7 +4,7 @@ import { trackFor, type QuestEvent, type QuestState } from '../quest/quest.ts'
 import { snapToRoute, type RouteTrack } from '../quest/snap.ts'
 import { pointAlong } from '../routing/checkpoints.ts'
 import { bearingBetween } from '../routing/planner.ts'
-import type { MessageKey } from '../i18n/en.ts'
+import type { Translate } from '../i18n/en.ts'
 import type { SfxName } from './sfx.ts'
 
 /**
@@ -220,8 +220,6 @@ export function sfxFor(events: readonly QuestEvent[], next: QuestState): SfxName
   return out
 }
 
-type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string
-
 /** The words for a callout in the current language (directions translated too). */
 export function calloutText(c: Callout, t: Translate): string {
   const vars: Record<string, string | number> = {}
@@ -229,5 +227,6 @@ export function calloutText(c: Callout, t: Translate): string {
     if (v === undefined) continue
     vars[k] = k === 'dir' ? t(`dir.${v as CompassPoint}`) : v
   }
-  return t(c.key, vars)
+  // Each voice key takes a different subset of `vars`; callouts.test.ts checks that none is left unfilled.
+  return (t as (key: VoiceKey, vars: Record<string, string | number>) => string)(c.key, vars)
 }

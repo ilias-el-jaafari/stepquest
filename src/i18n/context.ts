@@ -1,11 +1,11 @@
 import { createContext, useContext, type ReactNode } from 'react'
-import type { MessageKey } from './en.ts'
+import type { Translate } from './en.ts'
 import type { Locale } from './locale.ts'
 
 export type I18nContextValue = {
   locale: Locale
   setLocale: (locale: Locale) => void
-  t: (key: MessageKey, vars?: Record<string, string | number>) => string
+  t: Translate
 }
 
 export const I18nContext = createContext<I18nContextValue | undefined>(undefined)

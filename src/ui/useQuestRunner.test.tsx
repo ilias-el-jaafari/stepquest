@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AudioEngine, setAudioEngineForTests } from '../audio/engine.ts'
 import { loadAudioSettings } from '../audio/settings.ts'
 import { destination, type LatLon } from '../geo/geo.ts'
-import { I18nProvider } from '../i18n/index.ts'
+import { I18nProvider, useI18n, type Locale } from '../i18n/index.ts'
 import { placeCheckpoints } from '../routing/checkpoints.ts'
 import { createQuest, type QuestState } from '../quest/quest.ts'
 import type { ReroutePatch } from '../quest/reroute.ts'
@@ -27,10 +27,14 @@ let root: Root
 let api: ReturnType<typeof useQuestRunner> | undefined
 let asked: { state: QuestState; settle: (p: ReroutePatch | undefined) => void }[] = []
 
+let switchLocale: ((l: Locale) => void) | undefined
+
 function Probe() {
+  const { setLocale } = useI18n()
   const runner = useQuestRunner((state) => new Promise((settle) => asked.push({ state, settle })))
   useEffect(() => {
     api = runner
+    switchLocale = setLocale
   })
   return null
 }
@@ -156,5 +160,37 @@ describe('quest runner cleanup', () => {
     await Promise.resolve()
     expect(localStorage.length).toBe(0)
     root = createRoot(host)
+  })
+})
+
+describe('quest runner language', () => {
+  it('drops queued speech and warms the new language when the language changes mid-quest', async () => {
+    const engine = new AudioEngine(loadAudioSettings())
+    setAudioEngineForTests(engine)
+    const prewarm = vi.spyOn(engine, 'prewarm')
+    const stopVoice = vi.spyOn(engine, 'stopVoice')
+    await start()
+    prewarm.mockClear()
+    stopVoice.mockClear()
+    await act(async () => switchLocale!('es'))
+    expect(stopVoice).toHaveBeenCalledTimes(1)
+    expect(prewarm).toHaveBeenCalledTimes(1)
+    const [texts, locale] = prewarm.mock.calls[0]!
+    expect(locale).toBe('es')
+    expect(texts.some((text) => /metros/.test(text))).toBe(true)
+    expect(texts.some((text) => /\bmeters?\b/.test(text))).toBe(false)
+    // Switching to the language it already speaks changes nothing.
+    stopVoice.mockClear()
+    await act(async () => switchLocale!('es'))
+    expect(stopVoice).not.toHaveBeenCalled()
+  })
+
+  it('does not touch the voice when no quest is running', async () => {
+    const engine = new AudioEngine(loadAudioSettings())
+    setAudioEngineForTests(engine)
+    const stopVoice = vi.spyOn(engine, 'stopVoice')
+    await act(async () => root.render(<I18nProvider><Probe /></I18nProvider>))
+    await act(async () => switchLocale!('es'))
+    expect(stopVoice).not.toHaveBeenCalled()
   })
 })

@@ -46,9 +46,35 @@ describe('interpolate', () => {
   })
 })
 
+describe('interpolate with decimal strings', () => {
+  it('reads "0,01" as a fraction, not as 1 (so it never says "0,01 metro")', () => {
+    const tpl = '{v} {v|metro|metros}'
+    expect(interpolate(tpl, { v: '0,01' }, 'es')).toBe('0,01 metros')
+    expect(interpolate(tpl, { v: '1,5' }, 'es')).toBe('1,5 metros')
+    expect(interpolate(tpl, { v: '1.000' }, 'es')).toBe('1.000 metros')
+    expect(interpolate(tpl, { v: '1' }, 'es')).toBe('1 metro')
+    expect(interpolate('{v} {v|meter|meters}', { v: '1,000' }, 'en')).toBe('1,000 meters')
+    expect(interpolate('{v} {v|meter|meters}', { v: '0.01' }, 'en')).toBe('0.01 meters')
+  })
+})
+
 describe('detectLocale', () => {
   beforeEach(() => {
     localStorage.clear()
+  })
+
+  it('takes the first supported language of the preference list', () => {
+    expect(detectLocale(['ca-ES', 'es-ES', 'en'])).toBe('es')
+    expect(detectLocale(['fr', 'en-GB', 'es'])).toBe('en')
+    expect(detectLocale(['fr', 'de'])).toBe('en')
+    expect(detectLocale([])).toBe('en')
+    expect(detectLocale(['ES_mx'])).toBe('es')
+  })
+
+  it('does not mistake languages that merely start with the letters "es"', () => {
+    expect(detectLocale('est')).toBe('en')
+    expect(detectLocale('es')).toBe('es')
+    expect(detectLocale('es-419')).toBe('es')
   })
 
   it('defaults to English for unknown or missing languages', () => {

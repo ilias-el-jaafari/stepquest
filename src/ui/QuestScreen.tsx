@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useI18n } from '../i18n/index.ts'
+import { formatDistance, formatNumber } from '../i18n/format.ts'
 import { directionTo } from '../quest/compass.ts'
 import { formatDuration, formatPace, nextCheckpoint, questStats, routeToNext, signalStatus, trackFor, type QuestState } from '../quest/quest.ts'
 import { snapToRoute } from '../quest/snap.ts'
@@ -20,10 +21,6 @@ type Props = {
   resumed: boolean
   onEnd: () => void
   onUseSim: () => void
-}
-
-function fmtDistance(m: number, locale: string): string {
-  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km`
 }
 
 export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, onEnd, onUseSim }: Props) {
@@ -78,7 +75,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
     // Distance along the route, and the way to walk now (not a straight line to the gem).
     const dir = directionTo(player, ahead.toward)
     nextLine = next.isFinish ? t('quest.nextFinish') : t('quest.next', { n: next.index })
-    nextDist = fmtDistance(ahead.metres, locale)
+    nextDist = formatDistance(ahead.metres, locale)
     nextDir = { bearing: dir.bearing, label: t(`dir.${dir.point}`) }
   }
 
@@ -110,7 +107,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
     dialogue = {
       key: 'finish',
       kind: 'finish',
-      lines: [t('dlg.finish1'), t('dlg.finish2', { steps: stats.steps.toLocaleString(locale), km: fmtDistance(stats.walkedM, locale) })],
+      lines: [t('dlg.finish1'), t('dlg.finish2', { steps: formatNumber(stats.steps, locale), km: formatDistance(stats.walkedM, locale) })],
       onDone: closeFinish,
     }
   } else if (!finished && pickupShown) {
@@ -219,11 +216,11 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
               <dl className="hud-stats">
                 <div>
                   <dt>{t('quest.walked')}</dt>
-                  <dd data-testid="walked">{fmtDistance(stats.walkedM, locale)}</dd>
+                  <dd data-testid="walked">{formatDistance(stats.walkedM, locale)}</dd>
                 </div>
                 <div>
                   <dt>{t('quest.steps')}</dt>
-                  <dd data-testid="quest-steps">{stats.steps.toLocaleString(locale)}</dd>
+                  <dd data-testid="quest-steps">{formatNumber(stats.steps, locale)}</dd>
                 </div>
                 <div>
                   <dt>{t('quest.time')}</dt>
@@ -272,11 +269,11 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
                   <dl className="complete-stats">
                     <div>
                       <dt>{t('complete.distance')}</dt>
-                      <dd>{fmtDistance(stats.walkedM, locale)}</dd>
+                      <dd>{formatDistance(stats.walkedM, locale)}</dd>
                     </div>
                     <div>
                       <dt>{t('complete.steps')}</dt>
-                      <dd>{stats.steps.toLocaleString(locale)}</dd>
+                      <dd>{formatNumber(stats.steps, locale)}</dd>
                     </div>
                     <div>
                       <dt>{t('complete.time')}</dt>
@@ -291,7 +288,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
                     </div>
                     <div className="wide">
                       <dt>{t('complete.goal')}</dt>
-                      <dd>{t('complete.goalValue', { steps: quest.route.targetSteps.toLocaleString(locale) })}</dd>
+                      <dd>{t('complete.goalValue', { steps: formatNumber(quest.route.targetSteps, locale) })}</dd>
                     </div>
                   </dl>
                   <button type="button" className="pix-btn primary" onClick={onEnd}>

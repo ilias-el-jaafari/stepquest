@@ -36,3 +36,79 @@ Checked with fast-check in `src/i18n/i18n.property.test.ts` (fixed seed `2026120
 
 - **P-I1 Parity.** Every English key has a Spanish twin (and the reverse), with the same placeholder names and the same set of plural placeholders (`{n|one|other}`), and no stray braces remain outside placeholder syntax. Exhaustive over the dictionaries. Validates 5.3, 8.1 and map-rendering 6a.6.
 - **P-I2 Interpolation is total.** For random values of every placeholder name (counts including negative, huge, NaN and infinite; formatted numbers such as `10.000`; free text with `$&` and `#`), `interpolate` never throws and leaves no supplied `{placeholder}` unfilled in any message of either language. The plural form follows the count (`1` selects the singular, everything else the plural, `#` is replaced by the value), and a missing variable leaves exactly its own placeholder. Validates 5.3, 8.1.
+
+## i18n architecture review (Nov 2026)
+
+Scope: `src/i18n/**`, every place where text or numbers reach the user (`src/**/*.tsx`, `src/audio/callouts.ts`, `index.html`, `public/manifest.webmanifest`), and the speech phrases. Method: read the code against requirements 5.3, 8 and 9, grep for typed-in strings and number formatting, then write a failing test for each suspected bug before the fix (task 65). Requirement ids are in this folder (8.3 to 8.13 are new).
+
+### Structure
+
+- `en.ts` is the source of truth (`as const`); `es.ts` is `Record<MessageKey, string>`, so a missing Spanish key already failed the build. Placeholder names and plural placeholders were only checked at run time (P-I1).
+- `locale.ts` holds detection, storage and `interpolate` (`{name}` and `{name|one|other}` with `#`). `I18nProvider.tsx` keeps the locale in state and gives `t`. Components use `useI18n`; the voice receives the locale per phrase (`engine.say(text, locale)`).
+- Plural forms come from `Intl.PluralRules`. Counts use `toLocaleString(locale)`; no `Intl.NumberFormat` was used.
+- Raw error text never reaches the screen: Overpass, geolocation and the planner worker map to codes (`data.err.*`, `loc.err.*`, `quest.err.*`, `error.*`), each translated.
+
+### Findings
+
+| Id | Finding | Outcome |
+| --- | --- | --- |
+| F1 | No text is typed into JSX, `aria-label`, `title`, `alt` or `placeholder`. The only literals are the endonyms "Español" and "English" in the language select. | Kept; guarded by a scan test with those two in the allowlist. |
+| F2 | `t(key, vars)` accepted any key and any variables (`Record<string, string \| number>`). A typo in a variable name showed `{lat}` on screen and compiled. | Fixed (65.2). |
+| F3 | Seven keys were dead: `app.name`, `lang.en`, `lang.es`, `settings.title`, `onboarding.title`, `quest.distanceDir`, `quest.pickup`. | Removed (65.10); a test fails on a new dead key. |
+| F4 | The longest Spanish word on a button is "introducción" (12 characters) and the longest Spanish tab is "Mochila" or "Ajustes" (7). Nothing overflows at 390 px. Buttons wrap between words, so only a single long word or a tab label can overflow. | No change; guarded by `fit.test.ts`. |
+| F5 | The manifest (`name`, `description`, `lang`) is one static file with an English description. A web manifest cannot follow a language chosen inside the app. | Not changed; recorded under open points. |
+| F6 | Coordinates (`place.startAt`, `data.live`, `data.badCoords`) use a decimal point in Spanish. The coordinates field parses a point, and a comma next to the comma between latitude and longitude would be ambiguous. | Kept on purpose (8.5). |
+| F7 | The Spanish copy mixes "checkpoint" (Bag, HUD, `result.ready`) and "gema" (dialogue, voice, onboarding). The English copy mixes "checkpoint" and "gem" the same way. | Not changed: it is Ilias's wording and the split is the same in both languages. |
+| F8 | `voice.*` phrases in both languages use plural forms for metres and steps; Spanish `voice.distance` uses "Falta/Faltan" with the form. Number words come from `voice/numbers.ts`. `EN_LEXICON` coverage of every English voice phrase is already tested (`voice.test.ts`). | No change. |
+| F9 | Spanish "al {dir}" and "hacia el {dir}" agree with all eight compass words (all masculine, including "noreste"). | No change. |
+| F10 | "gema" (feminine) agrees everywhere; `safety.avoidIgnored` "la usa/las usa" agrees with "calle(s)". | No change. |
+| F11 | Spanish plural edge cases: 0 is plural ("0 pasos"), 1 singular, decimals plural ("1,5 metros"). Step counts stay below 60,000 and metre values below 1,000, so no "millón de" case occurs. | Tested (65.4, P-I3). |
+| F12 | The plural count of a string variable was read by deleting every non-digit, which turned "0,01" into 1 and "1,5" into 15. | Bug B4. |
+| F13 | Switching language updates all React text, dialogue lines and bubbles (computed on each render with the current `t`). The quest screen has no language control, so the switch happens in Settings or after a reload. Phrases queued before a switch stayed in the old language and callouts were not pre-rendered in the new one. | Bug B8. |
+| F14 | Unit symbols ("km", "m", "min", "MB") are the same in both languages. "km" was typed next to the number in four places. | Moved into the formatter (B3). |
+
+### Bugs
+
+Each has a regression test (task 65).
+
+| Id | Where | Problem | Test |
+| --- | --- | --- | --- |
+| B1 | `App.tsx` result box, stride hint, `result.short`, loading size | Distances, percentages and megabytes used `toFixed`, so Spanish showed "7.50 km", "1.2%" and "0.4 MB" with a point. | `format.test.ts`; `App.test.tsx` (Spanish plan: `7,50 km`, `1,2 % vs objetivo`, stride hint) |
+| B2 | `ResultBox` | `route.error >= 0 ? '+' : '−'` printed "−0.0%" for a tiny negative error. | `format.test.ts` (`formatSignedPercent`) |
+| B3 | `QuestScreen.fmtDistance`, `App.tsx` | `fmtDistance` tested `m < 1000` before rounding, so 999.6 m showed as "1000 m"; "km" was typed in JSX and in dictionary text. | `format.test.ts` (`formatDistance(999.6)` is "1,00 km"), source scan |
+| B4 | `locale.ts` `countOf` | "0,01" counted as 1 ("0,01 metro") and "1,5" as 15. | `i18n.test.ts`, P-I3 |
+| B5 | `es.ts` | `safety.added` "Añadida {name}." disagreed with masculine street names ("Añadida Camino de Vera"). | `copy.test.ts` |
+| B6 | `es.ts` | Percent spacing was mixed in one language ("5%", "5 %", "±5 %", "{pct}%"). | `copy.test.ts` |
+| B7 | `locale.ts` `detectLocale` | Only `navigator.language` was read, so a visitor with ["ca", "es"] got English, and any code that starts with "es" (such as "est") counted as Spanish. | `i18n.test.ts` |
+| B8 | `useQuestRunner.ts`, `I18nProvider`, `index.html` | After a language change the voice queue kept old-language phrases and callouts were not pre-rendered in the new language. The page title and description stayed English. | `useQuestRunner.test.tsx`, `I18nProvider.test.tsx`, `App.test.tsx` |
+
+### Design after the review
+
+- **Typed `t`.** `Translate` (in `en.ts`) reads the placeholder names of `typeof en[K]` with a template-literal type (`{n}` and `{n|one|other}` both give `n`) and requires exactly that object. A key without placeholders takes no variables. `PlainKey` is the set of such keys, for lookup tables (tabs, FAQ, onboarding screens, volume labels). `calloutText` is the one cast: each voice key takes a different subset of the callout's variables, and `callouts.test.ts` checks that no placeholder is left.
+- **Formatting.** `i18n/format.ts` is the only place that turns numbers into text for people: `formatNumber`, `formatDecimal`, `formatKm`, `formatDistance`, `formatSignedPercent`. They use `toLocaleString(locale)` with fixed fraction digits and no grouping for decimals, and map `NaN`, infinities and "-0" to zero. Units are part of the formatted value, not of the dictionary text.
+- **Plural count.** `countOf` reads a string by its shown value: digits only is an integer, groups of three after a separator ("1.000", "1,234") are thousands, a separator followed by other digits is a fraction.
+- **Language switch.** `I18nProvider` sets `lang`, `document.title` and the description meta tag in one effect (`meta.title`, `meta.description`). The runner compares the locale with the one it last spoke, and on a change while a session exists calls `stopVoice()` and re-warms the callouts.
+- **Scans.** `sourceScan.test.ts` parses every non-test source file with `rolldown/parseAst` (the parser Vite ships; TypeScript 7 has no JavaScript API) and fails on text in JSX, in the text attributes, between tags as a string expression, or assigned to `document.title`. It also fails on `toFixed` (three files are allowed, for coordinates and query boxes) and on `toLocaleString()` without a locale. `fit.test.ts` holds the 390 px geometry as constants with the CSS values they come from. `copy.test.ts` holds the typing tests, copy rules and the dead-key check.
+
+### Wording changes (Spanish unless noted)
+
+| Key | Before | After |
+| --- | --- | --- |
+| `safety.added` | Añadida {name}. | Calle añadida: {name}. |
+| `result.vsTarget` | {sign}{pct}% vs objetivo | {sign}{pct} % vs objetivo (no-break space) |
+| `hero.progress` | {pct}% del objetivo de hoy | {pct} % del objetivo de hoy (no-break space) |
+| `info.a.route` | … a menos de un 5% de tu objetivo … | … a menos de un 5 % de tu objetivo … (no-break space) |
+| `error.noMatch`, `onboarding.1.body` | ±5 % and 5 % with a plain space | the same with a no-break space |
+| `meta.title`, `meta.description` (new) | Page title and description only in English in `index.html` | English text unchanged. Spanish: "{app} — tus pasos, como una aventura de 8 bits" and "{app} convierte tu objetivo diario de pasos en una aventura de 8 bits por calles reales." |
+
+English copy is unchanged. Spanish numbers change shape: "7.50 km" is now "7,50 km" and "1.2%" is now "1,2 %".
+
+### Properties added
+
+- **P-I3 Plural by value.** A formatted count (`formatNumber`) picks the same plural form as the number, and a formatted fraction is always plural.
+- **P-I4 Decimal formatting.** `formatDecimal` always shows the requested digits with the locale separator, never `-0` or `NaN`, and stays within half a unit of the last digit of the input.
+
+### Open points
+
+- The web manifest stays English (F5). A per-language manifest would need two files and a swap at load, which the app does not do today.
+- English selects the singular for a count of exactly 1.0 shown with a decimal ("1.0 meter"); no such text exists today.

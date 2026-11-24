@@ -14,22 +14,45 @@ export function readStoredLocale(): Locale | undefined {
   return undefined
 }
 
+/** First supported language of a browser preference list (`navigator.languages`), else English. */
 export function detectLocale(
-  language: string | undefined = typeof navigator === 'undefined'
+  languages: string | readonly string[] | undefined = typeof navigator === 'undefined'
     ? undefined
-    : navigator.language,
+    : navigator.languages?.length
+      ? navigator.languages
+      : navigator.language,
 ): Locale {
   const stored = readStoredLocale()
   if (stored) return stored
-  const code = language?.toLowerCase() ?? ''
-  return code.startsWith('es') ? 'es' : 'en'
+  for (const language of typeof languages === 'string' ? [languages] : (languages ?? [])) {
+    const primary = language.toLowerCase().split(/[-_]/)[0]
+    if (primary === 'es') return 'es'
+    if (primary === 'en') return 'en'
+  }
+  return 'en'
 }
 
-/** Number behind a variable (formatted strings like "10.000" or "1,234" count by their digits). */
+const GROUPED = /^\d{1,3}(?:[.,]\d{3})+$/
+
+/**
+ * Number behind a variable. Formatted strings count by their value: "10.000" and
+ * "1,234" are grouped thousands, "0,01" and "1.5" are fractions.
+ */
 function countOf(value: string | number | undefined): number {
   if (typeof value === 'number') return value
-  const digits = (value ?? '').replace(/[^\d]/g, '')
-  return digits ? Number(digits) : Number.NaN
+  const text = (value ?? '').trim().replace('−', '-')
+  const unsigned = text.replace(/^-/, '')
+  if (/^\d+$/.test(unsigned)) return Number(text)
+  if (GROUPED.test(unsigned)) return Number(text.replace(/[.,]/g, ''))
+  if (/^\d+[.,]\d+$/.test(unsigned)) return Number(text.replace(',', '.'))
+  return Number.NaN
+}
+
+const pluralRules = new Map<Locale, Intl.PluralRules>()
+function rulesFor(locale: Locale): Intl.PluralRules {
+  let rules = pluralRules.get(locale)
+  if (!rules) pluralRules.set(locale, (rules = new Intl.PluralRules(locale)))
+  return rules
 }
 
 /**
@@ -43,7 +66,7 @@ export function interpolate(
   locale: Locale = 'en',
 ): string {
   if (!vars) return template
-  const rules = new Intl.PluralRules(locale)
+  const rules = rulesFor(locale)
   return template.replace(/\{(\w+)(?:\|([^{}|]*)\|([^{}]*))?\}/g, (match, name: string, one?: string, other?: string) => {
     if (!Object.hasOwn(vars, name)) return match
     const value = vars[name]!

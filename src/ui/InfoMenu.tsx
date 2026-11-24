@@ -2,10 +2,10 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { LatLon } from '../geo/geo.ts'
 import { sunTimes } from '../geo/sun.ts'
 import { useI18n } from '../i18n/index.ts'
-import type { MessageKey } from '../i18n/en.ts'
+import type { PlainKey } from '../i18n/en.ts'
 import { PixelIcon } from './PixelIcons.tsx'
 
-const FAQ: readonly (readonly [MessageKey, MessageKey])[] = [
+const FAQ: readonly (readonly [PlainKey, PlainKey])[] = [
   ['info.q.route', 'info.a.route'],
   ['info.q.safe', 'info.a.safe'],
   ['info.q.night', 'info.a.night'],

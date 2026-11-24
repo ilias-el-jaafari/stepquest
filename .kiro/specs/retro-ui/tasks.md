@@ -35,3 +35,29 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 ## Property-based tests
 
 - [x] 57. i18n property tests (P-I1, P-I2 in `design.md`). Bug found and fixed: `dlg.pickup` had a plural `{left|Queda #.|Quedan #.}` in Spanish but a plain `{left}` in English; the English text now uses `{left|# to go.|# to go.}` (same output, same plural form set).
+
+## i18n rework (Nov 2026)
+
+- [x] 65. i18n rework: review, typed keys, formatting, agreement, language switching and scans (design: "i18n architecture review (Nov 2026)")
+  - [x] 65.1 Review of `src/i18n/**`, every place text or numbers reach the user, the voice phrases and the language switch; findings F1 to F14 and bugs B1 to B8 written into `design.md`
+    - _Requirements: 8.3, 8.12_
+  - [x] 65.2 Typed keys: `Translate` derives each key's variables from its English text; unknown keys and missing, misspelled or extra variables fail `tsc`; `PlainKey` for lookup tables; type tests with `@ts-expect-error`
+    - _Requirements: 8.4_
+  - [x] 65.3 `i18n/format.ts` (`formatNumber`, `formatDecimal`, `formatKm`, `formatDistance`, `formatSignedPercent`) used by the planner, result box, hero tab and quest screen; the unit `km` leaves the dictionaries and JSX (B1, B2, B3)
+    - _Requirements: 8.5, 8.6_
+  - [x] 65.4 Plural selection by displayed value (`0,01` is plural, `10.000` is ten thousand) and a cached `Intl.PluralRules` (B4)
+    - _Requirements: 8.7_
+  - [x] 65.5 Spanish copy: "5 %" with a no-break space, "Calle añadida: {name}" instead of a gendered "Añadida {name}" (B5, B6); wording changes listed in `design.md`
+    - _Requirements: 8.8_
+  - [x] 65.6 Locale detection reads the whole `navigator.languages` list and matches the primary subtag, so "est" is not Spanish (B7)
+    - _Requirements: 8.9_
+  - [x] 65.7 Page language, title and description follow the language (`meta.title`, `meta.description`); quest runner drops queued speech and re-warms callouts on a language change (B8)
+    - _Requirements: 8.10_
+  - [x] 65.8 Source scan (`sourceScan.test.ts`): no text typed into JSX, accessibility attributes or `document.title`, no `toFixed` or `toLocaleString()` for people, with a scanner self-test and a small allowlist
+    - _Requirements: 8.3, 8.5_
+  - [x] 65.9 Layout fit check (`fit.test.ts`): tabs, two-per-row buttons and full-width buttons at 390 px by character count of the monospace font, English and Spanish
+    - _Requirements: 8.11_
+  - [x] 65.10 Dictionary hygiene (`copy.test.ts`): no unused key (seven removed), percent and unit rules, inverted marks, no stray spaces; property tests P-I3 and P-I4
+    - _Requirements: 8.5, 8.7, 8.8, 8.13_
+  - [x] 65.11 Spec sync: requirements 8.3 to 8.13, design review, this list
+

@@ -1,11 +1,11 @@
 import type { KeyboardEvent } from 'react'
 import { useI18n } from '../i18n/index.ts'
-import type { MessageKey } from '../i18n/en.ts'
+import type { PlainKey } from '../i18n/en.ts'
 import { PixelIcon } from './PixelIcons.tsx'
 import { panelId, tabId, TABS, type Tab } from './tabs.ts'
 
 
-const LABELS: Record<Tab, MessageKey> = { map: 'tab.map', bag: 'tab.bag', hero: 'tab.hero', settings: 'tab.settings' }
+const LABELS: Record<Tab, PlainKey> = { map: 'tab.map', bag: 'tab.bag', hero: 'tab.hero', settings: 'tab.settings' }
 
 
 /**

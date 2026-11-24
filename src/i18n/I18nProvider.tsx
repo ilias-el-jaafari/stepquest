@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { en, type MessageKey } from './en.ts'
+import { en, type MessageKey, type Translate } from './en.ts'
 import { es } from './es.ts'
 import { I18nContext } from './context.ts'
 import { detectLocale, interpolate, persistLocale, type Locale } from './locale.ts'
@@ -9,20 +9,23 @@ const dictionaries: Record<Locale, Record<MessageKey, string>> = { en, es }
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(() => detectLocale())
 
+  // The page language, title and description follow the interface language.
   useEffect(() => {
-    if (typeof document !== 'undefined') document.documentElement.lang = locale
+    if (typeof document === 'undefined') return
+    document.documentElement.lang = locale
+    document.title = dictionaries[locale]['meta.title']
+    document.head.querySelector('meta[name="description"]')?.setAttribute('content', dictionaries[locale]['meta.description'])
   }, [locale])
 
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next)
     persistLocale(next)
-    if (typeof document !== 'undefined') document.documentElement.lang = next
   }, [])
 
-  const t = useCallback(
-    (key: MessageKey, vars?: Record<string, string | number>) => {
+  const t = useCallback<Translate>(
+    (key, ...args) => {
       const table = dictionaries[locale]
-      return interpolate(table[key] ?? en[key] ?? key, vars, locale)
+      return interpolate(table[key] ?? en[key] ?? key, args[0] as Record<string, string | number> | undefined, locale)
     },
     [locale],
   )

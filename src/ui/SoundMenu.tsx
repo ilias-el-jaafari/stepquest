@@ -2,10 +2,10 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { VOLUME_CHANNELS, type VolumeChannel } from '../audio/settings.ts'
 import { useAudio } from '../audio/useAudio.ts'
 import { useI18n } from '../i18n/index.ts'
-import type { MessageKey } from '../i18n/en.ts'
+import type { PlainKey } from '../i18n/en.ts'
 import { PixelIcon } from './PixelIcons.tsx'
 
-const LABELS: Record<VolumeChannel, MessageKey> = { master: 'sound.master', music: 'sound.music', voice: 'sound.voice', sfx: 'sound.sfx' }
+const LABELS: Record<VolumeChannel, PlainKey> = { master: 'sound.master', music: 'sound.music', voice: 'sound.voice', sfx: 'sound.sfx' }
 
 type Props = {
   /** Open the panel above the button (bottom bars) or below it (top bars). */

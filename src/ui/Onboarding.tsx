@@ -1,14 +1,14 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useI18n } from '../i18n/index.ts'
-import type { MessageKey } from '../i18n/en.ts'
+import type { PlainKey } from '../i18n/en.ts'
 import { LogoMark } from './Logo.tsx'
 import { PixelSvg } from './PixelIcons.tsx'
 import { ONBOARDING_ART } from './onboardingArt.ts'
 
 export const ONBOARDING_STEPS = 3
 
-const TITLES: readonly MessageKey[] = ['onboarding.1.title', 'onboarding.2.title', 'onboarding.3.title']
-const BODIES: readonly MessageKey[] = ['onboarding.1.body', 'onboarding.2.body', 'onboarding.3.body']
+const TITLES: readonly PlainKey[] = ['onboarding.1.title', 'onboarding.2.title', 'onboarding.3.title']
+const BODIES: readonly PlainKey[] = ['onboarding.1.body', 'onboarding.2.body', 'onboarding.3.body']
 
 type Props = {
   /** Called when the user starts or skips; the caller stores the "seen" flag. */

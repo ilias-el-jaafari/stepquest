@@ -1,12 +1,11 @@
 import { APP_NAME, CONTEST_CATEGORY, CONTEST_NAME } from '../config/brand.ts'
 
 export const en = {
-  'app.name': APP_NAME,
   'app.contestLine': `${CONTEST_NAME} · ${CONTEST_CATEGORY}`,
   'app.tagline': 'Your daily steps, as an 8-bit overworld quest.',
+  'meta.title': `${APP_NAME} — your steps, as an 8-bit quest`,
+  'meta.description': `${APP_NAME} turns your daily step goal into an 8-bit overworld quest on real streets.`,
   'app.phase': 'Update · Streets to avoid',
-  'lang.en': 'English',
-  'lang.es': 'Spanish',
   'lang.switchTo': 'Language',
   'mode.label': 'Quest type',
   'mode.loop': 'Loop',
@@ -31,7 +30,7 @@ export const en = {
   'stride.range': 'Allowed: {min}–{max} m.',
   'stride.adjusted': 'Set to {value} m (allowed: {min}–{max}).',
   'stride.invalid': 'Type a length in metres, e.g. 0.75. Kept {value}.',
-  'stride.hint': '{steps} {steps|step|steps} ≈ {km} km',
+  'stride.hint': '{steps} {steps|step|steps} ≈ {km}',
   'action.generate': 'Plan quest',
   'action.planning': 'Planning…',
   'action.reroll': 'Another route',
@@ -120,10 +119,8 @@ export const en = {
   'look.swatch': '{part}: colour {n}',
   'bag.demo': 'Demo walk',
   'bag.start': 'Start point',
-  'settings.title': 'Settings',
   'settings.sound': 'Sound',
   'settings.language': 'Language',
-  'onboarding.title': 'Introduction',
   'onboarding.step': 'Step {n} of {total}',
   'onboarding.skip': 'Skip',
   'onboarding.back': 'Back',
@@ -137,7 +134,7 @@ export const en = {
   'onboarding.3.title': 'Safe by default',
   'onboarding.3.body': 'Routes always prefer lit, lively streets with sidewalks, and from sunset lighting counts even more. It is always on, no switch needed. You can still list streets to avoid.',
   'settings.about': 'Help',
-  'result.short': '{km} km · {steps} {n|step|steps}',
+  'result.short': '{km} · {steps} {n|step|steps}',
   'area.outside': 'This part of the map is not loaded yet.',
   'area.load': 'Load this area',
   'area.askHere': 'Plan your walk around where you are?',
@@ -182,7 +179,6 @@ export const en = {
   'quest.simNoise': 'Add GPS noise',
   'quest.next': 'Next: checkpoint {n}',
   'quest.nextFinish': 'Next: the flag!',
-  'quest.distanceDir': '{dist} {dir}',
   'quest.collected': 'Gems',
   'quest.walked': 'Walked',
   'quest.steps': 'Steps',
@@ -198,7 +194,6 @@ export const en = {
   'quest.end': 'End',
   'quest.endConfirm': 'End this quest? Your progress will be lost.',
   'quest.follow': 'Follow me',
-  'quest.pickup': 'Checkpoint {n}/{total}!',
   'quest.resumed': 'Quest resumed.',
   'quest.wakeLock': 'screen kept on',
   'quest.err.denied': 'Location permission was denied, so the quest cannot track you. Allow it in the browser settings, or use the simulation.',
@@ -263,3 +258,28 @@ export const en = {
 } as const
 
 export type MessageKey = keyof typeof en
+
+/** Message text of a key, as a literal type. */
+type Message<K extends MessageKey> = (typeof en)[K]
+
+/** Placeholder names in a template: `{n}` and `{n|one|other}` both give `n`. */
+type PlaceholderNames<S extends string> = S extends `${string}{${infer Body}}${infer Rest}`
+  ? (Body extends `${infer Name}|${string}` ? Name : Body) | PlaceholderNames<Rest>
+  : never
+
+/** Variables a key needs: an object with exactly its placeholder names, or `undefined` when it has none. */
+export type MessageVars<K extends MessageKey> = [PlaceholderNames<Message<K>>] extends [never]
+  ? undefined
+  : { [Name in PlaceholderNames<Message<K>>]: string | number }
+
+/**
+ * `t` checks the key and the placeholders at compile time: a missing, misspelled or
+ * extra variable is a type error, and so is passing variables to a key that has none.
+ */
+export type Translate = <K extends MessageKey>(
+  key: K,
+  ...args: [MessageVars<K>] extends [undefined] ? [vars?: undefined] : [vars: MessageVars<K>]
+) => string
+
+/** Keys whose text has no placeholders (safe to pick from a table and pass to `t(key)`). */
+export type PlainKey = { [K in MessageKey]: [MessageVars<K>] extends [undefined] ? K : never }[MessageKey]

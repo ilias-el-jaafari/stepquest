@@ -1,4 +1,4 @@
-export { en, type MessageKey } from './en.ts'
+export { en, type MessageKey, type MessageVars, type PlainKey, type Translate } from './en.ts'
 export { es } from './es.ts'
 export { detectLocale, interpolate, readStoredLocale, type Locale } from './locale.ts'
 export { I18nProvider } from './I18nProvider.tsx'

@@ -57,4 +57,20 @@ describe('App', () => {
     expect(host.textContent).toContain('Planear misión')
     await act(async () => root.unmount())
   })
+
+  it('writes distances and percentages with the Spanish decimal comma, and the page title follows the language', async () => {
+    localStorage.setItem('stepquest.locale', 'es')
+    const root = createRoot(host)
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    expect(document.documentElement.lang).toBe('es')
+    expect(document.title).toContain('aventura de 8 bits')
+    await waitFor(() => !!host.querySelector('[data-testid="map-canvas"]'))
+    const plan = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Planear misión')!
+    await act(async () => plan.click())
+    await waitFor(() => !!host.querySelector('[data-testid="distance"]'))
+    expect(host.querySelector('[data-testid="distance"]')!.textContent).toMatch(/^\d+,\d{2} km$/)
+    expect(host.querySelector('[data-testid="steps"]')!.textContent).toMatch(/[+−]\d+,\d\u00a0% vs objetivo/)
+    expect(host.querySelector('[data-testid="km-hint"]')!.textContent).toMatch(/≈ \d+,\d{2} km$/)
+    await act(async () => root.unmount())
+  })
 })

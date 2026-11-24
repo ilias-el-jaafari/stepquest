@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { bboxContains, type BBox, type LatLon } from './geo/geo.ts'
 import { MAX_STEPS, MAX_STRIDE_M, MIN_STEPS, MIN_STRIDE_M, stepsToMetres } from './geo/steps.ts'
 import { useI18n, type Locale } from './i18n/index.ts'
+import { formatDecimal, formatKm, formatNumber, formatSignedPercent } from './i18n/format.ts'
 import { DEMO_AREA } from './osm/demoArea.ts'
 import { areaForWalk } from './osm/overpass.ts'
 import { STEPS_PER_CHECKPOINT } from './routing/checkpoints.ts'
@@ -373,7 +374,7 @@ export default function App() {
     // loadLiveAround is recreated every render; the inputs that matter are listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bbox, viewCentre, busy, hasPlan])
-  const loadingMb = live.status.state === 'loading' ? (live.status.bytes / 1e6).toFixed(1) : undefined
+  const loadingMb = live.status.state === 'loading' ? formatDecimal(live.status.bytes / 1e6, locale, 1) : undefined
 
   // Leaving a quest: the session adds the real steps still unpaid to today's total (the rest was added as they were walked).
   const endQuest = () => {
@@ -422,9 +423,9 @@ export default function App() {
   const stepsOutOfRange = stepsTyped.kind === 'number' && (stepsTyped.value < MIN_STEPS || stepsTyped.value > MAX_STEPS)
   const strideTyped = parseStrideText(strideText)
   const strideOutOfRange = strideTyped.kind === 'number' && (strideTyped.value < MIN_STRIDE_M || strideTyped.value > MAX_STRIDE_M)
-  const stepRange = { min: MIN_STEPS.toLocaleString(locale), max: MAX_STEPS.toLocaleString(locale) }
-  const strideRange = { min: MIN_STRIDE_M.toLocaleString(locale), max: MAX_STRIDE_M.toLocaleString(locale) }
-  const km = (stepsToMetres(settings.targetSteps, settings.strideM) / 1000).toFixed(2)
+  const stepRange = { min: formatNumber(MIN_STEPS, locale), max: formatNumber(MAX_STEPS, locale) }
+  const strideRange = { min: formatNumber(MIN_STRIDE_M, locale), max: formatNumber(MAX_STRIDE_M, locale) }
+  const km = formatKm(stepsToMetres(settings.targetSteps, settings.strideM), locale)
 
   if (runner.quest && world) {
     return (
@@ -468,7 +469,7 @@ export default function App() {
             <PixelSvg art={walker.down[0]!} size={30} />
           </span>
           <span className="steps-pill" data-testid="steps-today">
-            <span className="steps-pill-label">{t('header.stepsToday')}:</span> <strong>{todaySteps.toLocaleString(locale)}</strong>
+            <span className="steps-pill-label">{t('header.stepsToday')}:</span> <strong>{formatNumber(todaySteps, locale)}</strong>
           </span>
         </div>
       </header>
@@ -597,7 +598,7 @@ export default function App() {
                 value={sliderValue(liveSteps(stepsText) ?? settings.targetSteps)}
                 onChange={(e) => setSteps(Number(e.target.value))}
               />
-              <FieldNote id="steps-note" note={stepsNote} outOfRange={stepsOutOfRange} invalid={stepsTyped.kind === 'invalid'} prefix="target" range={stepRange} format={(v) => v.toLocaleString(locale)} />
+              <FieldNote id="steps-note" note={stepsNote} outOfRange={stepsOutOfRange} invalid={stepsTyped.kind === 'invalid'} prefix="target" range={stepRange} format={(v) => formatNumber(v, locale)} />
               <div className="presets">
                 {STEP_PRESETS.map((s) => (
                   <button key={s} type="button" className={`pix-btn preset ${settings.targetSteps === s ? 'on' : ''}`} onClick={() => setSteps(s)}>
@@ -609,7 +610,7 @@ export default function App() {
             <LocateMessage status={locate} />
             {shownRoute && (
               <p className={`route-line ${result?.ok ? 'ok' : 'bad'}`} data-testid="route-line">
-                {t('result.short', { km: (shownRoute.distanceM / 1000).toFixed(2), steps: shownRoute.steps.toLocaleString(locale), n: shownRoute.steps })}
+                {t('result.short', { km: formatKm(shownRoute.distanceM, locale), steps: formatNumber(shownRoute.steps, locale), n: shownRoute.steps })}
                 {!result?.ok && <> · {t('result.title')} ▸</>}
                 {result?.ok && simulate && <> · {t('bag.demo')}</>}
               </p>
@@ -721,9 +722,9 @@ export default function App() {
               <div>
                 <h2 className="box-title">{t('hero.title')}</h2>
                 <p className="hero-today">
-                  {t('hero.today')}: <strong>{todaySteps.toLocaleString(locale)}</strong>
+                  {t('hero.today')}: <strong>{formatNumber(todaySteps, locale)}</strong>
                 </p>
-                <p className="hint">{t('hero.goal', { goal: settings.targetSteps.toLocaleString(locale) })}</p>
+                <p className="hint">{t('hero.goal', { goal: formatNumber(settings.targetSteps, locale) })}</p>
               </div>
             </div>
             <StepMeter pct={todayPct} label={t('hero.progress', { pct: todayPct })} />
@@ -750,8 +751,8 @@ export default function App() {
                 <span className="unit">{t('stride.unit')}</span>
               </span>
             </label>
-            <FieldNote id="stride-note" note={strideNote} outOfRange={strideOutOfRange} invalid={strideTyped.kind === 'invalid'} prefix="stride" range={strideRange} format={(v) => v.toLocaleString(locale)} />
-            <p className="hint" data-testid="km-hint">{t('stride.hint', { steps: settings.targetSteps.toLocaleString(locale), km })}</p>
+            <FieldNote id="stride-note" note={strideNote} outOfRange={strideOutOfRange} invalid={strideTyped.kind === 'invalid'} prefix="stride" range={strideRange} format={(v) => formatNumber(v, locale)} />
+            <p className="hint" data-testid="km-hint">{t('stride.hint', { steps: formatNumber(settings.targetSteps, locale), km })}</p>
           </div>
         </section>
 
@@ -838,7 +839,7 @@ function LocateMessage({ status }: { status: LocateStatus }) {
 function ResultBox({ result, onUseSteps }: { result: PlanResult | undefined; onUseSteps: (steps: number) => void }) {
   const { t, locale } = useI18n()
   const route = result?.ok ? result.route : result?.closest
-  const n = (v: number) => v.toLocaleString(locale)
+  const n = (v: number) => formatNumber(v, locale)
   let message: { text: string; ok: boolean; suggest?: number } | undefined
   if (result?.ok) message = { text: t('result.ready', { n: result.route.checkpoints.length }), ok: true }
   else if (result) {
@@ -867,13 +868,13 @@ function ResultBox({ result, onUseSteps }: { result: PlanResult | undefined; onU
         <dl className="stats">
           <div>
             <dt>{t('result.distance')}</dt>
-            <dd data-testid="distance">{(route.distanceM / 1000).toFixed(2)} km</dd>
+            <dd data-testid="distance">{formatKm(route.distanceM, locale)}</dd>
           </div>
           <div>
             <dt>{t('result.steps')}</dt>
             <dd data-testid="steps">
               {n(route.steps)}{' '}
-              <small>{t('result.vsTarget', { sign: route.error >= 0 ? '+' : '−', pct: Math.abs(route.error * 100).toFixed(1) })}</small>
+              <small>{t('result.vsTarget', formatSignedPercent(route.error, locale))}</small>
             </dd>
           </div>
           <div>

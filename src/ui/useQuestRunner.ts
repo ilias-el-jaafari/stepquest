@@ -63,6 +63,16 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
       )
   })
   const sessionRef = useRef<QuestSession | undefined>(undefined)
+  // A language change while a quest runs: phrases already queued are in the old language,
+  // so drop them and pre-render the common callouts in the new one.
+  const spokenLocale = useRef(locale)
+  useEffect(() => {
+    if (spokenLocale.current === locale) return
+    spokenLocale.current = locale
+    if (!sessionRef.current) return
+    audioEngine().stopVoice()
+    warmRef.current()
+  }, [locale])
   const stopRef = useRef<(() => void) | undefined>(undefined)
   const wakeRef = useRef<WakeLockHandle | undefined>(undefined)
   const pickupCount = useRef(0)

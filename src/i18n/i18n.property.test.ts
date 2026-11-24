@@ -2,6 +2,7 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { en, type MessageKey } from './en.ts'
 import { es } from './es.ts'
+import { formatDecimal, formatNumber } from './format.ts'
 import { interpolate, type Locale } from './locale.ts'
 
 const SEED = 20261204
@@ -77,6 +78,38 @@ describe('i18n properties', () => {
         expect(names(out)).toEqual(names(template).filter((name) => name !== 'n'))
       }),
       { seed: SEED, numRuns: 150 },
+    )
+  })
+
+  it('P-I3: a formatted count picks the same plural form as the number itself', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 5_000_000 }), fc.constantFrom<Locale>('en', 'es'), (n, locale) => {
+        const tpl = '{v|# one|# many}'
+        expect(interpolate(tpl, { v: formatNumber(n, locale) }, locale).endsWith(n === 1 ? 'one' : 'many')).toBe(true)
+      }),
+      { seed: SEED, numRuns: 400 },
+    )
+  })
+
+  it('P-I3: a formatted fraction is plural, never singular (0,01 and 1,5 are not "1")', () => {
+    fc.assert(
+      fc.property(fc.double({ min: 0.01, max: 999.99, noNaN: true }).filter((x) => Math.abs(x - Math.round(x)) > 0.005), fc.constantFrom<Locale>('en', 'es'), (x, locale) => {
+        const text = formatDecimal(x, locale, 2)
+        expect(interpolate('{v|# one|# many}', { v: text }, locale)).toBe(`${text} many`)
+      }),
+      { seed: SEED, numRuns: 400 },
+    )
+  })
+
+  it('P-I4: formatDecimal uses the locale separator, keeps the digits and never prints NaN or -0', () => {
+    fc.assert(
+      fc.property(fc.double({ min: -1e6, max: 1e6, noNaN: true }), fc.integer({ min: 0, max: 3 }), fc.constantFrom<Locale>('en', 'es'), (x, digits, locale) => {
+        const text = formatDecimal(x, locale, digits)
+        expect(text).toMatch(digits === 0 ? /^-?\d+$/ : new RegExp(`^-?\\d+${locale === 'es' ? ',' : '\\.'}\\d{${digits}}$`))
+        expect(text).not.toMatch(/^-0([.,]0*)?$/)
+        expect(Math.abs(Number(text.replace(',', '.')) - x)).toBeLessThanOrEqual(0.5 * 10 ** -digits + 1e-9)
+      }),
+      { seed: SEED, numRuns: 400 },
     )
   })
 })
