@@ -217,3 +217,14 @@ Related: 2.1 to 2.3 (layers, terrain priority, 4-connected paths), 6a.
 7. WHEN a block is too small or too thin for a 2 × 2 house, THE SYSTEM SHALL leave it as plain building tiles.
 8. THE SYSTEM SHALL lay out a 600 × 600 tile map (3 km square, a quarter of the 36 km² cap) in a time that grows linearly with the number of tiles (`layoutBench.test.ts` reports it and fails above a generous budget).
 9. THE SYSTEM SHALL keep the town layout in small modules (types, random, block analysis, landmarks and gates, houses) behind `layout.ts`, whose public names do not change.
+
+### Requirement 18 (task 72): OpenStreetMap credit in one fixed place
+
+**User Story:** As a walker and as a data licensor, I want the OpenStreetMap credit in the same small corner of every map, so that it is always visible, readable and never hides under a panel.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL show the credit "© OpenStreetMap contributors" (Spanish: "© colaboradores de OpenStreetMap") on the planner map and on the quest map, as a link to `https://www.openstreetmap.org/copyright`, in the bottom-left corner of the map viewport.
+2. THE SYSTEM SHALL keep that position constant whatever the content: it SHALL NOT depend on the panels, banners, dialogs or HUD that are shown, and no rule for `.map-attribution` outside the single base rule SHALL move it.
+3. THE SYSTEM SHALL keep the credit clear of everything else: the quest bottom HUD and the map banners SHALL start above the credit strip (`--attr-h`), and the credit SHALL be above the map canvas in stacking order so the link can be tapped.
+4. THE SYSTEM SHALL draw the credit with a font size of at least 7 px (the page-zoom-lock minimum), dark ink on a paper backing of at least 85 % opacity (contrast above 4.5:1), and SHALL NOT hide it at any viewport size.

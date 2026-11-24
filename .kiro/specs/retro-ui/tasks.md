@@ -105,3 +105,8 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 
 - [x] 71.1 Locked viewport meta, `pageZoomGuard` (gesture and multi-touch cancel outside the map canvas, visual viewport reset), `touch-action` rules, minimum font 7 px, tests, design trade-off note
   - _Requirements: 17.1 to 17.6_
+
+## Map button stack fit (requirement 18)
+
+- [x] 73.1 `planStack` (one column, two columns, "More"), `MapView` measures and renders it, quest HUD reserve, `map.more` in EN/ES; tests
+  - _Requirements: 18.1 to 18.7_

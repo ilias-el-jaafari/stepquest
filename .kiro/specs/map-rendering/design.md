@@ -381,3 +381,11 @@ layout.ts     layoutTown, townFor, re-exports of the names the renderer and test
 ### Page zoom lock (cross-reference)
 
 The map canvas is the only element that handles pinch (`touch-action: none`, pointer events in `ui/mapInput.ts`). The page-level guard that stops Safari from zooming the page is specified in retro-ui requirement 17; it must keep skipping events whose target is inside `.map-canvas`.
+
+## OpenStreetMap credit placement (task 72, requirement 18)
+
+Field bug (iPhone): the credit floated mid-map because five rules (`.quest`, `.layout`, `.console-screen`, a media query) each gave it a different offset.
+
+Design: one rule, `.map-attribution { position: absolute; left: 0; bottom: 0; z-index: 4; height: var(--attr-h) }`, inside `.map` (the map viewport; on the planner the panel is a sibling below it, in a quest the HUD is an overlay). The other rules are deleted. In a quest the bottom HUD (`.hud-bottom`) and the map banners move up by `--attr-h` (16 px) so nothing covers the strip. The text is the short form with a link; the long "Map data ... (ODbL)" wording is not needed because the link leads to the licence page, which ODbL attribution allows.
+
+Trade-off: 16 px of the quest screen go to the credit. Tests: `src/ui/attribution.test.ts` (placement rules in the CSS, font and contrast) and `MapView.test.tsx` (link and text in both languages).

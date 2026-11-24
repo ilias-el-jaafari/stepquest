@@ -87,6 +87,41 @@ describe('map buttons during a quest', () => {
   })
 })
 
+describe('credit and button stack', () => {
+  it('links the OpenStreetMap credit to the copyright page', async () => {
+    await act(async () =>
+      root.render(
+        <I18nProvider>
+          <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="a" onTap={() => {}} home={start} />
+        </I18nProvider>,
+      ),
+    )
+    const a = host.querySelector<HTMLAnchorElement>('.map-attribution')!
+    expect(a.getAttribute('href')).toBe('https://www.openstreetmap.org/copyright')
+    expect(a.textContent).toBe('© OpenStreetMap contributors')
+    expect(host.querySelector('[data-testid="map-more"]')).toBeNull()
+  })
+
+  it('collapses buttons behind More when the map is short, and opens them on tap', async () => {
+    const h = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(160)
+    const w = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(320)
+    await act(async () =>
+      root.render(
+        <I18nProvider>
+          <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="m" onTap={() => {}} home={start} onLocate={() => {}} />
+        </I18nProvider>,
+      ),
+    )
+    h.mockRestore()
+    w.mockRestore()
+    const more = host.querySelector<HTMLButtonElement>('[data-testid="map-more"]')!
+    expect(more.getAttribute('aria-label')).toBe('More map buttons')
+    expect(host.querySelector('[data-testid="map-more-row"]')).toBeNull()
+    await act(async () => more.click())
+    expect(host.querySelectorAll('[data-testid="map-more-row"] button').length).toBeGreaterThan(0)
+  })
+})
+
 describe('speech bubble', () => {
   it('hands the spoken text to the renderer and clears it when the phrase ends', async () => {
     const setBubble = vi.spyOn(MapRenderer.prototype, 'setBubble')

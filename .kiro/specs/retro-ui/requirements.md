@@ -116,3 +116,17 @@ Related: [quest](../quest/requirements.md) (HUD content, resume after reload), [
 4. THE SYSTEM SHALL set `touch-action: manipulation` on the app root and on buttons, selects, summaries and labels, and `touch-action: none` on the map canvas only, so a double tap never zooms the page.
 5. WHEN the visual viewport scale is above 1, THE SYSTEM SHALL re-apply the locked viewport and scroll to the origin, as far as the browser allows.
 6. THE SYSTEM SHALL use no font size below 7 px and SHALL keep `-webkit-text-size-adjust: 100%`; an automated check SHALL fail on a smaller size.
+
+### Requirement 18 (task 73): Map button stack never cut or covered
+
+**User Story:** As a walker on any phone, I want every round map button to be fully visible and tappable, so that the lowest one is not cut by the options panel.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL compute, from the size of the map viewport, how many 48 px buttons fit between the top edge, the bottom panel or HUD and the credit strip, with a pure function (`planStack`).
+2. WHEN all buttons fit in one column, THE SYSTEM SHALL show one column.
+3. WHEN they do not fit in one column and the map is at least 160 px wide, THE SYSTEM SHALL reflow them into two columns.
+4. WHEN they still do not fit, THE SYSTEM SHALL keep the most important buttons (zoom in, zoom out, locate, then fit, then home), SHALL NOT shrink any button below 48 px, and SHALL put the others behind a "More" button (EN/ES label) that opens them in a row beside it.
+5. WHEN the size is unknown (not measured yet), THE SYSTEM SHALL show every button in one column.
+6. THE SYSTEM SHALL re-plan when the map viewport changes size (rotation, panel growth) and, in a quest, when the bottom HUD changes height.
+7. THE SYSTEM SHALL work from 320×568 to 430×932, portrait and landscape, in English and Spanish.

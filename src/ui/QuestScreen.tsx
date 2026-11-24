@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useI18n } from '../i18n/index.ts'
 import { formatDistance, formatNumber } from '../i18n/format.ts'
 import { directionTo } from '../quest/compass.ts'
@@ -30,11 +30,27 @@ const END_CONFIRM = { message: 'quest.endConfirm', yes: 'quest.endYes', no: 'que
 const EMPTY_MARKERS = {}
 const ignoreTap = () => {}
 
+/** The HUD sits 10 px above the screen edge; the stack's own bottom margin is 8 px, plus a little air. */
+const HUD_GAP = 6
+
 export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, onEnd, onUseSim }: Props) {
   const { t, locale } = useI18n()
   const { engine, status, settings: sound, phrase } = useAudio()
   const [now, setNow] = useState(() => Date.now())
   const [follow, setFollow] = useState(true)
+  // The bottom HUD overlays the map; the map buttons keep clear of it.
+  const hudBottom = useRef<HTMLDivElement>(null)
+  const [hudHeight, setHudHeight] = useState(0)
+  useEffect(() => {
+    const el = hudBottom.current
+    if (!el) return
+    const read = () => setHudHeight(el.offsetHeight)
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(read)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
   /** The stats panel starts folded so the map gets the screen. */
   const [statsOpen, setStatsOpen] = useState(false)
   const [dismissed, setDismissed] = useState(0)
@@ -164,6 +180,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
                 bubble={phrase?.text}
                 onUserPan={stopFollowing}
                 onLocate={startFollowing}
+                bottomReserve={hudHeight + HUD_GAP}
               />
             </div>
 
@@ -221,7 +238,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
               </div>
             )}
 
-            <div className={`hud hud-bottom ${statsOpen ? '' : 'folded'}`} data-testid="hud-bottom">
+            <div ref={hudBottom} className={`hud hud-bottom ${statsOpen ? '' : 'folded'}`} data-testid="hud-bottom">
               <dl className="hud-stats">
                 <div>
                   <dt>{t('quest.walked')}</dt>

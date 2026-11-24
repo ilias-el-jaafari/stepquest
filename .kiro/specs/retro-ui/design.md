@@ -255,3 +255,11 @@ Fix, in layers:
 Trade-off (accessibility): a locked viewport removes the user's page zoom, which WCAG 1.4.4 values. We accept it because the map is the product and a zoomed page breaks the fixed HUD, and we compensate: the smallest text is 7 px (was 6 px; the pixel font is drawn on an 8 px grid), the base size is 10 px, `-webkit-text-size-adjust: 100%` keeps the browser's own text sizing from shrinking text, the map has its own zoom buttons and keyboard zoom, and all controls are real buttons with labels for VoiceOver. The OS "larger text" (Dynamic Type) setting is not followed, because the pixel font and fixed-size frames are laid out in px; supporting it would need an rem-based layout, listed as a future change.
 
 Tests: `src/ui/pageZoomGuard.test.ts` (events prevented outside the canvas, allowed on it; viewport meta; touch-action rules; minimum font size).
+
+## Map button stack fit (task 73, requirement 18)
+
+Field bug (iPhone): the planner map area is a flex child with `min-height: 160px` above a panel up to 58 % high, so on short screens the map was shorter than the five-button stack (5 × 48 + 4 × 10 + 13 = 263 px) and `.map { overflow: hidden }` cut the last button.
+
+Design: `ui/mapStack.ts` exports `planStack({ width, height, ids, bottomReserve })`. Available height = `height - 13 (top) - 8 - 16 (credit strip) - bottomReserve`; capacity per column = `floor((avail + 10) / 58)`. Order of decisions: one column, two columns, then collapse (primary buttons by priority, the rest in a "More" flyout that is a horizontal row so it never needs height). `MapView` measures its `.map` element with `ResizeObserver` and renders `planStack`'s answer; the grid uses `--stack-rows`. In a quest, the map is the whole screen under the HUD, so `QuestScreen` measures the bottom HUD and passes `bottomReserve`. Buttons stay 48 px (`--hit`), never scaled.
+
+Tests: `ui/mapStack.test.ts` (pure function over the 320×568 to 430×932 sizes, both orientations) and CSS checks in the same file; `MapView.test.tsx` (More button).

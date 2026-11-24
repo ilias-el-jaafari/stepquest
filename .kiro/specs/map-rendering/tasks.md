@@ -103,3 +103,8 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
   - _Requirements: 17.1 to 17.6_
 - [x] 69.7 `layoutBench.test.ts` timings (before and after in `design.md`), golden hash of the night far-zoom frame updated with the reason documented
   - _Requirements: 17.8_
+
+## OpenStreetMap credit placement (requirement 18)
+
+- [x] 72.1 One fixed bottom-left credit with link on the planner and quest maps; stray placement rules removed; HUD and banners clear of it; `attribution.test.ts`, `MapView.test.tsx`
+  - _Requirements: 18.1 to 18.4_

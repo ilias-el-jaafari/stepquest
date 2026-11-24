@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type { LatLon } from '../geo/geo.ts'
 import { useI18n } from '../i18n/index.ts'
 import { PixelIcon } from './PixelIcons.tsx'
@@ -8,6 +8,7 @@ import type { TileGrid } from '../tiles/grid.ts'
 import { walkerFor } from '../hero/look.ts'
 import { useLook } from '../hero/useLook.ts'
 import { attachMapInput } from './mapInput.ts'
+import { planStack, type StackId } from './mapStack.ts'
 
 type Props = {
   grid: TileGrid
@@ -36,15 +37,20 @@ type Props = {
   onView?: (centre: LatLon) => void
   /** The phrase being spoken, drawn as a speech bubble next to the walker. */
   bubble?: string
+  /** Height an overlaying HUD takes at the bottom of the map (px), so the buttons stay clear of it. */
+  bottomReserve?: number
 }
 
 /**
  * Memoised on purpose: the screen around it re-renders on every keystroke and every clock tick,
  * and the map only needs to follow its own props (callers pass stable callbacks and objects).
  */
-export const MapView = memo(function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble }: Props) {
+export const MapView = memo(function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const mapRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ width: 0, height: 0 })
+  const [moreOpen, setMoreOpen] = useState(false)
   const rendererRef = useRef<MapRenderer | undefined>(undefined)
   const onTapRef = useRef(onTap)
   const focusRef = useRef(focus)
@@ -147,41 +153,54 @@ export const MapView = memo(function MapView({ grid, route, markers, focus, focu
     if (r && focusRef.current.length) r.fit(focusRef.current)
   }
 
+  // Re-plan the button stack whenever the map viewport changes size.
+  useEffect(() => {
+    const el = mapRef.current
+    if (!el) return
+    const read = () => setSize((o) => (o.width === el.clientWidth && o.height === el.clientHeight ? o : { width: el.clientWidth, height: el.clientHeight }))
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(read)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const hasLocate = Boolean(onLocate) || inQuest
+  const ids: StackId[] = inQuest ? ['zoomIn', 'zoomOut'] : ['zoomIn', 'zoomOut', 'fit', 'home']
+  if (hasLocate) ids.push('locate')
+  const plan = planStack({ width: size.width, height: size.height, ids, bottomReserve })
+  const hasMore = plan.more.length > 0
+  const buttons: Record<StackId, { label: string; icon: 'plus' | 'minus' | 'fit' | 'home' | 'locate'; run: () => void; disabled?: boolean; testId?: string }> = {
+    zoomIn: { label: t('map.zoomIn'), icon: 'plus', run: () => zoom(1) },
+    zoomOut: { label: t('map.zoomOut'), icon: 'minus', run: () => zoom(-1) },
+    fit: { label: t('map.fit'), icon: 'fit', run: fit },
+    home: { label: t('map.home'), icon: 'home', run: goHome },
+    locate: { label: inQuest ? t('map.me') : t('loc.use'), icon: 'locate', run: locate, disabled: locating, testId: 'map-locate' },
+  }
+  const button = (id: StackId) => {
+    const b = buttons[id]
+    return (
+      <button key={id} type="button" className="pix-btn round" onClick={b.run} disabled={b.disabled} aria-label={b.label} title={b.label} data-testid={b.testId}>
+        <PixelIcon name={b.icon} />
+      </button>
+    )
+  }
+
   return (
-    <div className="map">
+    <div className="map" ref={mapRef}>
       <canvas ref={canvasRef} className="map-canvas" data-testid="map-canvas" tabIndex={0} role="application" aria-label={t('map.canvas')} />
-      <div className="map-buttons">
-        <button type="button" className="pix-btn round" onClick={() => zoom(1)} aria-label={t('map.zoomIn')} title={t('map.zoomIn')}>
-          <PixelIcon name="plus" />
-        </button>
-        <button type="button" className="pix-btn round" onClick={() => zoom(-1)} aria-label={t('map.zoomOut')} title={t('map.zoomOut')}>
-          <PixelIcon name="minus" />
-        </button>
-        {!inQuest && (
-          <>
-            <button type="button" className="pix-btn round" onClick={fit} aria-label={t('map.fit')} title={t('map.fit')}>
-              <PixelIcon name="fit" />
-            </button>
-            <button type="button" className="pix-btn round" onClick={goHome} aria-label={t('map.home')} title={t('map.home')}>
-              <PixelIcon name="home" />
-            </button>
-          </>
-        )}
-        {(onLocate || inQuest) && (
-          <button
-            type="button"
-            className="pix-btn round"
-            onClick={locate}
-            disabled={locating}
-            aria-label={inQuest ? t('map.me') : t('loc.use')}
-            title={inQuest ? t('map.me') : t('loc.use')}
-            data-testid="map-locate"
-          >
-            <PixelIcon name="locate" />
+      <div className="map-buttons" data-columns={plan.columns} style={{ '--stack-rows': plan.rows } as React.CSSProperties}>
+        {plan.shown.map(button)}
+        {hasMore && (
+          <button type="button" className="pix-btn round" onClick={() => setMoreOpen((o) => !o)} aria-label={t('map.more')} title={t('map.more')} aria-expanded={moreOpen} data-testid="map-more">
+            <PixelIcon name="more" />
           </button>
         )}
+        {hasMore && moreOpen && <div className="map-more" data-testid="map-more-row">{plan.more.map(button)}</div>}
       </div>
-      <div className="map-attribution">{t('map.attribution')}</div>
+      <a className="map-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
+        {t('map.attribution')}
+      </a>
     </div>
   )
 })

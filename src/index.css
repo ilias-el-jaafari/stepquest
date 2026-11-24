@@ -108,17 +108,39 @@ body {
 
 .map-buttons {
   position: absolute;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--stack-rows, 5), var(--hit));
 }
 
+/* Collapsed buttons open as a row to the left of the stack, so they never need more height. */
+.map-more {
+  position: absolute;
+  right: calc(100% + 10px);
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+}
+
+/* The one place for the OpenStreetMap credit (map-rendering requirement 18): bottom-left of the map, always. */
 .map-attribution {
   position: absolute;
   left: 0;
   bottom: 0;
-  padding: 3px 6px;
-  font-size: 7px;
-  background: rgba(251, 247, 236, 0.85);
+  z-index: 4;
+  box-sizing: border-box;
+  height: var(--attr-h);
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 8px;
+  color: #1b1a2e;
+  text-decoration: underline;
+  background: rgba(251, 247, 236, 0.92);
+  border-radius: 0;
 }
 
 .panel {
@@ -498,7 +520,7 @@ input[aria-invalid='true'] {
 }
 
 .hud-bottom {
-  bottom: max(8px, env(safe-area-inset-bottom));
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + var(--attr-h));
 }
 
 .hud-stats {
@@ -544,14 +566,6 @@ input[aria-invalid='true'] {
 .quest .map-buttons {
   top: max(8px, env(safe-area-inset-top));
   right: 8px;
-}
-
-.quest .map-attribution {
-  bottom: auto;
-  top: auto;
-  left: auto;
-  right: 0;
-  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 104px);
 }
 
 .dialog-wrap {
@@ -727,10 +741,6 @@ input[aria-invalid='true'] {
     left: 8px;
     right: auto;
     width: 460px;
-  }
-
-  .quest .map-attribution {
-    bottom: 0;
   }
 }
 
@@ -1043,17 +1053,11 @@ button.hud-msg.sound-resume {
   border-bottom: none;
 }
 
-/* Credit line top-left, clear of the planner and the zoom buttons. */
-.layout .map-attribution {
-  top: 0;
-  bottom: auto;
-}
-
 .map-banner {
   position: absolute;
   left: 8px;
   right: 64px;
-  bottom: 8px;
+  bottom: calc(8px + var(--attr-h));
   z-index: 3;
   display: flex;
   align-items: center;
@@ -1452,7 +1456,7 @@ button.hud-msg.sound-resume {
 
 /* Map-area toast: "Load this area", download progress, or "plan where you are". */
 .area-toast {
-  bottom: 8px;
+  bottom: calc(8px + var(--attr-h));
   flex-wrap: wrap;
 }
 
@@ -1486,6 +1490,8 @@ details.advanced summary {
   --bezel: #34324a;
   /* Smallest press area for any control. */
   --hit: 48px;
+  /* Height of the OpenStreetMap credit strip; HUD and banners start above it. */
+  --attr-h: 16px;
 }
 
 img,
@@ -1552,12 +1558,6 @@ canvas {
 .map-banner {
   border: none;
   box-shadow: var(--out3), 3px 6px 0 #000, 6px 3px 0 #000;
-}
-
-.map-attribution,
-.quest .map-attribution,
-.layout .map-attribution {
-  border-radius: 0;
 }
 
 .steps-pill {
@@ -1829,7 +1829,7 @@ select {
 }
 
 .console-screen .hud-bottom {
-  bottom: 10px;
+  bottom: calc(10px + var(--attr-h));
   left: 10px;
   right: 10px;
 }
@@ -1845,13 +1845,8 @@ select {
   right: 13px;
 }
 
-.console-screen .map-attribution,
-.quest .console-screen .map-attribution {
-  bottom: 118px;
-}
-
 .console-screen .dialog-wrap {
-  bottom: 140px;
+  bottom: calc(140px + var(--attr-h));
 }
 
 @media (min-width: 900px) {
