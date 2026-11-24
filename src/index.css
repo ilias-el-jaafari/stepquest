@@ -493,8 +493,9 @@ input[aria-invalid='true'] {
 
 .hud-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
+  min-width: 0;
   margin: 0;
 }
 
@@ -515,8 +516,19 @@ input[aria-invalid='true'] {
 
 .hud-buttons {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: 0;
   margin-top: 8px;
+}
+
+/* The text button in the bottom bar shrinks to its share (never below 9 px) instead of leaving the frame. */
+.hud-buttons .pix-btn:not(.round) {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+  font-size: clamp(9px, 2.6vw, 10px);
 }
 
 .quest .map-buttons {
@@ -1297,15 +1309,16 @@ button.hud-msg.sound-resume {
 /* Quest HUD folded: walked and steps on one row with the buttons. */
 .hud-bottom.folded {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding: 8px 10px;
 }
 
+/* On a narrow screen the readout takes its own row above the buttons instead of squeezing them. */
 .hud-bottom.folded .hud-stats {
-  flex: 1;
-  grid-template-columns: repeat(2, 1fr);
+  flex: 1 1 100px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .hud-bottom.folded .hud-stats > div:nth-child(n + 3) {
@@ -1930,6 +1943,7 @@ select {
   justify-content: center;
   gap: 8px;
   box-sizing: border-box;
+  max-width: 100%;
   min-height: var(--hit);
   margin: 0;
   padding: 6px 20px;

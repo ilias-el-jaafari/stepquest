@@ -95,3 +95,8 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
   - _Requirements: 15.1, 15.2, 15.3_
 - [x] 69.10 Property tests: any JSON value gives a valid look, valid looks are unchanged, one bad part repairs only that part
   - _Requirements: 15.1_
+
+## Bottom bar fit (Nov 2026, requirement 16)
+
+- [x] 70.1 Quest bottom bar and button rows fit 320 to 430 px in EN and ES (wrapping bar, `min-width: 0`, label clamp 9 to 10 px); `hudFit.test.ts` checks label geometry and the CSS rules
+  - _Requirements: 16.1 to 16.4_

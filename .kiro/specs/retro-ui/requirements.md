@@ -92,3 +92,14 @@ Related: [quest](../quest/requirements.md) (HUD content, resume after reload), [
 2. THE SYSTEM SHALL keep only a repaired look in memory and in storage, so every screen shows the same walker the next start shows.
 3. THE SYSTEM SHALL build and cache the walker's sprites from the repaired look, so that a look with invalid parts cannot put wrong sprites under another look's cache key.
 4. WHEN storage is unavailable or full, THE SYSTEM SHALL keep the chosen look for the session.
+
+### Requirement 16 (task 70): Bottom bar and button rows fit every phone
+
+**User Story:** As a walker on any phone, I want every button in the quest bar and in the dialogs to stay inside its frame in my language, so that I can always tap End.
+
+#### Acceptance Criteria
+
+1. WHEN the viewport is 320 to 430 px wide, THE SYSTEM SHALL keep the walked/steps readout, the fold button, the sound button and the End button of the quest bottom bar inside the console frame, in English and in Spanish, without changing the wording.
+2. WHEN the bar is too narrow for one row, THE SYSTEM SHALL wrap the readout onto its own row, and SHALL shrink the text button's label to no less than 9 px before anything leaves the frame.
+3. THE SYSTEM SHALL let every flex child of a button row shrink (`min-width: 0`) and SHALL cap `.pix-btn` at the width of its container.
+4. WHEN a button row of the planner, a dialog or the complete screen is shown in Spanish at 320 px, THE SYSTEM SHALL fit each word of every label, and an automated check SHALL fail when a label or a rule regresses.

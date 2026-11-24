@@ -233,3 +233,11 @@ Checked and correct: corrupt JSON, a throwing `getItem`, `null`, arrays and prim
 Open points, not changed: the sprite cache is not bounded (at most 2 × 6 × 7 × 8 × 8 × 6 = 32 256 looks, only the ones shown are built); another tab's change is not seen until reload (no `storage` listener); the saved look has no version, so reordering a palette later would change colours silently (add a version then).
 
 Tests: `look.review.test.ts`, `useLook.test.ts`.
+
+## Quest bottom bar fit (task 70, requirement 16)
+
+Field bug (iPhone, 390 px, Spanish): "Terminar" left the console frame. Cause: the folded bar was a single non-wrapping flex row (stats `flex: 1` with `1fr` columns, round buttons `flex: none`, End button with 20 px side padding at 10 px), and grid `1fr` columns and flex children had an implicit `min-width: auto`.
+
+Fix, all in `src/index.css`: the folded bar wraps; the readout is `flex: 1 1 100px` with `minmax(0, 1fr)` columns and takes its own row when the buttons need the space; `.hud-buttons` wraps and has `min-width: 0`; its text buttons use `flex: 1 1 0`, 8 px side padding and `font-size: clamp(9px, 2.6vw, 10px)`; `.pix-btn` has `max-width: 100%`. Folded bar padding is 8 px 10 px.
+
+Geometry used by the test (`src/ui/hudFit.test.ts`): HUD content width = viewport - 2 x (6 + 3 + 8 + 10 + 4 + 10) = 238 px at 320 px. Spanish "Terminar" at 9 px is 72 px; with two 48 px round buttons and gaps it needs 212 px. Other rows (confirm, crash, onboarding, planner actions) already wrap with `flex-wrap`; the test covers their Spanish labels.
