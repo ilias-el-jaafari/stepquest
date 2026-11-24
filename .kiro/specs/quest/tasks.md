@@ -70,3 +70,17 @@ Findings and rationale: see "Architecture review (Nov 2026)" in [design.md](desi
   - _Requirements: 6c.1, 6c.3_
 - [x] 69.12 Property tests: steps → metres → steps exact, metres → steps → metres within half a stride, stride and height bounds
   - _Requirements: 6c.2, 6c.3_
+
+## End-of-quest summary (requirement 6d)
+
+- [x] 75.1 `quest/summary.ts`: stats, clamping, titles; unit and property tests
+  - _Requirements: 6d.1, 6d.4_
+- [x] 75.2 `ui/celebration.ts`: seeded confetti, fireworks and calm twinkles with a particle cap; tests
+  - _Requirements: 6d.5_
+- [x] 75.3 `fanfare` and `rest` effects in `audio/sfx.ts`
+  - _Requirements: 6d.7_
+- [x] 75.4 `ui/SummaryScreen.tsx` replaces `CompleteDialog`: hero hop, canvas, reduced motion, sound, two buttons; EN and ES copy; fit tests at 320 and 390
+  - _Requirements: 6d.1, 6d.3, 6d.6, 6d.7, 6d.8_
+- [x] 75.5 `QuestScreen`: paused variant on "End", "Back to map", "Plan another quest"; App flow tests
+  - _Requirements: 6d.2, 6d.3_
+

@@ -648,6 +648,25 @@ describe('engine lifecycle (review Nov 2026)', () => {
     engine.playSfx('gem')
     expect(ctx.oscillators).toBe(n)
   })
+
+  it('the summary fanfare and rest phrase play, and mute or voice only silence them', () => {
+    const on = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    on.unlock()
+    const ctxOn = FakeContext.instances.at(-1)!
+    on.playSfx('fanfare')
+    const afterFanfare = ctxOn.oscillators
+    expect(afterFanfare).toBeGreaterThan(6)
+    on.playSfx('rest')
+    expect(ctxOn.oscillators).toBeGreaterThan(afterFanfare)
+    for (const settings of [{ ...DEFAULT_AUDIO, muted: true }, { ...DEFAULT_AUDIO, voiceOnly: true }]) {
+      const off = new AudioEngine(settings, fakeWindow())
+      off.unlock()
+      const ctx = FakeContext.instances.at(-1)!
+      off.playSfx('fanfare')
+      off.playSfx('rest')
+      expect(ctx.oscillators).toBe(0)
+    }
+  })
 })
 
 describe('P-V5: the bubble always matches the phrase on air', () => {

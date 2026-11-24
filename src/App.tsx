@@ -162,6 +162,7 @@ export default function App() {
         error={runner.error}
         wakeActive={runner.wakeActive}
         resumed={state.resumed}
+        walker={walkerArt}
         onEnd={endQuest}
         onUseSim={() => runner.switchToSimulation(sim.speed)}
       />

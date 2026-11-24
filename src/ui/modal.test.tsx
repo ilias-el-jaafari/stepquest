@@ -72,7 +72,7 @@ describe('ConfirmDialog', () => {
     await act(async () => root.render(<I18nProvider><ConfirmDialog message="quest.endConfirm" yes="quest.endYes" no="quest.endNo" onYes={yes} onNo={no} /></I18nProvider>))
     const dialog = host.querySelector('[role="alertdialog"]')!
     expect(dialog.getAttribute('aria-modal')).toBe('true')
-    expect(host.querySelector(`[id="${dialog.getAttribute('aria-labelledby')}"]`)?.textContent).toContain('End this quest?')
+    expect(host.querySelector(`[id="${dialog.getAttribute('aria-labelledby')}"]`)?.textContent).toContain('Stop here?')
     expect(document.activeElement).toBe(host.querySelector('[data-testid="confirm-no"]'))
     await key('Escape')
     expect(no).toHaveBeenCalledTimes(1)

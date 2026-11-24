@@ -46,7 +46,7 @@ describe('other button rows in Spanish and English', () => {
   const rows: Record<string, PlainKey[]> = {
     confirm: ['quest.endYes', 'quest.endNo'],
     crash: ['crash.retry', 'crash.reload'],
-    complete: ['complete.new'],
+    complete: ['summary.back', 'summary.new'],
   }
   it.each(Object.entries(tables))('wraps or fits each word at 320 px (%s)', (_l, table) => {
     const dialog = 320 - 2 * (6 + 3 + 8 + 10 + 4 + 16) // narrowest dialog content, generous

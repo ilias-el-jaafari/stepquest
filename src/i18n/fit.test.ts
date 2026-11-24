@@ -29,7 +29,7 @@ const TABS: PlainKey[] = ['tab.map', 'tab.bag', 'tab.hero', 'tab.settings']
 const TWO_UP: PlainKey[] = ['mode.loop', 'mode.oneway', 'place.start', 'place.end', 'look.boy', 'look.girl']
 /** Every other text button, one per row at full width (they may wrap onto a second line). */
 const WIDE: PlainKey[] = [
-  'action.generate', 'action.planning', 'action.reroll', 'quest.start', 'quest.simulate', 'quest.end', 'quest.useSim', 'complete.new',
+  'action.generate', 'action.planning', 'action.reroll', 'quest.start', 'quest.simulate', 'quest.end', 'quest.useSim', 'summary.back', 'summary.new',
   'sound.test', 'sound.mute', 'sound.voiceOnly', 'sound.close', 'onboarding.skip', 'onboarding.back', 'onboarding.next', 'onboarding.start',
   'onboarding.show', 'data.load', 'data.loading', 'data.backToDemo', 'loc.use', 'loc.locating', 'planner.edit', 'planner.hide',
   'area.load', 'safety.pick', 'safety.cancel', 'safety.useNormal', 'info.button', 'info.close', 'bag.demo',

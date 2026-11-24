@@ -55,3 +55,19 @@ Related: [routing](../routing/requirements.md) (rerouting, Requirement 7c), [voi
 1. THE SYSTEM SHALL keep the stride between 0.4 m and 1.2 m in whole centimetres wherever it is stored or typed (saved settings included), so the stride shown is the stride used.
 2. THE SYSTEM SHALL convert metres to steps by rounding to the nearest whole step, and steps to metres without rounding; steps → metres → steps SHALL return the same number for every goal from 100 to 60,000 steps and every stride in whole centimetres.
 3. WHEN the stride or the height is not a finite number, THE SYSTEM SHALL use the default stride.
+
+### Requirement 6d: End-of-quest summary
+
+**User Story:** As a walker, I want a full-screen summary with a small celebration when my quest ends, so that finishing (or stopping early) feels like the end of a level and I can see how I did.
+
+#### Acceptance Criteria
+
+1. WHEN the last gem (the flag) is collected and the finish dialogue closes, OR a finished quest is resumed after a reload, THE SYSTEM SHALL show a full-screen summary ("Quest complete!") with distance walked, steps, time, average pace, gems collected out of the total, and a short title earned.
+2. WHEN the player confirms "End" on a running quest, THE SYSTEM SHALL show the same summary as a gentler "Quest paused" variant (calm wording, no fireworks, no jump) instead of leaving the quest at once. The quest SHALL stay as it is until the player chooses a button.
+3. THE SYSTEM SHALL offer exactly two buttons: "Back to map" (closes the summary; for a paused quest the walk goes on) and "Plan another quest" (ends the quest and returns to planning, crediting steps as before). THE SYSTEM SHALL NOT offer sharing.
+4. THE SYSTEM SHALL compute the summary from the quest stats by one pure function: gems are clamped to 0..total, non-finite numbers count as 0, pace is undefined (shown "--") until 50 m are walked, and the title is a pure function of the variant, steps, pace and gems. A completed quest SHALL never earn a paused-only title and the other way round.
+5. THE SYSTEM SHALL draw the celebration in code only: falling confetti pixels and firework bursts on a low-resolution canvas, and the hero (the player's own look) hopping. A paused summary SHALL draw only a few slow twinkling pixels. The drawing SHALL be original (no third-party art) and use a bounded number of particles.
+6. WHEN the user prefers reduced motion, THE SYSTEM SHALL draw one still frame of the celebration and SHALL NOT animate the canvas or the hero.
+7. WHEN the summary opens, THE SYSTEM SHALL play a short synthesised chiptune fanfare (a softer two-note phrase for the paused variant) through the sound effects bus, so the sound settings (mute, voice only) silence it.
+8. THE SYSTEM SHALL write the summary in English and Spanish in the game voice of `copy-voice.md`, name the dialog for assistive technology, move focus into it, and fit at 320×568 and 390×844 (the content scrolls if a short screen needs it).
+

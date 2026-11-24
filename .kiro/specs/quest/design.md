@@ -127,3 +127,12 @@ Tests: `geo/review.test.ts`, `ui/settings.test.ts`.
 ## Streamed world (map-rendering requirement 19)
 
 New map cells may arrive during a quest. They only add drawing and graph edges: the quest state, its route, gems and progress are never changed by an arrival, the renderer keeps its grid object, and cells within one cell of the route are never evicted. A reroute started after an arrival uses the bigger graph. On resume, the cached cells under the saved route are added before the "route fits the map" check. Tested in `world/liveWorld.test.ts`. See [map-rendering design](../map-rendering/design.md#streaming-multi-area-world-requirement-19-task-70).
+
+## End-of-quest summary (requirement 6d)
+
+- `quest/summary.ts` (pure): `summarize(stats, kind)` returns the numbers shown plus a `TitleId`; `titleFor` ranks completed quests by steps (Street Scout, Road Hero, Grand Wayfarer, Street Legend, and Swift Strider for a quick walk) and paused quests by gems (Fresh Boots, Gem Seeker).
+- `ui/celebration.ts` (pure, seeded): a `Show` of confetti and firework particles in a small pixel grid, `stepShow(show, dtMs)`, capped at `MAX_PARTICLES`. The calm mode (paused) only has slow twinkles. `ui/SummaryScreen.tsx` owns the canvas (4 CSS px per pixel, `image-rendering: pixelated`), the hero sprite and the two buttons. With reduced motion it advances the show once and draws a single frame.
+- `audio/sfx.ts` gets `fanfare` and `rest`; the summary plays one on opening through `playSfx`, so the sound settings apply.
+- `QuestScreen` decides what to show: finished and finish dialogue closed gives the complete variant; "End" on a running quest asks, then shows the paused variant over the live quest with the stats frozen at that moment. "Back to map" only hides the summary; "Plan another quest" calls `onEnd`.
+- Tests: `quest/summary.test.ts` and `.property.test.ts`, `ui/celebration.test.ts`, `ui/SummaryScreen.test.tsx` (render, reduced motion, sound off, copy fit at 320 and 390), plus the App-level flow tests.
+

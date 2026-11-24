@@ -137,7 +137,7 @@ describe('active quest UI', () => {
     expect(host.textContent).toContain('Quest resumed')
   })
 
-  it('shows the quest complete screen with stats, and "New quest" goes back to planning', async () => {
+  it('shows the quest complete screen with stats, and "Plan another quest" goes back to planning', async () => {
     const route = demoQuestRoute()
     const now = Date.now()
     saveQuest({
@@ -156,7 +156,7 @@ describe('active quest UI', () => {
     expect(text).toContain('1:35:00')
     const { audioEngine } = await import('./audio/engine.ts')
     const menu = vi.spyOn(audioEngine(), 'playMenuMusic')
-    await act(async () => button('New quest')!.click())
+    await act(async () => button('Plan another quest')!.click())
     await waitFor(() => !!button('Plan quest'))
     // Back on the planning screen the calm menu music takes over.
     expect(menu).toHaveBeenCalled()
@@ -164,6 +164,25 @@ describe('active quest UI', () => {
     expect(localStorage.getItem(QUEST_STORAGE_KEY)).toBeNull()
     // A simulated walk does not count as steps walked today.
     expect(host.querySelector('[data-testid="steps-today"] strong')!.textContent).toBe('0')
+  })
+
+  it('"Back to map" closes the finished summary and keeps the quest on the map', async () => {
+    const route = demoQuestRoute()
+    const now = Date.now()
+    saveQuest({
+      ...createQuest(route, { strideM: 0.75, area: { kind: 'demo' }, simulated: true, now: now - 60_000 }),
+      collected: route.checkpoints.length,
+      alongM: route.distanceM,
+      odometer: { anchor: undefined, totalM: 600 },
+      finishedAt: now,
+      lastFixAt: now,
+    })
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!host.querySelector('[data-testid="summary-back"]'))
+    expect(host.querySelector('[data-testid="summary-gems"]')!.textContent).toBe(`${route.checkpoints.length}/${route.checkpoints.length}`)
+    await act(async () => (host.querySelector('[data-testid="summary-back"]') as HTMLButtonElement).click())
+    expect(host.querySelector('[data-testid="complete"]')).toBeNull()
+    expect(host.querySelector('[data-testid="hud"]')).not.toBeNull()
   })
 
   it('has a bottom tab bar that switches between map, bag, hero and settings', async () => {
@@ -256,7 +275,7 @@ describe('active quest UI', () => {
     expect(host.querySelector('.hud-msg.warn, .hud-msg.bad')).toBeNull()
     expect(host.textContent).not.toContain('Signal lost')
     // Back to planning: the real walk counts towards today's steps in the header.
-    await act(async () => button('New quest')!.click())
+    await act(async () => button('Plan another quest')!.click())
     await waitFor(() => !!host.querySelector('[data-testid="steps-today"]'))
     const today = Number(host.querySelector('[data-testid="steps-today"] strong')!.textContent!.replace(/[^\d]/g, ''))
     expect(today).toBeGreaterThan(Math.round((finish.distanceM - 4) / 0.75) - 5)
@@ -278,8 +297,8 @@ describe('active quest UI', () => {
     })
     await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
     await waitFor(() => !!host.querySelector('[data-testid="complete"]'))
-    expect(host.textContent).toContain('Has recogido el único punto de control.')
-    expect(host.textContent).not.toMatch(/los 1 puntos de control/)
+    expect(host.textContent).toContain('¡Misión completada!')
+    expect(host.querySelector('[data-testid="summary-gems"]')!.textContent).toBe('1/1')
     expect(host.textContent).not.toContain('Señal perdida')
     expect(host.querySelector('.hud-msg.warn, .hud-msg.bad')).toBeNull()
   })

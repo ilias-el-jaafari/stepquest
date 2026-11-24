@@ -4,16 +4,18 @@ import { formatDistance, formatNumber } from '../i18n/format.ts'
 import { directionTo } from '../quest/compass.ts'
 import { formatDuration, formatPace, nextCheckpoint, questStats, routeToNext, signalStatus, trackFor, type QuestState } from '../quest/quest.ts'
 import { snapToRoute } from '../quest/snap.ts'
+import { summarize, type Summary } from '../quest/summary.ts'
+import type { Sprite } from '../render/sprites.ts'
 import type { LocationErrorCode } from '../quest/geolocation.ts'
 import type { BBox, LatLon } from '../geo/geo.ts'
 import type { MapSource } from '../render/mapSource.ts'
 import type { MapLoad } from '../world/streamer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 import { useAudio } from '../audio/useAudio.ts'
-import { CompleteDialog } from './CompleteDialog.tsx'
 import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { DialogueBox } from './DialogueBox.tsx'
 import { MapView } from './MapView.tsx'
+import { SummaryScreen } from './SummaryScreen.tsx'
 import { SoundMenu } from './SoundMenu.tsx'
 import type { Pickup } from './useQuestRunner.ts'
 
@@ -28,6 +30,8 @@ type Props = {
   error: LocationErrorCode | undefined
   wakeActive: boolean
   resumed: boolean
+  /** The player's hero, for the summary celebration. */
+  walker: Sprite
   onEnd: () => void
   onUseSim: () => void
 }
@@ -37,10 +41,17 @@ const END_CONFIRM = { message: 'quest.endConfirm', yes: 'quest.endYes', no: 'que
 const EMPTY_MARKERS = {}
 const ignoreTap = () => {}
 
+/** A small stable number from the quest id (the seed of the celebration). */
+function seedOf(id: string): number {
+  let h = 7
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0
+  return Math.abs(h)
+}
+
 /** The HUD sits 10 px above the screen edge; the stack's own bottom margin is 8 px, plus a little air. */
 const HUD_GAP = 6
 
-export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeActive, resumed, onEnd, onUseSim }: Props) {
+export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeActive, resumed, walker, onEnd, onUseSim }: Props) {
   const { t, locale } = useI18n()
   const { engine, status, settings: sound, phrase } = useAudio()
   const [now, setNow] = useState(() => Date.now())
@@ -62,6 +73,9 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
   const [statsOpen, setStatsOpen] = useState(false)
   const [dismissed, setDismissed] = useState(0)
   const [confirming, setConfirming] = useState(false)
+  // The summary: closed with "Back to map" (finished), or the paused one with the numbers of the moment "End" was confirmed.
+  const [completeClosed, setCompleteClosed] = useState(false)
+  const [paused, setPaused] = useState<Summary | undefined>()
   const [showResumed, setShowResumed] = useState(resumed)
   // Dialogue boxes: the welcome line (not after a resume) and the finish speech.
   const [startDone, setStartDone] = useState(resumed || quest.collected > 0)
@@ -164,6 +178,12 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
 
   // A finished quest ends at once; a running one asks first, in the app's own dialog.
   const askEnd = () => (quest.finishedAt !== undefined ? onEnd() : setConfirming(true))
+
+  // "End" confirmed: show how far the walk got; the quest itself goes on until a summary button is chosen.
+  const pauseHere = () => {
+    setConfirming(false)
+    setPaused(summarize(stats, 'paused'))
+  }
 
   return (
     <div className="quest" data-testid="quest">
@@ -293,10 +313,11 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
               </div>
             </div>
 
-            {finished && finishDone && (
-              <CompleteDialog total={stats.total} walkedM={stats.walkedM} steps={stats.steps} elapsedMs={stats.elapsedMs} paceMinPerKm={stats.paceMinPerKm} targetSteps={quest.route.targetSteps} onNew={onEnd} />
+            {finished && finishDone && !completeClosed && (
+              <SummaryScreen summary={summarize(stats, 'complete')} walker={walker} seed={seedOf(quest.id)} onBack={() => setCompleteClosed(true)} onNew={onEnd} />
             )}
-            {confirming && <ConfirmDialog {...END_CONFIRM} testId="confirm-end" onYes={onEnd} onNo={() => setConfirming(false)} />}
+            {!finished && paused && <SummaryScreen summary={paused} walker={walker} seed={seedOf(quest.id)} onBack={() => setPaused(undefined)} onNew={onEnd} />}
+            {confirming && <ConfirmDialog {...END_CONFIRM} testId="confirm-end" onYes={pauseHere} onNo={() => setConfirming(false)} />}
           </div>
         </div>
       </div>

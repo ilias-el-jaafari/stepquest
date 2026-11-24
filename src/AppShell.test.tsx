@@ -258,7 +258,18 @@ describe('accessibility', () => {
     expect(host.querySelector('[data-testid="hud"]')).not.toBeNull()
     await act(async () => button('End')!.click())
     await act(async () => (host.querySelector('[data-testid="confirm-yes"]') as HTMLButtonElement).click())
+    // Ending early shows the gentle "paused" summary; the quest goes on until a button is chosen.
+    await waitFor(() => !!host.querySelector('[data-testid="complete"][data-kind="paused"]'))
+    expect(host.textContent).toContain('Quest paused')
+    expect(localStorage.getItem(QUEST_STORAGE_KEY)).not.toBeNull()
+    await act(async () => (host.querySelector('[data-testid="summary-back"]') as HTMLButtonElement).click())
+    expect(host.querySelector('[data-testid="complete"]')).toBeNull()
+    expect(host.querySelector('[data-testid="hud"]')).not.toBeNull()
+    await act(async () => button('End')!.click())
+    await act(async () => (host.querySelector('[data-testid="confirm-yes"]') as HTMLButtonElement).click())
+    await act(async () => (host.querySelector('[data-testid="summary-new"]') as HTMLButtonElement).click())
     await waitFor(() => !host.querySelector('[data-testid="hud"]'))
+    expect(localStorage.getItem(QUEST_STORAGE_KEY)).toBeNull()
   })
 
   it('B15: a modal intro makes the app behind it inert and Escape works from anywhere', async () => {
