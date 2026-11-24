@@ -2,7 +2,7 @@ import { bboxAreaSphereKm2, bboxAround, haversine, isValidBBox, type BBox, type 
 import { cellBBox, cellKey, cellsBBox, isValidCell, type CellId } from '../world/cells.ts'
 import { sliceToCells, type CellRecord } from '../world/slice.ts'
 import { CODEC_VERSION, CorruptDataError, decodeOsm, encodeOsm, type CompactOsm } from './codec.ts'
-import { isFresh, type AreaCache } from './cache.ts'
+import { CACHE_READ_TIMEOUT_MS, CACHE_WRITE_TIMEOUT_MS, isFresh, pruneEntries, readEntryIndex, within, type AreaCache, type CacheEntry, type IndexEntry as CellIndexEntry } from './cache.ts'
 import { DownloadError, downloadArea, type FetchLike } from './download.ts'
 import type { WorkerMessage, WorkerRequest } from './download.worker.ts'
 import type { OsmData } from './types.ts'
@@ -13,8 +13,12 @@ export const OVERPASS_ENDPOINTS = [
   'https://overpass.private.coffee/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
-/** Wait at least this long between two requests from this tab. */
-export const MIN_REQUEST_GAP_MS = 10_000
+/** Wait at least this long between the starts of two requests from this tab (requirement 20.7). */
+export const MIN_REQUEST_GAP_MS = 1_500
+/** At most this many downloads run at once from this tab (an explicit area download runs alone). */
+export const MAX_IN_FLIGHT = 2
+/** No download is allowed to hold its slot longer than this, whatever the worker or the mirrors do (requirement 20.9). */
+export const REQUEST_DEADLINE_MS = 75_000
 /** Refuse areas larger than this (km²) so one walk never asks for a whole city. */
 export const MAX_AREA_KM2 = 36
 
@@ -85,29 +89,14 @@ export function cellCacheKey(c: CellId): string {
 /** At most this many cells are kept in IndexedDB; the oldest saved go first (local deletes only). */
 export const MAX_CELL_ENTRIES = 300
 const CELL_INDEX_KEY = 'stepquest.cellIndex'
-type CellIndexEntry = { key: string; savedAt: number }
-
-function readCellIndex(): CellIndexEntry[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(CELL_INDEX_KEY) ?? '[]') as unknown
-    return Array.isArray(raw) ? raw.filter((e): e is CellIndexEntry => !!e && typeof e === 'object' && typeof (e as CellIndexEntry).key === 'string' && typeof (e as CellIndexEntry).savedAt === 'number') : []
-  } catch {
-    return []
-  }
-}
-
-function writeCellIndex(entries: CellIndexEntry[]): void {
-  try {
-    localStorage.setItem(CELL_INDEX_KEY, JSON.stringify(entries))
-  } catch {
-    // Storage full or blocked: the cells are still cached, only pruning waits.
-  }
-}
 
 /** What `loadCells` gives back: one record per cell asked for, and where each came from. */
 export type CellsResult = { records: CellRecord[]; cached: CellId[]; downloaded: CellId[] }
 
-export type Downloader = (bbox: BBox, onProgress?: (bytes: number) => void) => Promise<CompactOsm>
+/** What a download needs besides the box: progress, a way to cancel it, which query to send and the mirror order. */
+export type DownloadExtras = { signal?: AbortSignal; endpoints?: readonly string[]; onMirror?: (endpoint: string) => void }
+
+export type Downloader = (bbox: BBox, onProgress?: (bytes: number) => void, extras?: DownloadExtras) => Promise<CompactOsm>
 
 export type OverpassClientOptions = {
   cache: AreaCache
@@ -149,24 +138,54 @@ function writeIndex(entries: IndexEntry[]): void {
 
 const contains = (outer: IndexEntry['bbox'], b: BBox) => outer[0] <= b.south && outer[1] <= b.west && outer[2] >= b.north && outer[3] >= b.east
 
-/** Runs the download in a Web Worker (parsing megabytes of JSON off the main thread). */
-function workerDownloader(endpoints: string[]): Downloader {
-  return (bbox, onProgress) =>
+/** Runs the download in a Web Worker (parsing megabytes of JSON off the main thread). Aborting ends the worker. */
+function workerDownloader(): Downloader {
+  return (bbox, onProgress, extras) =>
     new Promise((resolve, reject) => {
       const worker = new Worker(new URL('./download.worker.ts', import.meta.url), { type: 'module' })
+      const end = () => {
+        extras?.signal?.removeEventListener('abort', onAbort)
+        worker.terminate()
+      }
+      const onAbort = () => {
+        end()
+        reject(new DownloadError('network', 'Download cancelled'))
+      }
+      extras?.signal?.addEventListener('abort', onAbort)
       worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
         const m = e.data
         if (m.type === 'progress') return onProgress?.(m.bytes)
-        worker.terminate()
+        if (m.type === 'mirror') return extras?.onMirror?.(m.endpoint)
+        end()
         if (m.type === 'done') resolve(m.data)
-        else reject(new DownloadError(m.code, m.message))
+        else if (m.type === 'error') reject(new DownloadError(m.code, m.message))
+        else reject(new DownloadError('badResponse', 'Unexpected worker message'))
       }
       worker.onerror = (e) => {
-        worker.terminate()
+        end()
         reject(new DownloadError('network', e.message))
       }
-      worker.postMessage({ bbox, endpoints } satisfies WorkerRequest)
+      worker.postMessage({ type: 'overpass', bbox, endpoints: [...(extras?.endpoints ?? OVERPASS_ENDPOINTS)] } satisfies WorkerRequest)
     })
+}
+
+/** Remembers which mirror answered last and asks it first; a mirror that failed goes to the back. */
+export class MirrorOrder {
+  private order: string[]
+  constructor(endpoints: readonly string[]) {
+    this.order = [...endpoints]
+  }
+  list(): string[] {
+    return [...this.order]
+  }
+  good(endpoint: string): void {
+    this.order = [endpoint, ...this.order.filter((e) => e !== endpoint)]
+  }
+  /** After a failed download the next one starts with another mirror. */
+  rotate(): void {
+    const [first, ...rest] = this.order
+    if (first !== undefined) this.order = [...rest, first]
+  }
 }
 
 /**
@@ -180,25 +199,58 @@ export class OverpassClient {
   private readonly cache: AreaCache
   private readonly now: () => number
   private readonly download: Downloader
-  private inFlight = false
+  private inFlight = 0
+  private exclusive = false
   private lastRequestAt = -Infinity
+  private readonly mirrors: MirrorOrder
   private retiredOldVersions = false
 
   constructor(options: OverpassClientOptions) {
     this.cache = options.cache
     this.now = options.now ?? (() => Date.now())
-    const endpoints = options.endpoints ?? OVERPASS_ENDPOINTS
+    this.mirrors = new MirrorOrder(options.endpoints ?? OVERPASS_ENDPOINTS)
     const fetchFn = options.fetch
     this.download =
       options.download ??
       (fetchFn || typeof Worker === 'undefined'
-        ? (bbox, onProgress) => downloadArea(bbox, { endpoints, fetch: fetchFn ?? ((input, init) => fetch(input, init)), onProgress })
-        : workerDownloader(endpoints))
+        ? (bbox, onProgress, extras) =>
+            downloadArea(bbox, {
+              endpoints: extras?.endpoints ?? this.mirrors.list(),
+              fetch: fetchFn ?? ((input, init) => fetch(input, init)),
+              onProgress,
+              signal: extras?.signal,
+              onMirror: extras?.onMirror,
+            })
+        : workerDownloader())
+  }
+
+  private read(key: string) {
+    return within(this.cache.get(key), CACHE_READ_TIMEOUT_MS, undefined)
+  }
+
+  private write(key: string, entry: CacheEntry): Promise<boolean> {
+    return within(this.cache.set(key, entry).then(() => true), CACHE_WRITE_TIMEOUT_MS, false)
+  }
+
+  private readonly writes = new Set<Promise<void>>()
+  private tail: Promise<void> = Promise.resolve()
+
+  /** Run cache writes after the answer was handed over (arrival never waits for IndexedDB), one job at a time so the index stays right. */
+  private later(work: () => Promise<void>): void {
+    const p = this.tail.then(work).catch(() => undefined)
+    this.tail = p
+    this.writes.add(p)
+    void p.finally(() => this.writes.delete(p))
+  }
+
+  /** Resolves when every pending cache write is done (tests). */
+  async settled(): Promise<void> {
+    while (this.writes.size) await Promise.all([...this.writes])
   }
 
   /** Decode a stored entry; a damaged or foreign one is deleted and counts as a miss. */
   private async readEntry(key: string): Promise<OsmData | undefined> {
-    const entry = await this.cache.get(key).catch(() => undefined)
+    const entry = await this.read(key)
     if (!entry || !isFresh(entry.savedAt, this.now())) return undefined
     try {
       return decodeOsm(entry.data)
@@ -253,55 +305,75 @@ export class OverpassClient {
     const bbox = snapBBox(request)
     if (!isValidBBox(bbox)) throw new OverpassError('badArea', 'Invalid area')
     if (bboxAreaKm2(bbox) > MAX_AREA_KM2) throw new OverpassError('tooLarge', 'Area too large')
-    const { compact, data } = await this.fetchOnce(bbox, onProgress)
+    const { compact, data } = await this.fetchOnce(bbox, onProgress, { alone: true })
     const key = cacheKey(bbox)
     const savedAt = this.now()
-    const saved = await this.cache.set(key, { savedAt, data: compact }).then(
-      () => true,
-      () => false,
-    )
+    const saved = await this.write(key, { savedAt, data: compact })
     if (saved) writeIndex(await this.prune([...readIndex().filter((e) => e.key !== key), { key, bbox: [bbox.south, bbox.west, bbox.north, bbox.east], savedAt }]))
     return { data, fromCache: false }
   }
 
-  /** Whether a download is running (the streamer does not even ask then). */
+  /** Whether every download slot is taken (the streamer does not even ask then). */
   get busy(): boolean {
+    return this.exclusive || this.inFlight >= MAX_IN_FLIGHT
+  }
+
+  /** Downloads running now. */
+  get running(): number {
     return this.inFlight
   }
 
-  /** Time (ms) until the spacing rule allows the next download; 0 when one may start now. */
+  /** Time (ms) until the spacing rule allows the next download to start; 0 when one may start now. */
   waitMs(): number {
     return Math.max(0, this.lastRequestAt + MIN_REQUEST_GAP_MS - this.now())
   }
 
   /**
-   * The one place a request is sent: refuses while another runs (`busy`) or before the gap is over
-   * (`rateLimited`), then downloads and decodes. An answer that cannot be decoded is `badResponse`
-   * and is never cached by the callers.
+   * The one place a request is sent: refuses while every slot is taken (`busy`; an area download
+   * needs all of them) or before the gap since the last start is over (`rateLimited`), then
+   * downloads and decodes under a hard deadline. The slot is freed when the deadline passes even if
+   * the download never answers. An answer that cannot be decoded is `badResponse` and is never
+   * cached by the callers. The mirror that answered is asked first next time.
    */
-  private async fetchOnce(bbox: BBox, onProgress?: (bytes: number) => void): Promise<{ compact: CompactOsm; data: OsmData }> {
-    if (this.inFlight) throw new OverpassError('busy', 'A map download is already running')
+  private async fetchOnce(bbox: BBox, onProgress?: (bytes: number) => void, opts: { alone?: boolean } = {}): Promise<{ compact: CompactOsm; data: OsmData }> {
+    if (this.busy || (opts.alone && this.inFlight > 0)) throw new OverpassError('busy', 'A map download is already running')
     const wait = this.waitMs()
     if (wait > 0) throw new OverpassError('rateLimited', `Wait ${Math.ceil(wait / 1000)} s`)
-    this.inFlight = true
+    this.inFlight++
+    if (opts.alone) this.exclusive = true
     this.lastRequestAt = this.now()
+    const controller = new AbortController()
+    let deadline: ReturnType<typeof setTimeout> | undefined
     try {
-      const compact = await this.download(bbox, onProgress)
+      const timedOut = new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => {
+          controller.abort()
+          reject(new OverpassError('network', 'The download took too long'))
+        }, REQUEST_DEADLINE_MS)
+      })
+      const compact = await Promise.race([
+        this.download(bbox, onProgress, { signal: controller.signal, endpoints: this.mirrors.list(), onMirror: (e) => this.mirrors.good(e) }),
+        timedOut,
+      ])
       // Decode first: an answer we cannot read is never cached.
       return { compact, data: decodeOsm(compact) }
     } catch (error) {
+      this.mirrors.rotate()
       if (error instanceof OverpassError) throw error
       if (error instanceof DownloadError) throw new OverpassError(error.code, error.message)
       throw new OverpassError(error instanceof CorruptDataError ? 'badResponse' : 'network', error instanceof Error ? error.message : String(error))
     } finally {
-      this.inFlight = false
+      clearTimeout(deadline)
+      controller.abort()
+      this.inFlight--
+      if (opts.alone) this.exclusive = false
     }
   }
 
   /** A cached cell, or undefined (missing, expired, damaged: a damaged entry is deleted). */
   async cachedCell(cell: CellId): Promise<CellRecord | undefined> {
     const key = cellCacheKey(cell)
-    const entry = await this.cache.get(key).catch(() => undefined)
+    const entry = await this.read(key)
     if (!entry || !isFresh(entry.savedAt, this.now())) return undefined
     try {
       const data = decodeOsm(entry.data)
@@ -340,27 +412,19 @@ export class OverpassClient {
     const { data } = await this.fetchOnce(bbox, onProgress)
     const savedAt = this.now()
     const fresh = sliceToCells(data, missing, bbox, savedAt)
-    const index = readCellIndex()
-    const written: CellIndexEntry[] = []
-    for (const rec of fresh) {
-      const key = cellCacheKey(rec.cell)
-      const ok = await this.cache.set(key, { savedAt, data: encodeOsm(rec.data) }).then(
-        () => true,
-        () => false,
-      )
-      if (ok) written.push({ key, savedAt })
-    }
-    if (written.length) await this.pruneCells([...index.filter((e) => !written.some((w) => w.key === e.key)), ...written])
+    this.later(async () => {
+      const index = readEntryIndex(CELL_INDEX_KEY)
+      const written: CellIndexEntry[] = []
+      for (const rec of fresh) {
+        const key = cellCacheKey(rec.cell)
+        if (await this.write(key, { savedAt, data: encodeOsm(rec.data) })) written.push({ key, savedAt })
+      }
+      if (written.length) await this.pruneEntries(CELL_INDEX_KEY, MAX_CELL_ENTRIES, [...index.filter((e) => !written.some((w) => w.key === e.key)), ...written])
+    })
     return { records: [...records, ...fresh], cached, downloaded: fresh.map((r) => r.cell) }
   }
 
-  /** Keep the newest `MAX_CELL_ENTRIES` fresh cells in the index and delete the data of the rest (no request). */
-  private async pruneCells(index: CellIndexEntry[]): Promise<void> {
-    const live = index.filter((e) => isFresh(e.savedAt, this.now()) && e.key.startsWith(`v${CODEC_VERSION}:`))
-    live.sort((a, b) => a.savedAt - b.savedAt)
-    const kept = live.slice(-MAX_CELL_ENTRIES)
-    const keptKeys = new Set(kept.map((e) => e.key))
-    if (this.cache.delete) for (const e of index) if (!keptKeys.has(e.key)) await this.cache.delete(e.key).catch(() => undefined)
-    writeCellIndex(kept)
+  private pruneEntries(indexKey: string, max: number, index: CellIndexEntry[]): Promise<void> {
+    return pruneEntries(this.cache, indexKey, max, index, this.now())
   }
 }

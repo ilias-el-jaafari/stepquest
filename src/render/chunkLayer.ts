@@ -73,7 +73,8 @@ export class ChunkLayer {
     this.overview = new OverviewCanvas(grid, (c, r) => paintOverview(c, grid, this.town, r))
     this.far = new OverviewCanvas(grid, (c, r) => paintFarOverview(c, grid, r), FAR_STEP)
     this.unsubscribe = source.subscribe((rect) => {
-      if (rect) this.invalidate(rect)
+      // After the frame moved, the source speaks about another grid: this layer is about to be replaced.
+      if (rect && source.grid === grid) this.invalidate(rect)
     })
   }
 

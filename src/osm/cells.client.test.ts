@@ -3,7 +3,7 @@ import { cellBBox } from '../world/cells.ts'
 import { MemoryCache, CACHE_TTL_MS, type CacheEntry } from './cache.ts'
 import { encodeOsm } from './codec.ts'
 import { normalizeOverpass, type OverpassResponse } from './normalize.ts'
-import { cellCacheKey, MAX_CELL_ENTRIES, MIN_REQUEST_GAP_MS, OverpassClient, OverpassError, type Downloader } from './overpass.ts'
+import { cellCacheKey, MAX_CELL_ENTRIES, MAX_IN_FLIGHT, MIN_REQUEST_GAP_MS, OverpassClient, type Downloader } from './overpass.ts'
 import type { BBox } from '../geo/geo.ts'
 
 const A = { i: 3949, j: -40 }
@@ -37,7 +37,7 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
-describe('OverpassClient.loadCells (19.3, 19.6, 19.7)', () => {
+describe('OverpassClient.loadCells (19.6, 19.7, 20.7, 20.9)', () => {
   it('fetches missing cells in one request for their box and cuts the answer per cell', async () => {
     const { calls, download } = fakeDownloader()
     const client = new OverpassClient({ cache: new MemoryCache(), download })
@@ -53,12 +53,14 @@ describe('OverpassClient.loadCells (19.3, 19.6, 19.7)', () => {
     const cache = new MemoryCache()
     const client = new OverpassClient({ cache, download })
     await client.loadCells([A])
+    await client.settled()
     vi.advanceTimersByTime(MIN_REQUEST_GAP_MS)
     const res = await client.loadCells([A, B])
     expect(res.cached).toEqual([A])
     expect(res.downloaded).toEqual([B])
     expect(calls).toHaveLength(2)
     expect(calls[1]).toEqual(cellBBox(B))
+    await client.settled()
     vi.advanceTimersByTime(MIN_REQUEST_GAP_MS)
     const again = await client.loadCells([A, B])
     expect(again.downloaded).toEqual([])
@@ -66,29 +68,34 @@ describe('OverpassClient.loadCells (19.3, 19.6, 19.7)', () => {
     expect(await cache.get(cellCacheKey(A))).toBeDefined()
   })
 
-  it('refuses a second request while one runs, and one inside the 10 s gap', async () => {
-    let release: () => void = () => {}
+  it('runs at most MAX_IN_FLIGHT downloads, starts them at least MIN_REQUEST_GAP_MS apart, and refuses the rest', async () => {
+    const releases: (() => void)[] = []
     const download: Downloader = (bbox) =>
       new Promise((resolve) => {
-        release = () => resolve(encodeOsm(normalizeOverpass(answer(), bbox)))
+        releases.push(() => resolve(encodeOsm(normalizeOverpass(answer(), bbox))))
       })
     const client = new OverpassClient({ cache: new MemoryCache(), download })
     const first = client.loadCells([A])
     await vi.advanceTimersByTimeAsync(0)
-    expect(client.busy).toBe(true)
-    await expect(client.loadCells([B])).rejects.toMatchObject({ code: 'busy' })
-    release()
-    await first
+    expect(client.running).toBe(1)
+    expect(client.busy).toBe(false)
+    // The second may start, but not inside the gap.
     await expect(client.loadCells([B])).rejects.toMatchObject({ code: 'rateLimited' })
     expect(client.waitMs()).toBe(MIN_REQUEST_GAP_MS)
-    vi.advanceTimersByTime(MIN_REQUEST_GAP_MS - 1)
-    await expect(client.loadCells([B])).rejects.toBeInstanceOf(OverpassError)
-    vi.advanceTimersByTime(1)
-    expect(client.waitMs()).toBe(0)
-    const p = client.loadCells([B])
+    await vi.advanceTimersByTimeAsync(MIN_REQUEST_GAP_MS)
+    const second = client.loadCells([B])
     await vi.advanceTimersByTimeAsync(0)
-    release()
-    await expect(p).resolves.toMatchObject({ downloaded: [B] })
+    expect(client.running).toBe(MAX_IN_FLIGHT)
+    expect(client.busy).toBe(true)
+    await vi.advanceTimersByTimeAsync(MIN_REQUEST_GAP_MS)
+    await expect(client.loadCells([{ i: 3949, j: -38 }])).rejects.toMatchObject({ code: 'busy' })
+    // An explicit area download needs the client to itself.
+    releases[0]!()
+    await first
+    await expect(client.loadArea({ south: 39.5, west: -0.4, north: 39.51, east: -0.39 })).rejects.toMatchObject({ code: 'busy' })
+    releases[1]!()
+    await expect(second).resolves.toMatchObject({ downloaded: [B] })
+    expect(client.running).toBe(0)
   })
 
   it('passes 429 through as rateLimited and caches nothing', async () => {
@@ -110,6 +117,7 @@ describe('OverpassClient.loadCells (19.3, 19.6, 19.7)', () => {
     const cache = new MemoryCache()
     const client = new OverpassClient({ cache, download })
     await client.loadCells([A])
+    await client.settled()
     vi.advanceTimersByTime(CACHE_TTL_MS)
     expect(await client.cachedCell(A)).toBeUndefined()
     await client.loadCells([A])
@@ -137,7 +145,9 @@ describe('OverpassClient.loadCells (19.3, 19.6, 19.7)', () => {
     for (const e of index) await cache.set(e.key, { savedAt: e.savedAt, data: {} as never })
     localStorage.setItem('stepquest.cellIndex', JSON.stringify(index))
     const { download } = fakeDownloader()
-    await new OverpassClient({ cache, download }).loadCells([A])
+    const client = new OverpassClient({ cache, download })
+    await client.loadCells([A])
+    await client.settled()
     const kept = JSON.parse(localStorage.getItem('stepquest.cellIndex')!) as { key: string }[]
     expect(kept).toHaveLength(MAX_CELL_ENTRIES)
     expect(kept.at(-1)!.key).toBe(cellCacheKey(A))
@@ -149,7 +159,9 @@ describe('OverpassClient.loadCells (19.3, 19.6, 19.7)', () => {
     const cache = new MemoryCache()
     cache.set = () => Promise.reject(new Error('quota'))
     const { download } = fakeDownloader()
-    const res = await new OverpassClient({ cache, download }).loadCells([A])
+    const client = new OverpassClient({ cache, download })
+    const res = await client.loadCells([A])
+    await client.settled()
     expect(res.records).toHaveLength(1)
     expect(localStorage.getItem('stepquest.cellIndex')).toBeNull()
   })

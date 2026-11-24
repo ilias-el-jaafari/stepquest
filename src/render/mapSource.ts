@@ -24,6 +24,8 @@ export interface MapSource {
   frontier?(): readonly FrontierEdge[]
   /** `rect` changed (a cell arrived or left), or with no rect only the loading set changed. Returns the unsubscribe. */
   subscribe(fn: (rect: TileRect | undefined) => void): () => void
+  /** The frame moved: `grid` is a new object (requirement 20.17). Optional: a single extract never moves. */
+  subscribeFrame?(fn: () => void): () => void
 }
 
 const sources = new WeakMap<TileGrid, MapSource>()

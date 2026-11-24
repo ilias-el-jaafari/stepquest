@@ -133,7 +133,7 @@ describe('backing store (B5)', () => {
   })
 })
 
-describe('minimum zoom (requirement 19.20)', () => {
+describe('minimum zoom (requirements 19.20 and 20.13)', () => {
   it('stops every zoom path at the floor and leaves the default unchanged', () => {
     const c = new Camera(100, 100)
     c.setSize(390, 844)

@@ -11,21 +11,38 @@ import { isComplete, sliceToCells, type CellRecord } from './slice.ts'
 import { TileWorld } from './tileWorld.ts'
 import { compact, WorldData } from './worldData.ts'
 
-/** A loaded map as the app uses it. `live` is set for a streamed world, whose snapshots share one `grid`. */
+/** A loaded map as the app uses it. `live` is set for a streamed world, whose snapshots share one `grid` until the frame moves. */
 export type World = { data: OsmData; grid: TileGrid; graph: WalkGraph; safety: SafetyContext; live?: LiveWorld }
 
-/** Cells kept in memory at most (7 × 7); farther, older ones are dropped first (requirement 19.15). */
+/** Cells kept in memory at most per kind of record (7 × 7); farther, older ones are dropped first (requirement 19.15). */
 export const MAX_RESIDENT_CELLS = 49
 
+type Paint = { rec: CellRecord; coarse: boolean }
+
 /**
- * A streamed world: cell records merged into one map (`WorldData`), one growing walking graph and
- * one frame of tiles. Adding cells never changes what an earlier `World` snapshot holds (the snapshot's
- * data, graph and safety are copies), and the `grid` object stays the same, so a renderer and an
- * active quest keep running while the map grows. Implements `MapSource` for the renderer.
+ * A streamed world. Three kinds of cell record:
+ * - graph records (the bundled extract, Overpass cells): merged into one map (`WorldData`) and one
+ *   growing walking graph, and drawn where nothing better is there;
+ * - drawn records (vector-tile detail, requirement 21): tiles and town only;
+ * - coarse records (low-zoom vector tiles): tiles only, the placeholder.
+ * A cell paints, in this order of preference: a complete graph record, a drawn record, a partial graph
+ * record, a coarse record (`best`). Adding cells never changes what an earlier `World` snapshot holds,
+ * so a renderer and an active quest keep running while the map grows. Implements `MapSource`.
  */
 export class LiveWorld implements MapSource {
-  readonly tiles: TileWorld
+  /** The drawn frame. Replaced by `recentre` when the view leaves it (requirement 20.17); the data and graph are kept. */
+  tiles: TileWorld
+  private stopTiles: () => void
+  /** Cells whose best record is not painted into the current frame yet (after a `recentre`). */
+  private readonly unpainted = new Set<string>()
+  private readonly frameListeners = new Set<() => void>()
+  /** Bumped by every `recentre`. */
+  frameVersion = 0
   private readonly records = new Map<string, CellRecord>()
+  private readonly drawn = new Map<string, CellRecord>()
+  private readonly coarse = new Map<string, CellRecord>()
+  /** What each cell of the frame shows now. */
+  private readonly painted = new Map<string, CellRecord>()
   private data = new WorldData()
   private acc = new GraphAccumulator()
   private readonly lastSeen = new Map<string, number>()
@@ -37,7 +54,7 @@ export class LiveWorld implements MapSource {
 
   constructor(centre: CellId, initial: readonly CellRecord[] = []) {
     this.tiles = new TileWorld(centre)
-    this.tiles.subscribe((r) => this.emit(r))
+    this.stopTiles = this.tiles.subscribe((r) => this.emit(r))
     this.add(initial)
   }
 
@@ -54,28 +71,120 @@ export class LiveWorld implements MapSource {
     return this.tiles.town
   }
 
+  /** Graph records held. */
   get cellCount(): number {
     return this.records.size
+  }
+
+  /** Drawn (vector-tile detail) records held. */
+  get drawnCount(): number {
+    return this.drawn.size
   }
 
   inFrame(c: CellId): boolean {
     return this.tiles.inFrame(c)
   }
 
+  /** The cell the frame is centred on. */
+  get anchor(): CellId {
+    return { i: (this.tiles.i0 + this.tiles.i1) / 2, j: (this.tiles.j0 + this.tiles.j1) / 2 }
+  }
+
   record(c: CellId): CellRecord | undefined {
     return this.records.get(cellKey(c))
   }
 
-  /** The cell must still be fetched: in the frame, and missing or only partly covered. */
+  private best(k: string): Paint | undefined {
+    const rec = this.records.get(k)
+    if (rec && isComplete(rec)) return { rec, coarse: false }
+    const drawn = this.drawn.get(k)
+    if (drawn) return { rec: drawn, coarse: false }
+    if (rec) return { rec, coarse: false }
+    const coarse = this.coarse.get(k)
+    return coarse ? { rec: coarse, coarse: true } : undefined
+  }
+
+  /** Paint the cell's best record if it is not what the cell shows. Returns whether the tiles changed. */
+  private refresh(k: string): boolean {
+    const cell = parseCellKey(k)!
+    if (!this.inFrame(cell)) return false
+    this.unpainted.delete(k)
+    const b = this.best(k)
+    if (!b) {
+      if (!this.painted.has(k)) return false
+      this.painted.delete(k)
+      this.tiles.clear(cell)
+      return true
+    }
+    if (this.painted.get(k) === b.rec) return false
+    this.tiles.paint(b.rec, { coarse: b.coarse })
+    this.painted.set(k, b.rec)
+    return true
+  }
+
+  /** The cell still lacks detail: no complete graph record and no drawn record (in the frame only). */
   needs(c: CellId): boolean {
+    if (!this.inFrame(c)) return false
+    const k = cellKey(c)
+    const r = this.records.get(k)
+    return !(r && isComplete(r)) && !this.drawn.has(k)
+  }
+
+  /** The cell has no complete graph record (the walking graph does not cover it). */
+  needsGraph(c: CellId): boolean {
     if (!this.inFrame(c)) return false
     const r = this.records.get(cellKey(c))
     return !r || !isComplete(r)
   }
 
+  /** Something is painted for the cell now. */
+  hasAny(c: CellId): boolean {
+    return this.inFrame(c) && this.painted.has(cellKey(c))
+  }
+
+  /** The cell has no record of any kind, so the coarse layer would fill it. */
+  needsCoarse(c: CellId): boolean {
+    const k = cellKey(c)
+    return this.inFrame(c) && !this.coarse.has(k) && !this.records.has(k) && !this.drawn.has(k)
+  }
+
+  private commit(changed: CellId[]): CellId[] {
+    if (changed.length) {
+      this.version++
+      this.emit(undefined)
+    }
+    return changed
+  }
+
+  /** Add coarse records (requirement 21.4): tiles only. Kept as the fall-back of their cell. Returns the cells painted. */
+  addCoarse(records: readonly CellRecord[]): CellId[] {
+    const painted: CellId[] = []
+    for (const rec of records) {
+      if (!this.inFrame(rec.cell)) continue
+      const k = cellKey(rec.cell)
+      if (this.coarse.has(k)) continue
+      this.coarse.set(k, rec)
+      if (this.refresh(k)) painted.push(rec.cell)
+    }
+    return this.commit(painted)
+  }
+
+  /** Add drawn records (vector-tile detail, requirement 21.5): tiles and town, never data or graph. Returns the cells painted. */
+  addDrawn(records: readonly CellRecord[]): CellId[] {
+    const painted: CellId[] = []
+    for (const rec of records) {
+      if (!this.inFrame(rec.cell)) continue
+      const k = cellKey(rec.cell)
+      this.drawn.set(k, rec)
+      if (this.refresh(k)) painted.push(rec.cell)
+    }
+    return this.commit(painted)
+  }
+
   /**
-   * Add records (out-of-frame ones and ones that bring nothing new are skipped). Returns the cells
-   * that changed. Only appends to the merged data and the graph: ids issued earlier stay valid.
+   * Add graph records (out-of-frame ones and ones that bring nothing new are skipped). Returns the
+   * cells whose graph record changed. Only appends to the merged data and the graph: ids issued
+   * earlier stay valid. A cell already drawn from vector tiles keeps that drawing unless the record is complete.
    */
   add(records: readonly CellRecord[]): CellId[] {
     const added: CellId[] = []
@@ -87,7 +196,7 @@ export class LiveWorld implements MapSource {
       if (had && (isComplete(had) || boxArea(rec.coverage) <= boxArea(had.coverage))) continue
       this.records.set(key, rec)
       first = Math.min(first, this.data.addRecord(rec).firstWay)
-      this.tiles.paint(rec)
+      this.refresh(key)
       added.push(rec.cell)
     }
     if (added.length) {
@@ -100,8 +209,7 @@ export class LiveWorld implements MapSource {
 
   /**
    * The current map as an immutable `World` (built once per change). The graph and its safety weights
-   * are built on first use only (planning usually runs in the worker, which builds its own from
-   * `data`), from the accumulator as it is now, so a late build still matches this snapshot.
+   * are built on first use only, from the accumulator as it is now, so a late build still matches.
    */
   world(): World {
     if (!this.snap) {
@@ -126,19 +234,72 @@ export class LiveWorld implements MapSource {
     return this.snap
   }
 
-  /** Cells the view touches now (for the least-recently-seen order of eviction). */
-  touch(cells: readonly CellId[], now: number): void {
-    for (const c of cells) if (this.records.has(cellKey(c))) this.lastSeen.set(cellKey(c), now)
+  /**
+   * Move the frame so it is centred on `c` (requirement 20.17). Graph records, the merged data and the
+   * walking graph stay; drawn and coarse records outside the new frame are forgotten (they come back
+   * from the cache). Nothing is painted here: call `paintNext` until it returns undefined. Frame
+   * listeners hear the change at once, so the map view can rebuild its renderer on the new grid.
+   */
+  recentre(c: CellId): void {
+    if (c.i === this.anchor.i && c.j === this.anchor.j) return
+    this.stopTiles()
+    this.tiles = new TileWorld(c)
+    this.stopTiles = this.tiles.subscribe((r) => this.emit(r))
+    for (const m of [this.drawn, this.coarse]) for (const k of [...m.keys()]) if (!this.tiles.inFrame(parseCellKey(k)!)) m.delete(k)
+    this.painted.clear()
+    this.unpainted.clear()
+    for (const k of new Set([...this.records.keys(), ...this.drawn.keys(), ...this.coarse.keys()])) if (this.tiles.inFrame(parseCellKey(k)!)) this.unpainted.add(k)
+    this.loadingRects = []
+    this.snap = undefined
+    this.version++
+    this.frameVersion++
+    for (const fn of this.frameListeners) fn()
   }
 
-  /** Cells wanted but not loaded (drawn with the loading stipple); an empty list clears it. */
+  /** Whether some record of the frame still waits to be painted after a `recentre`. */
+  get painting(): boolean {
+    return this.unpainted.size > 0
+  }
+
+  /** Paint the waiting cell nearest to `p`. Returns the cell, or undefined when none is left. */
+  paintNext(p: LatLon): CellId | undefined {
+    let best: string | undefined
+    let bestD = Infinity
+    for (const k of this.unpainted) {
+      const d = cellDistanceM(parseCellKey(k)!, p)
+      if (d < bestD) {
+        bestD = d
+        best = k
+      }
+    }
+    if (best === undefined) return undefined
+    this.refresh(best)
+    this.version++
+    return parseCellKey(best)!
+  }
+
+  /** Hear a `recentre` (the grid object changed). Returns the unsubscribe. */
+  subscribeFrame(fn: () => void): () => void {
+    this.frameListeners.add(fn)
+    return () => this.frameListeners.delete(fn)
+  }
+
+  /** Cells the view touches now (for the least-recently-seen order of eviction). */
+  touch(cells: readonly CellId[], now: number): void {
+    for (const c of cells) {
+      const k = cellKey(c)
+      if (this.records.has(k) || this.drawn.has(k)) this.lastSeen.set(k, now)
+    }
+  }
+
+  /** Cells wanted but with nothing painted (drawn with the loading stipple); an empty list clears it. */
   setLoading(cells: readonly CellId[]): void {
     const rects: TileRect[] = []
     for (const c of cells) {
       const own = this.tiles.ownedRect(c)
       if (!own) continue
-      const r = this.records.get(cellKey(c))
-      const got = r && this.tiles.coveredRect(r)
+      const shown = this.painted.get(cellKey(c))
+      const got = shown && this.tiles.coveredRect(shown)
       rects.push(...(got ? subtract(own, got) : [own]))
     }
     const same = rects.length === this.loadingRects.length && rects.every((r, k) => sameRect(r, this.loadingRects[k]!))
@@ -155,18 +316,18 @@ export class LiveWorld implements MapSource {
   private frontierEdges: FrontierEdge[] = []
 
   /**
-   * Straight edges of the loaded map that face ground with no data: a covered rectangle's side that
-   * is not shared with a complete neighbour (missing, partly covered, or outside the frame), or that
+   * Straight edges of what is painted that face ground with nothing painted: a covered rectangle's
+   * side whose neighbour shows nothing whole (missing, partly covered, or outside the frame), or that
    * lies inside its own cell (a partly covered record). Cached per `version`.
    */
   frontier(): readonly FrontierEdge[] {
     if (this.frontierAt === this.version) return this.frontierEdges
     const out: FrontierEdge[] = []
     const solid = (c: CellId) => {
-      const r = this.records.get(cellKey(c))
+      const r = this.painted.get(cellKey(c))
       return r !== undefined && isComplete(r)
     }
-    for (const rec of this.records.values()) {
+    for (const rec of this.painted.values()) {
       const own = this.tiles.ownedRect(rec.cell)
       const r = own && this.tiles.coveredRect(rec)
       if (!own || !r) continue
@@ -191,39 +352,54 @@ export class LiveWorld implements MapSource {
   }
 
   /**
-   * Keep at most `max` cells: drop the ones seen longest ago, farthest from `centre` first, but never
-   * a cell in `view` or within one cell of a point of `keep` (the active route). The merged data and
-   * the graph are rebuilt from the cells that stay. Returns the dropped cells.
+   * Keep at most `max` graph records and `max` drawn records: drop the ones seen longest ago,
+   * farthest from `centre` first, but never a cell in `view`; graph records within one cell of a
+   * point of `keep` (the active route) are never dropped either. A dropped cell shows its next best
+   * record (a drawn record, else coarse). Returns the dropped cells.
    */
   evict(view: readonly CellId[], keep: readonly LatLon[], centre: LatLon, max = MAX_RESIDENT_CELLS): CellId[] {
-    if (this.records.size <= max) return []
-    const safe = new Set(view.map(cellKey))
+    const inView = new Set(view.map(cellKey))
     const route = new Set<string>()
-    for (const p of keep) route.add(cellKey(cellOf(p)))
-    for (const k of route) for (const n of neighbourhood(parseCellKey(k)!)) safe.add(cellKey(n))
-    const candidates = [...this.records.values()]
-      .filter((r) => !safe.has(cellKey(r.cell)))
-      .sort((a, b) => (this.lastSeen.get(cellKey(a.cell)) ?? 0) - (this.lastSeen.get(cellKey(b.cell)) ?? 0) || cellDistanceM(b.cell, centre) - cellDistanceM(a.cell, centre))
+    for (const p of keep) for (const n of neighbourhood(cellOf(p))) route.add(cellKey(n))
+    const order = (m: Map<string, CellRecord>, safe: (k: string) => boolean) =>
+      [...m.values()]
+        .filter((r) => !safe(cellKey(r.cell)))
+        .sort((a, b) => (this.lastSeen.get(cellKey(a.cell)) ?? 0) - (this.lastSeen.get(cellKey(b.cell)) ?? 0) || cellDistanceM(b.cell, centre) - cellDistanceM(a.cell, centre))
     const dropped: CellId[] = []
-    for (const r of candidates) {
-      if (this.records.size <= max) break
-      this.records.delete(cellKey(r.cell))
-      this.lastSeen.delete(cellKey(r.cell))
-      this.tiles.clear(r.cell)
-      dropped.push(r.cell)
+    if (this.records.size > max) {
+      let gone = 0
+      for (const r of order(this.records, (k) => inView.has(k) || route.has(k))) {
+        if (this.records.size <= max) break
+        const k = cellKey(r.cell)
+        this.records.delete(k)
+        if (!this.drawn.has(k)) this.lastSeen.delete(k)
+        this.refresh(k)
+        dropped.push(r.cell)
+        gone++
+      }
+      if (gone) {
+        this.data = compact([...this.records.values()])
+        this.acc = new GraphAccumulator().add(this.data.snapshot(), 0)
+        this.snap = undefined
+      }
     }
-    if (dropped.length) {
-      this.data = compact([...this.records.values()])
-      this.acc = new GraphAccumulator().add(this.data.snapshot(), 0)
-      this.snap = undefined
-      this.version++
+    if (this.drawn.size > max) {
+      for (const r of order(this.drawn, (k) => inView.has(k))) {
+        if (this.drawn.size <= max) break
+        const k = cellKey(r.cell)
+        this.drawn.delete(k)
+        if (!this.records.has(k)) this.lastSeen.delete(k)
+        this.refresh(k)
+        dropped.push(r.cell)
+      }
     }
+    if (dropped.length) this.version++
     return dropped
   }
 
   /** Where the frame is centred (its first cell). */
   get centre(): LatLon {
-    return cellCentre({ i: (this.tiles.i0 + this.tiles.i1) / 2, j: (this.tiles.j0 + this.tiles.j1) / 2 })
+    return cellCentre(this.anchor)
   }
 }
 

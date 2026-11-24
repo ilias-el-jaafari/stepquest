@@ -529,3 +529,145 @@ Cell maths (properties: cellOf/cellBBox round trip, partition, neighbours share 
 - Tiles without data inside the frame are not drawn as grass: the darker no-data ground shows through, as it did outside a single extract.
 - The "load this area" offer only appears when the view rests outside the frame; inside it, cells load by themselves.
 - A saved quest is resumed with the cached cells under its route, so a walk planned on streamed cells survives a reload.
+
+## Map loading v2 (requirement 20, task 73)
+
+Field report 3 (iPhone, mobile connection, active quest, zoomed out): most of the map stays blank green or fog and only a strip of tiles renders; loading is far too slow and sometimes never finishes. Ilias asked for the loading architecture to be rethought, not patched. This section replaces the loading rules of "Streaming multi-area world" (requirement 19.2 to 19.5, 19.14, 19.20 to 19.22; each is marked superseded in requirements.md). The cell grid, the merged world, the incremental graph, the frame and the renderer chunks of that section stay.
+
+### Root cause
+
+What was measured and what is reasoning. Machine: the development box (Node, Vitest), bundled Benicalap extract (10.3 km², 15 457 ways, 138 117 way points). The Overpass servers could not be measured from the sandbox: one polite request for one cell got "502, this server is at capacity" from overpass-api.de, which is itself what a phone meets at busy hours. Every network number below is therefore an estimate from measured sizes, marked "est.".
+
+**Measured**
+
+| What | Number |
+| --- | --- |
+| Way points by kind | building 62 987 (46 %), park 25 176, path 23 994, road 13 681, barrier 10 513, rail 941, waterway 473, water 352 |
+| Raw `out geom` JSON per km² (est.: 38 B per point, 220 B per way) | 0.84 MB; one cell (0.95 km²) 0.8 MB; a batch of 4 cells 3.2 MB; a 12-cell quest view 9.6 MB |
+| On the wire with gzip (est., about 5 : 1) | 0.16 MB per cell, 0.64 MB per batch of 4 |
+| Decode the whole extract, cut it into 20 cells | 15 ms, 40 ms |
+| Encode / decode one cell for the cache | 1.4 ms / 1.3 ms, 102 KB of JSON |
+| Arrival of one cell on the main thread (merge, raster, town, graph edges, snapshot) | 28 ms on average, 85 ms at most; a batch of 4 is one task of 110 to 340 ms here, 2 to 4 times that on an iPhone (est.) |
+| Cells a phone view touches at the old quest floor (390 × 844, zoom 1.5, worst alignment) | 12; at zoom 0.5 it would be about 50 |
+
+**Cause 0, found by the field benchmark (before all the others): the loader never plans work for a view off the frame.** Field benchmark of the first version of this redesign (preview build, Chrome 390 × 844, real Overpass): start a quest, zoom out to the floor, drag about three screens to the north-west, wait. Result, cold and warm cache: the canvas stays the flat no-data ground for 150 s, no Overpass request is sent after the pan, and the canvas says `data-map-ready="full" data-map-pending="0"`. The code before the redesign behaved the same. The chain:
+
+1. The frame (`TileWorld`, 9 × 9 cells, about 10 × 7.7 km) is fixed around the first cell of the session and never moves (requirement 19.9 and 19.16).
+2. `Camera.clamp` lets the camera centre go half a screen past the grid edge, so the whole view can lie outside the frame (at `x = -width/2` the right edge of the view is the frame's left edge). Three screens at zoom 1 is about 5.9 km, more than the 4.3 km from the Benicalap cell to the frame's west edge.
+3. `Streamer.setView` filtered the cells of the view box with `world.inFrame`, so the wish list, the regions and the horizon were all empty: nothing to read from the cache, nothing to request.
+4. Readiness was computed over that filtered list; an empty list is `full` with 0 pending, which hid the bug from the instrumentation.
+5. The "load this area" offer (7a.5) that would have re-anchored the map is never made while a route or a quest exists, by design.
+
+The renderer and the overview were not at fault: they draw the frame's grid, and there was nothing in it to draw. Fix (requirement 20.17): while a route or a quest exists, a view that rests showing cells outside the frame moves the frame to the cell under the view centre (`LiveWorld.recentre`). Data, detail records and the graph stay; records inside the new frame are repainted one per task, nearest first; `MapView` hears the frame change and rebuilds its renderer on the new grid at the same place and zoom; the streamer plans from the same view box again. Readiness counts every cell the camera shows, so a view off the frame reads `loading`. Regression: `world/panAway.test.ts` drives a real `MapRenderer` (390 × 844, quest floor), pans three screens north-west and checks that before the fix the view is off the frame and reported as ready with no request planned, and after it coarse is requested first, detail after zooming in, and `full` is reached for the visible cells.
+
+**Where the time goes once the view is inside the frame, in order of effect**
+
+1. **The budget cannot fill the view, even when nothing fails.** One download in flight, 10 s between downloads, 4 cells per download, 12 cells a minute. A 12-cell view is 3 downloads: the third starts at 21 s or later (1 s settle, then two gaps), and each needs its own service time (server 4 to 10 s plus transfer). Best case about 30 s, on a good link. The nearest-first wish list makes the first answer a rectangle of 4 cells (a 1 × 4 or 2 × 2 strip) and the other 8 cells stay empty for 10 s steps. Field symptom: "only a strip renders". This is a property of the design, not of the connection.
+2. **A batch of 4 cells that cannot finish is retried unchanged, so on a poor link it never finishes.** The answer is 0.64 MB gzipped (est.) and needs 3.2 MB of parsing. `raceMirrors` asked all three mirrors at once and kept every body running until the first one finished, so a phone with one link split it three ways: at 1 Mbit/s one answer takes 5 s alone and 15 s shared, at 0.4 Mbit/s 13 s alone and 38 s shared, plus 6 to 10 s of server time, against a 40 s limit per mirror. At 0.4 Mbit/s and below every attempt times out. The streamer then put all 4 cells into a 30 s back-off and tried the same 4 cells again; nothing in the code makes the next batch smaller. This is the deterministic "sometimes never finishes".
+3. **Back-off is long and shared.** One failure holds its 4 cells for 30 s, 60 s, 2 min, 4 min, 5 min. A 504 (a server-side timeout, which Overpass sends under load) pauses every request by the same doubling. Two 504s in a row mean no request for 90 s or more. On a flaky mobile link most failures are transient, so the wait costs more than the retry would.
+4. **A stuck dependency stops everything.** (a) The cache pass of a round (`await client.cachedCell(c)`, one after the other, no timeout) runs before the request of that round. An IndexedDB open that never answers (reported for some iOS Safari versions, not reproduced here) blocks the whole streamer for the session. (b) `OverpassClient.inFlight` is a flag with no deadline on the main thread; a worker that is killed or frozen without an error event leaves it set, and the streamer then polls `busy` every 2 s for ever. (c) `loadCells` awaited four IndexedDB writes before it handed over the records, so an arrival waited for the disk (est. 20 to 150 ms per write on iOS). (b) and (c) are reasoning from the code; (a) has no field proof. All three are cheap to rule out.
+5. **Main-thread work comes in lumps.** A 4-cell answer is added in one call: 110 to 340 ms in one task here. The chunk layer already invalidates only the tile rectangle of the cell and repaints chunks within 6 ms a frame, so the repaint is not the problem; the lump is the add.
+6. **Fog everywhere in the view.** Requirement 19.21 draws a dithered band on every border with a missing neighbour. With a strip loaded, the band runs across the screen at every border of the strip, and the cells behind it are the no-data ground, so the view looks broken for the 30 s or more that item 1 describes.
+
+**Checked and not a cause**
+
+- Warm cache: it is read before any request, per cell, but only after the 1 s settle, serially, and for the cells of the view. Fine, but slower than it could be (now immediate).
+- Eviction of cells that are needed: the 49-cell resident limit never drops a cell of the view or within one cell of the route; the 300-cell IndexedDB limit is oldest-saved-first and is far above the 81-cell frame. Rebuilding the data after an eviction costs about 28 ms a cell but only runs when the safe set leaves candidates, which a walk along one route does not.
+- Back-off that never retries: it does retry (the wake-up is the earliest expiry); it is only slow (item 3).
+- Parsing on the main thread: JSON parsing and normalising already run in a worker (`download.worker.ts`); the main thread decodes, slices and paints. Slicing is 2 ms a km², about a tenth of the arrival, so moving it to a worker would not change what a user sees.
+
+### Design
+
+```
+view rests / changes ──> Streamer.setView(box, centre, zoom, horizon box)
+   ├─ cache pass (immediate, local): regions and cells of the view, the horizon and the route ahead
+   │     └─ added one cell at a time with a yield
+   └─ after SETTLE_MS: two lanes, taking turns, at most 2 downloads in flight, 1.5 s between starts
+         coarse lane: region under the view -> other regions of the view -> regions of the horizon
+         detail lane: cells of the view, nearest first, in adaptive batches (zoom above FAR_ZOOM only)
+                      route ahead (<= 1.2 km, <= 6 cells), only while nothing else runs
+OverpassClient
+   loadCoarse(region)  one coarse query for the 0.05° region, cut into 25 cell records
+   loadCells(cells)    one detail query for the bounding box of the missing cells (<= 6)
+   both: cache first (2 s read limit), hedged mirrors, 75 s deadline, answer handed over before the cache writes
+LiveWorld
+   addCoarse(records)  tiles + tracks only, only where there is no detail; record kept for fall-back
+   add(records)        detail: raster, town (buildings whole), merged data, graph edges
+   setLoading / frontier   stipple only where there is nothing at all; no band between layers
+MapView canvas   data-map-ready = loading | coarse | full, data-map-pending = n
+```
+
+**Layers.** Coarse: streets (motorway to living street, pedestrian), big green and blue areas, rivers, rail; no buildings, barriers, paths, service ways, lawns, small gardens or points of interest. Detail: what requirement 19 loaded. A region is 5 × 5 cells (0.05°, 24 km² at València, under the 36 km² cap) so a region border is a cell border and the cut into cells reuses `sliceToCells`.
+
+| | Detail cell batch | Coarse region |
+| --- | --- | --- |
+| Area per request | 0.95 to 5.7 km² (1 to 6 cells) | 24 km² |
+| Way points per km² (bundled extract) | 13 400 | 2 000 (14.7 % of the extract's points: roads 13 681, rail, water, parks without lawns and gardens) |
+| Raw JSON per request (est.) | 0.8 to 4.8 MB | about 1.8 MB |
+| Per km² | 0.84 MB | 0.075 MB (11 times less) |
+| Raster cost per cell (measured) | 24 to 28 ms with town and graph | 5 ms, no town, no graph |
+
+The share is measured by `osm/coarse.test.ts` on the bundled extract (under 16 %; the first filter, with lawns, was 24 %: 1067 lawn polygons carry 13 441 points and are invisible at one pixel per tile, so they were dropped).
+
+**What fixes each cause**
+
+| Cause | Fix |
+| --- | --- |
+| 1. Budget cannot fill the view | The first paint no longer needs the detail: one coarse request (est. 1.8 MB raw, 0.35 MB on the wire) colours 24 km². Two downloads at once, 1.5 s apart; at most 12 starts a minute. |
+| 2. Fixed batch, shared link | Hedged mirrors (below); the batch adapts to what the link finishes: starts at 2 cells, +1 after an answer under 10 s up to a ceiling, a failure at n cells sets the ceiling to n − 1 and halves the batch; a probe every 8 good answers. The slow-link test shows 3 failures at most, then every cell loads. |
+| 3. Slow shared back-off | 4 s, doubling to 2 min, ±25 % jitter, per unit; 429 and 504 pause for 20 s (jittered), not minutes. The pause stays global (the server asked for it). |
+| 4. Stuck dependencies | Cache reads 2 s, writes 5 s, writes after hand-over and one job at a time; header 25 s, stall 12 s, call 60 s, client deadline 75 s (frees the slot and aborts the worker), streamer watchdog 100 s. No call can hold a slot. |
+| 5. Lumps | The streamer adds one cell per task with a yield. Per-cell cost is unchanged (28 ms before, 24 to 28 ms after, same method, same machine); the largest task is one cell. |
+| 6. Fog | Coarse tiles are the placeholder; stipple only over cells with nothing; the band only at the edge of everything drawn. |
+
+**Hedged mirrors (replaces the race of requirement 14 and 19.5).** The mirror that answered last is asked first. The next mirror joins when the first has failed, or has sent no answer header for 6 s. The first good header wins; the others are aborted before they send a body. One call therefore moves one body over the link, and a quiet network sends one request, not three. A mirror gets 25 s for its header (the server may be running the query), 12 s of silence in a body, and the call 60 s. After a failure the next call starts with another mirror.
+
+**Prefetch (replaces "no look-ahead").** With a route, the detail cells within 1.2 km of the view centre along the route (at most 6) and their coarse regions are loaded while no download runs. Why: a walker crosses a cell border every 12 minutes or so; without prefetch the next cell starts to load when it is already on screen. Cost: at most 6 cells per walk segment, cached for 7 days, one slot always free for the view.
+
+**Quest zoom floor (replaces 19.20).** The budget counts coarse regions at wide zooms (at most 4) and detail cells above `FAR_ZOOM` (at most 12). On the 390 × 844 reference phone at València the floor drops from 1.5 to 1.0 (view 1.95 × 4.2 km, at most 4 regions, usually 1 or 2). A floor below 1.0 would need 6 regions (zoom 0.5) of 1.8 MB each; not worth it on a phone.
+
+**Whole buildings (requirement 20.12).** Before, each cell laid out its houses only on its own tiles, so a building across a border was cut into two blocks with two lot splits and a visible seam. A cut on the tile mask cannot be made whole by looking at the tiles alone: two windows see different neighbours, so their blocks differ. The fix assigns each building way to one cell by the centre of its bounding box, a rule that depends on that way only. The owner rasterizes the building into a scratch mask (window widened to hold it, at most 80 tiles), its blocks are the connected tiles of that mask, and its houses may extend into the neighbour's tiles. Those tiles are registered in a sparse `spill` map; the lookup (`houseAt`, `hasTree`, `hasFence`, `hasGate`, `structuresIn`) reads the owner's arrays first and the spill second, and a landmark on a tile wins. The other cells treat the building's tiles as reserved, and landmarks never stand on a building another cell owns, so a house and a landmark cannot overlap (the earlier version overlapped on 4 tiles of the demo; the rule removed them). Cost: a second raster of the cell's own buildings (a few ms), a window that is wider only where a building reaches out, a sparse map. Known limits: the part of a building on the neighbour's side shows plain building tiles until the owner arrives (the rule trades a seam for a short wait), and a house reaching into a neighbour is dropped with the owner when it is evicted.
+
+**Instrumentation (requirement 20.15).** `Streamer.status()` computes `{ ready, pending }` on every view change, cache read, arrival and failure, and reports changes through `onLoad`. `useStreaming` hands it to `useArea`, which gives it to `MapView` as `load`; the canvas gets `data-map-ready` and `data-map-pending`. Playwright or a benchmark can wait for `[data-map-ready="full"]`, or time the move from `loading` to `coarse` to `full`. It never changes anything visible.
+
+### Alternatives rejected
+
+| Option | Why not |
+| --- | --- |
+| Larger detail units (0.02° cells, or one big query per view) | Fewer requests, but each one heavier, which is the failure on a slow link (cause 2). The adaptive batch gets the same count on a good link and smaller ones on a bad link, and keeps the 0.01° unit that the raster, cache and eviction are built on. |
+| Racing all mirrors (kept as it was) | Three bodies share one phone link, so every answer arrives 3 times later, and the public servers carry three times the load. Hedging costs one extra request only when the first mirror is silent for 6 s. |
+| Moving decode, slice and paint into a worker | The network dominates (30 s against 0.03 s a cell). The tile grid is shared with the renderer; a worker needs `SharedArrayBuffer`, which needs cross-origin isolation headers that GitHub Pages cannot send, or copies of 15 MB arrays. Yielding per cell bounds the lump at no such cost. |
+| Pre-rendered offscreen canvases per cell | The chunk layer already caches 32 × 32-tile canvases and an arrival invalidates only the rectangle of its cell. The coarse to detail swap repaints those chunks once. Nothing to add. |
+| A third-party vector or raster tile service | Adds an account, a key and a dependency we do not control; the product runs no servers and no accounts. |
+| A pre-baked extract of the city in the app | The bundle would grow by megabytes for one city, and the app is for any street. |
+| One coarse request for the whole frame (77 km²) | Over the 36 km² cap, and a request that large is the failure of cause 2 again. |
+| Simplifying coarse geometry (Douglas-Peucker) in the worker | Could take another 30 % off the wire; not needed yet. Listed for later. |
+
+### Failure modes (replaces the table of requirement 19)
+
+| Failure | Behaviour |
+| --- | --- |
+| Slow link, a detail batch times out | the batch size falls (ceiling = size − 1), the cells wait 4 s ±25 %, the coarse layer keeps the screen coloured |
+| 429 / 504 | all starts pause 20 s ±25 % (longer after repeats); coarse and cached data stay on screen |
+| A mirror is silent | the next mirror joins after 6 s; the first good header wins |
+| A mirror's body stalls | cut off after 12 s, the next mirror is asked, the next call starts with another mirror |
+| Worker or client never answers | the client frees the slot at 75 s, the streamer at 100 s; the unit is retried after its back-off |
+| IndexedDB never answers | reads count as a miss after 2 s, writes as not saved after 5 s; the map works without the cache |
+| Offline | cached data loads and draws; nothing is requested; `retry()` runs on the online event |
+| Region has no data (a sea) | the region is cached as empty for 7 days; the cells draw as ground |
+| Coarse record for a cell that already has detail | kept, not painted; painted again if the detail is dropped |
+| View rests off the frame (route or quest) | the frame moves to the view centre; records repainted nearest first; the renderer is rebuilt at the same place; a drag in progress at that moment ends (the input is re-attached to the new renderer) |
+| View larger than the frame (planner at the lowest zoom, a tall screen) | the frame is centred on the view; cells beyond it stay pending and readiness says so |
+
+### Testing
+
+Pure and fake-timer tests, no network. `osm/download.test.ts`: hedging order, hedge delay, header timeout, stall, total timeout, caller abort, one request when the first answers, progress. `osm/coarse.test.ts` and `osm/coarse.client.test.ts`: query text, filter, share of points on the bundled extract (under 16 %), one request per region, cut into 25 cells, cache before network in a new client, expiry, damage, pruning, failure not cached. `osm/cells.client.test.ts`: two in flight, 1.5 s gap, `busy`, an area download alone, cache writes after hand-over. `world/streamer.test.ts`: settle, cache at once, lane order, no detail at far zoom, horizon, stale list, route ahead, back-off and jitter, batch adaptation, 429 pause, a client that never answers, a cache that never answers, offline, load state, placeholder instead of stipple, one cell per change notice, two slow-link simulations (a link on which the old batch of four never finishes; coarse in under 10 s inside one region and under 30 s at the worst alignment on a 1 Mbit/s link). `world/regions.test.ts`, `world/window.test.ts`, `world/liveWorld.test.ts` (coarse), `world/tileWorld.test.ts` (coarse paint, whole buildings: one owner, order independence, no gap, no overlap, drop), `ui/MapView.test.tsx` (attributes). Golden frames unchanged.
+
+### Behaviour changes (deliberate)
+
+- At zoom 1.5 and below the far overview of a place that has only the coarse layer shows streets, parks and water but no building colour and no lawns, and no detail is requested for it. The golden "far zoom" frame uses a fully loaded world and is unchanged.
+- Houses of one building can stand on two cells' tiles; two tests of requirement 19.10 changed from "on the tiles of its own cell" to "landmarks on their own cell, houses on the building, none overlap".
+- The quest floor on the reference phone is 1.0, not 1.5.
+- Requests: up to 2 at once, 1.5 s apart, back-off from 4 s. Limits and reasons are in `osm-etiquette.md`.
+- While a route or quest exists the frame follows the view, so the map has no edge in a quest; the grid object changes when it moves (requirement 19.12 amended), the route and the graph do not.
+- `OSM_ATTRIBUTION` now reads "© OpenStreetMap contributors", as the map shows it (the link goes to the copyright page).

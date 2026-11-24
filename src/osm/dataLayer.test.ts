@@ -4,9 +4,9 @@ import { MemoryCache, isFresh, CACHE_TTL_MS, type AreaCache, type CacheEntry } f
 import { classifyWay, isBridge, isTunnel } from './classify.ts'
 import { CODEC_VERSION, CorruptDataError, decodeOsm, encodeOsm, type CompactOsm } from './codec.ts'
 import { overpassQuery } from './demoArea.ts'
-import { isOverpassResponse, raceMirrors } from './download.ts'
+import { fetchMirrors, isOverpassResponse } from './download.ts'
 import { normalizeOverpass, type OverpassResponse } from './normalize.ts'
-import { areaForWalk, bboxAreaKm2, cacheKey, MAX_AREA_KM2, OverpassClient, snapBBox } from './overpass.ts'
+import { areaForWalk, bboxAreaKm2, cacheKey, MAX_AREA_KM2, MIN_REQUEST_GAP_MS, OverpassClient, snapBBox } from './overpass.ts'
 
 const bbox = { south: 39.48, west: -0.4, north: 39.5, east: -0.38 }
 const g = (lat: number, lon: number) => ({ lat, lon })
@@ -179,7 +179,7 @@ describe('Overpass answers (66.7)', () => {
     expect(isOverpassResponse({ elements: [] })).toBe(true)
     for (const bad of [null, 5, 'x', [], {}, { remark: 'x' }, { elements: {} }]) expect(isOverpassResponse(bad)).toBe(false)
   })
-  const once = (body: string, status = 200) => raceMirrors(bbox, { endpoints: ['https://one'], fetch: async () => new Response(body, { status }) })
+  const once = (body: string, status = 200) => fetchMirrors({ query: overpassQuery(bbox), endpoints: ['https://one'], fetch: async () => new Response(body, { status }) })
   it('reports an answer without elements as badResponse instead of an empty map', async () => {
     await expect(once('{"version":0.6}')).rejects.toMatchObject({ code: 'badResponse' })
     await expect(once('null')).rejects.toMatchObject({ code: 'badResponse' })
@@ -191,7 +191,7 @@ describe('Overpass answers (66.7)', () => {
   })
   it('maps 429 and 504 to rateLimited and other failures to badResponse, with one request per mirror', async () => {
     const fetch = vi.fn(async () => new Response('', { status: 429 }))
-    await expect(raceMirrors(bbox, { endpoints: ['https://a', 'https://b'], fetch })).rejects.toMatchObject({ code: 'rateLimited' })
+    await expect(fetchMirrors({ query: overpassQuery(bbox), endpoints: ['https://a', 'https://b'], fetch })).rejects.toMatchObject({ code: 'rateLimited' })
     expect(fetch).toHaveBeenCalledTimes(2)
     await expect(once('', 504)).rejects.toMatchObject({ code: 'rateLimited' })
     await expect(once('', 400)).rejects.toMatchObject({ code: 'badResponse' })
@@ -332,7 +332,7 @@ describe('area cache and client (66.6)', () => {
     release?.()
     await first
     await expect(c.loadArea({ south: 20, west: 20, north: 20.01, east: 20.01 })).rejects.toMatchObject({ code: 'rateLimited' })
-    now += 10_000
+    now += MIN_REQUEST_GAP_MS
     expect(download).toHaveBeenCalledTimes(1)
   })
 })

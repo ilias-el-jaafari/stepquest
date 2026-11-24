@@ -7,6 +7,7 @@ import { planReroute } from '../quest/reroute.ts'
 import { planRoute } from '../routing/planner.ts'
 import { cellBBox, cellKey, cellOf } from './cells.ts'
 import { LiveWorld, MAX_RESIDENT_CELLS, subtract } from './liveWorld.ts'
+import { Terrain } from '../tiles/grid.ts'
 import { sliceToCells } from './slice.ts'
 import { makeRecord } from './testing.ts'
 
@@ -164,5 +165,101 @@ describe('frontier (requirement 19.21)', () => {
     }
     expect(sig([...cells].reverse())).toEqual(sig(cells))
     expect(sig(cells)).toHaveLength(2 * 2 + 3 * 2)
+  })
+})
+
+describe('coarse layer in the live world (requirements 20.3 and 20.5)', () => {
+  const A = { i: centre.i, j: centre.j }
+  const B = { i: centre.i, j: centre.j + 1 }
+  const road = (c: { i: number; j: number }) => makeRecord(c, [{ id: 1, pts: [[(c.i + 0.5) / 100, c.j / 100], [(c.i + 0.5) / 100, (c.j + 1) / 100]] }])
+  const own = (lw: LiveWorld, c: { i: number; j: number }) => lw.tiles.ownedRect(c)!
+
+  it('paints coarse tiles only, keeps them out of the data and the graph, and knows what still needs which layer', () => {
+    const lw = new LiveWorld(centre)
+    expect(lw.needsCoarse(A)).toBe(true)
+    const before = lw.world()
+    expect(lw.addCoarse([road(A)])).toEqual([A])
+    expect(lw.needsCoarse(A)).toBe(false)
+    expect(lw.needs(A)).toBe(true)
+    expect(lw.hasAny(A)).toBe(true)
+    expect(lw.cellCount).toBe(0)
+    expect(lw.world().data.ways).toHaveLength(before.data.ways.length)
+    const r = own(lw, A)
+    expect(lw.grid.coveredAt(r.x + 3, r.y + 3)).toBe(true)
+    // The same record again, or one outside the frame, changes nothing.
+    expect(lw.addCoarse([road(A), road({ i: centre.i + 9, j: centre.j })])).toEqual([])
+  })
+
+  it('shows no stipple on a cell that has the placeholder, and a stipple where there is nothing', () => {
+    const lw = new LiveWorld(centre)
+    lw.addCoarse([road(A)])
+    lw.setLoading([A, B])
+    expect(lw.loading()).toEqual([own(lw, B)])
+  })
+
+  it('moves the frontier to the edge of everything drawn: no fog between a detail cell and a coarse neighbour', () => {
+    const lw = new LiveWorld(centre, [makeRecord(A, [])])
+    const sides = (c: { i: number; j: number }) => lw.frontier().filter((e) => e.side === 'e' && e.x === own(lw, c).x + own(lw, c).w)
+    expect(sides(A)).toHaveLength(1)
+    lw.addCoarse([road(B)])
+    expect(sides(A)).toHaveLength(0)
+    // The coarse cell has its own frontier on the far side.
+    expect(sides(B)).toHaveLength(1)
+  })
+
+  it('does not paint coarse over a cell that has detail, and falls back to coarse when the detail is dropped', () => {
+    const lw = new LiveWorld(centre)
+    const detail = makeRecord(A, [{ id: 2, pts: [[39.4951, -0.399], [39.4951, -0.391]], kind: 'building', area: true }])
+    lw.add([detail])
+    lw.addCoarse([road(A)])
+    const r = own(lw, A)
+    const roadTiles = () => {
+      let n = 0
+      for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) if (lw.grid.terrainAt(x, y) === Terrain.road) n++
+      return n
+    }
+    // Detail wins (this detail has no road), and the coarse record waits.
+    expect(roadTiles()).toBe(0)
+    lw.evict([], [], { lat: 39.5, lon: -0.39 }, 0)
+    expect(lw.needs(A)).toBe(true)
+    expect(roadTiles()).toBeGreaterThan(50)
+    expect(lw.hasAny(A)).toBe(true)
+  })
+})
+
+describe('moving the frame (requirement 20.17)', () => {
+  it('keeps data and graph, repaints the records of the new frame nearest first, and forgets far coarse records', () => {
+    const lw = LiveWorld.fromData(loadDemoOsm())
+    const before = lw.world()
+    const frames: number[] = []
+    lw.subscribeFrame(() => frames.push(lw.frameVersion))
+    const far = { i: centre.i + 30, j: centre.j }
+    lw.addCoarse([makeRecord({ i: centre.i - 4, j: centre.j }, [])])
+    const next = { i: centre.i + 3, j: centre.j - 3 }
+    lw.recentre(next)
+    expect(frames).toEqual([1])
+    expect(lw.inFrame({ i: centre.i - 4, j: centre.j })).toBe(false)
+    expect(lw.needsCoarse({ i: centre.i - 4, j: centre.j })).toBe(false)
+    // Data and graph are the same map.
+    const after = lw.world()
+    expect(after.grid).not.toBe(before.grid)
+    expect(after.data.ways.length).toBe(before.data.ways.length)
+    expect(after.graph.edgeCount).toBe(before.graph.edgeCount)
+    // Records in the new frame wait to be painted, and are not "drawn" until then.
+    const inside = records.filter((r) => lw.inFrame(r.cell))
+    expect(inside.length).toBeGreaterThan(0)
+    expect(inside.every((r) => !lw.hasAny(r.cell))).toBe(true)
+    const p = cellBBox(next)
+    const order: string[] = []
+    for (let c = lw.paintNext({ lat: p.south, lon: p.west }); c; c = lw.paintNext({ lat: p.south, lon: p.west })) order.push(cellKey(c))
+    expect(order).toHaveLength(inside.length)
+    expect(inside.every((r) => lw.hasAny(r.cell))).toBe(true)
+    // Nearest first.
+    const d = order.map((k) => { const [i, j] = k.split(',').map(Number); return Math.hypot(i! - next.i, j! - next.j) })
+    expect(d[0]).toBeLessThanOrEqual(Math.min(...d) + 1)
+    // Same anchor again: nothing happens.
+    lw.recentre(next)
+    expect(frames).toEqual([1])
+    expect(lw.inFrame(far)).toBe(false)
   })
 })

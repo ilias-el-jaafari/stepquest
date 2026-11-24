@@ -7,7 +7,7 @@ import { decodeOsm, encodeOsm } from './codec.ts'
 import { DEMO_AREA, overpassQuery } from './demoArea.ts'
 import { loadDemoOsm } from './demo.ts'
 import { normalizeOverpass, type OverpassResponse } from './normalize.ts'
-import { areaForWalk, bboxAreaKm2, cacheKey, OverpassClient, OverpassError } from './overpass.ts'
+import { areaForWalk, bboxAreaKm2, cacheKey, MIN_REQUEST_GAP_MS, OverpassClient, OverpassError } from './overpass.ts'
 
 const sample: OverpassResponse = {
   osm3s: { timestamp_osm_base: '2026-11-20T19:11:51Z' },
@@ -143,9 +143,9 @@ describe('Overpass client', () => {
     const client = new OverpassClient({ cache: new MemoryCache(), fetch, now: () => clock, endpoints: ['https://only'] })
     await client.loadArea(bbox)
     const other = { ...bbox, north: bbox.north + 0.01 }
-    clock += 2000
+    clock += MIN_REQUEST_GAP_MS / 3
     await expect(client.loadArea(other)).rejects.toMatchObject({ code: 'rateLimited' })
-    clock += 10_000
+    clock += MIN_REQUEST_GAP_MS
     await expect(client.loadArea(other)).resolves.toBeDefined()
     expect(fetch).toHaveBeenCalledTimes(2)
   })

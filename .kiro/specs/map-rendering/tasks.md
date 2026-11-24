@@ -141,3 +141,28 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
   - [x] 70.12.4 `LiveWorld.frontier()` and `render/frontier.ts` (dithered fog band); tests
   - [x] 70.12.5 Spanish copy: "punto de control" in the quest HUD and results; 320 px fit test
   - _Requirements: 19.19 to 19.22_
+
+- [x] 73 Map loading v2 (field report 3: blank map and a strip of tiles on mobile, loading slow or never finished)
+  - [x] 73.1 Root cause in design.md: measured sizes and costs, the budget arithmetic, the shared-link race, the stuck dependencies; what was checked and is not a cause
+  - [x] 73.2 Spec: requirement 20, earlier criteria of 19 marked superseded, design section, tasks
+  - [x] 73.3 `osm/download.ts`: hedged mirrors (`fetchMirrors`), header, stall and total timeouts, caller abort; `osm/download.worker.ts` passes the mirror order, the coarse query and aborts
+    - _Requirements: 20.9_
+  - [x] 73.4 `osm/coarse.ts`, `world/regions.ts`: coarse query and filter, regions of 5 × 5 cells; tests including the share of points on the bundled extract
+    - _Requirements: 20.1_
+  - [x] 73.5 `osm/overpass.ts`: two slots, 1.5 s gap, 75 s deadline, mirror order, `loadCoarse` and `cachedCoarse`, cache read and write limits, writes after hand-over; tests
+    - _Requirements: 20.2, 20.7, 20.9, 20.11_
+  - [x] 73.6 `world/tileWorld.ts`, `town/layout.ts`: coarse paint without town, buildings built whole by the cell that holds their centre (spill lookup, landmarks never on a foreign building); order, overlap and drop tests
+    - _Requirements: 20.3, 20.12_
+  - [x] 73.7 `world/liveWorld.ts`: coarse records, no stipple on coarse cells, frontier at the edge of everything drawn, fall-back to coarse on eviction; tests
+    - _Requirements: 20.3, 20.6_
+  - [x] 73.8 `world/streamer.ts`: cache pass, two lanes, adaptive batch with ceiling, jittered back-off, rate and slot limits, route ahead, watchdog, one cell per task, load state; fake-timer and slow-link tests
+    - _Requirements: 20.4 to 20.11, 20.14, 20.15_
+  - [x] 73.9 `world/window.ts`, renderer: floor counts regions at wide zooms; the view callback carries zoom and horizon box; tests
+    - _Requirements: 20.13_
+  - [x] 73.10 `useStreaming`, `useArea`, `App`, `QuestScreen`, `MapView`: `data-map-ready` and `data-map-pending` on the canvas; test
+    - _Requirements: 20.15_
+  - [x] 73.11 Docs: `osm-etiquette.md` (new limits and reasons, attribution), `OSM_ATTRIBUTION`, specs README; `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
+    - _Requirements: 20.7 to 20.10, 20.16_
+  - [x] 73.12 Field benchmark fix: the frame follows the view during a route or quest (requirement 20.17); readiness over every cell the camera shows; `LiveWorld.recentre`/`paintNext`, streamer re-anchor, `MapView` rebuild at the same place, renderer ignores a moved source; regression `world/panAway.test.ts`; Root cause "Cause 0"
+    - _Requirements: 20.15, 20.17_
+

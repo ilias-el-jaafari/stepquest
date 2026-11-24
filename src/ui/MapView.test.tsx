@@ -217,3 +217,63 @@ describe('map drawing without holes', () => {
     }
   })
 })
+
+describe('map load state on the canvas (requirement 20.10)', () => {
+  const canvas = () => host.querySelector<HTMLCanvasElement>('[data-testid="map-canvas"]')!
+  const render = (load?: { ready: 'loading' | 'coarse' | 'full'; pending: number }) =>
+    act(async () =>
+      root.render(
+        <I18nProvider>
+          <MapView map={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="l" onTap={() => {}} home={start} load={load} />
+        </I18nProvider>,
+      ),
+    )
+
+  it('says full with nothing pending when no loading runs', async () => {
+    await render()
+    expect(canvas().dataset.mapReady).toBe('full')
+    expect(canvas().dataset.mapPending).toBe('0')
+  })
+
+  it('follows the load state, and adds nothing visible', async () => {
+    await render({ ready: 'loading', pending: 12 })
+    expect(canvas().dataset.mapReady).toBe('loading')
+    expect(canvas().dataset.mapPending).toBe('12')
+    await render({ ready: 'coarse', pending: 3 })
+    expect(canvas().dataset.mapReady).toBe('coarse')
+    expect(canvas().dataset.mapPending).toBe('3')
+    await render({ ready: 'full', pending: 0 })
+    expect(canvas().dataset.mapReady).toBe('full')
+    // Only data attributes: no extra element and no text for the player.
+    expect(host.querySelectorAll('canvas')).toHaveLength(1)
+    expect(host.textContent).not.toMatch(/loading|coarse|pending/i)
+  })
+})
+
+describe('the frame follows the view (requirement 20.17)', () => {
+  it('rebuilds the renderer on the new grid at the same place and zoom, and sets the quest again', async () => {
+    const { LiveWorld } = await import('../world/liveWorld.ts')
+    const { makeRecord } = await import('../world/testing.ts')
+    const lw = new LiveWorld({ i: 3949, j: -40 }, [makeRecord({ i: 3949, j: -40 }, [])])
+    const centerOn = vi.spyOn(MapRenderer.prototype, 'centerOn')
+    const setQuest = vi.spyOn(MapRenderer.prototype, 'setQuest')
+    const dispose = vi.spyOn(MapRenderer.prototype, 'dispose')
+    const quest = { player: undefined, accuracyM: undefined, collected: 0, alongM: 0 }
+    await act(async () =>
+      root.render(
+        <I18nProvider>
+          <MapView map={lw} route={undefined} markers={{ start }} focus={[start]} focusKey="f" onTap={() => {}} home={start} quest={quest} />
+        </I18nProvider>,
+      ),
+    )
+    const grid = lw.grid
+    centerOn.mockClear()
+    setQuest.mockClear()
+    await act(async () => lw.recentre({ i: 3955, j: -46 }))
+    expect(lw.grid).not.toBe(grid)
+    expect(dispose).toHaveBeenCalledTimes(1)
+    // The new renderer starts where the old one was, not at the focus points or the new grid's middle.
+    expect(centerOn).toHaveBeenCalledTimes(1)
+    expect(setQuest).toHaveBeenCalledWith(quest)
+  })
+})

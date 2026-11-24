@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { bboxContains, type BBox, type LatLon } from '../geo/geo.ts'
 import { formatCoordPair } from '../geo/coords.ts'
 import { stepsToMetres } from '../geo/steps.ts'
+import { defaultCache } from '../osm/cache.ts'
 import { areaForWalk } from '../osm/overpass.ts'
 import { locateOnce } from '../quest/geolocation.ts'
 import { routeNearBbox } from '../quest/migrate.ts'
@@ -12,6 +13,8 @@ import { loadDemoWorld, useLiveLoader, type World } from '../ui/useMapData.ts'
 import { cellKey, cellOf } from '../world/cells.ts'
 import type { CellRecord } from '../world/slice.ts'
 import type { AppAction, AppState } from './appState.ts'
+import { VectorTileClient } from '../vector/client.ts'
+import { IDLE_LOAD, type MapLoad } from '../world/streamer.ts'
 import { useStreaming } from './useStreaming.ts'
 
 type Args = {
@@ -77,7 +80,13 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
     },
     [setWorld],
   )
-  const onViewBox = useStreaming({ world, client, onWorld: onStreamed, keep, online })
+  const [load, setLoad] = useState<MapLoad>(IDLE_LOAD)
+  // With a route planned or a quest running the frame follows the view; otherwise a view that rests
+  // outside it gets the "load this area" behaviour below (requirement 20.17).
+  const reanchor = !!state.result?.ok || questActive
+  const tiles = useMemo(() => new VectorTileClient({ cache: defaultCache() }), [])
+  useEffect(() => () => tiles.dispose(), [tiles])
+  const onViewBox = useStreaming({ world, tiles, graph: client, onWorld: onStreamed, keep, online, onLoad: setLoad, reanchor })
 
   /** Load the live OSM area around a point and make it the start. */
   const loadLiveAround = useCallback(
@@ -197,5 +206,5 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
     return () => clearTimeout(timer)
   }, [bbox, viewCentre, busy, hasPlan, loadLiveAround])
 
-  return { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot, onViewBox }
+  return { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot, onViewBox, load }
 }

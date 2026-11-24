@@ -1,15 +1,18 @@
+import type { OsmData, OsmWay } from '../osm/types.ts'
 import { clipSegment, rasterizeOsm, type Pt } from '../tiles/rasterize.ts'
-import { TileGrid, type TileRect } from '../tiles/grid.ts'
+import { Terrain, TileGrid, type TileRect } from '../tiles/grid.ts'
 import { layoutTown } from '../town/layout.ts'
 import { indexByChunk, type Structures, type TownLookup } from '../town/lookup.ts'
 import type { House, Landmark } from '../town/types.ts'
-import { cellBBox, cellsBBox, cellKey, type CellId } from './cells.ts'
+import { cellBBox, cellsBBox, cellKey, cellOf, sameCell, type CellId } from './cells.ts'
 import type { CellRecord } from './slice.ts'
 
 /** The frame reaches this many cells from its first cell in each direction (9 × 9 cells). */
 export const MAX_RADIUS_CELLS = 4
 /** Tiles rasterized around a cell so roads, auto-tiles and blocks at its edge see their surroundings. */
 export const APRON_TILES = 6
+/** The most a building may reach past its cell's tiles and still be built whole (about 400 m). */
+export const MAX_SPILL_TILES = 80
 
 const TREE = 1
 const FENCE = 2
@@ -18,6 +21,12 @@ const GATE = 4
 /** The town of one cell, in frame tile coordinates, over the cell's covered rectangle. */
 type TownUnit = {
   rect: TileRect
+  /** `rect` grown to hold the houses of this cell's buildings that reach into a neighbour's tiles. */
+  bounds: TileRect
+  /** Frame tile indices outside `rect` that this unit put into `TileWorld.spill`. */
+  spilled: number[]
+  /** Frame tile indices outside `rect` that carry a garden tree, fence or gate of this unit's houses. */
+  outside: { trees: number[]; fences: number[]; gates: number[] }
   houses: House[]
   landmarks: Landmark[]
   /** Per tile of `rect`: house / landmark index + 1 (0 = none), and TREE | FENCE | GATE bits. */
@@ -28,6 +37,31 @@ type TownUnit = {
 }
 
 const chunkKeyOf = (cx: number, cy: number) => cy * (1 << 15) + cx
+
+/** What a unit puts on a tile outside its own rectangle (a house that reaches past the cell border, its garden bits). */
+type Spill = { owner: string; house?: House; flags: number }
+
+/**
+ * The owner of a building: the cell that holds the centre of its bounding box (south and west edges
+ * in, north and east out), or of its `anchor` (a vector-tile building cut at a tile seam: the centre
+ * of all its pieces, so every piece has the same owner).
+ */
+function centreCell(data: OsmData, way: OsmWay): CellId {
+  if (way.anchor) return cellOf(way.anchor)
+  let south = Infinity
+  let west = Infinity
+  let north = -Infinity
+  let east = -Infinity
+  for (const n of way.nodes) {
+    const la = data.lat[n]!
+    const lo = data.lon[n]!
+    if (la < south) south = la
+    if (la > north) north = la
+    if (lo < west) west = lo
+    if (lo > east) east = lo
+  }
+  return cellOf({ lat: (south + north) / 2, lon: (west + east) / 2 })
+}
 
 /**
  * The tiles and town of a streamed world. One frame grid (9 × 9 cells around the first cell, one
@@ -53,6 +87,7 @@ export class TileWorld {
   private readonly rails = new Map<string, Pt[][]>()
   private readonly listeners = new Set<(rect: TileRect) => void>()
   private structureCache = new Map<number, Map<number, Structures | undefined>>()
+  private readonly spill = new Map<number, Spill>()
 
   constructor(centre: CellId, metresPerTile?: number) {
     const r = MAX_RADIUS_CELLS
@@ -113,36 +148,102 @@ export class TileWorld {
     return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : undefined
   }
 
-  /** Paint one cell's record (replacing what the cell had). Returns the changed rectangle. */
-  paint(rec: CellRecord): TileRect | undefined {
+  /**
+   * Paint one cell's record (replacing what the cell had). A `coarse` record paints tiles and tracks
+   * only: no town. Returns the changed rectangle.
+   *
+   * A building belongs to the cell that holds the centre of its box and is laid out whole by that
+   * cell, so its houses may reach into the next cell's tiles (stored as `spill`); the other cells
+   * leave its tiles alone. The window is widened to hold such buildings (at most `MAX_SPILL_TILES`).
+   */
+  paint(rec: CellRecord, opts: { coarse?: boolean } = {}): TileRect | undefined {
     const own = this.ownedRect(rec.cell)
     const rect = this.coveredRect(rec)
     if (!own || !rect) return undefined
+    const coarse = opts.coarse === true
+    const before = this.dropUnit(rec.cell)
     this.grid.clearRect(own)
-    const a = APRON_TILES
+    const mine = coarse ? [] : rec.data.ways.filter((w) => w.kind === 'building' && w.area && sameCell(centreCell(rec.data, w), rec.cell))
+    const a = coarse ? APRON_TILES : this.apronFor(rec.data, mine, rect)
     const win = this.grid.window(rect.x - a, rect.y - a, rect.w + 2 * a, rect.h + 2 * a)
     rasterizeOsm(win, rec.data)
     this.grid.copyFrom(win, rect)
-    // The town: nothing is built outside the covered rectangle.
-    const keepOut = new Uint8Array(win.cols * win.rows).fill(1)
-    for (let y = a; y < a + rect.h; y++) keepOut.fill(0, y * win.cols + a, y * win.cols + a + rect.w)
-    this.units[this.slot(rec.cell)] = unitFrom(win, layoutTown(win, keepOut), rect, a)
+    let changed = own
+    if (!coarse) {
+      // Landmarks and gates stay on this cell's tiles; houses go on the buildings this cell owns.
+      const keepOut = new Uint8Array(win.cols * win.rows).fill(1)
+      for (let y = a; y < a + rect.h; y++) keepOut.fill(0, y * win.cols + a, y * win.cols + a + rect.w)
+      const scratch = this.grid.window(rect.x - a, rect.y - a, rect.w + 2 * a, rect.h + 2 * a)
+      rasterizeOsm(scratch, { ...rec.data, ways: mine, pois: [], activity: [], industrial: [] })
+      const housesOn = new Uint8Array(win.cols * win.rows)
+      for (let i = 0; i < housesOn.length; i++) if (scratch.terrain[i] === Terrain.building && win.terrain[i] === Terrain.building) housesOn[i] = 1
+      const unit = unitFrom(win, layoutTown(win, keepOut, housesOn), rect, a, this.grid.cols)
+      this.units[this.slot(rec.cell)] = unit
+      this.addSpill(rec.cell, unit)
+      changed = union(own, unit.bounds)
+    }
     // Tracks: shifted into frame tiles and clipped to the covered rectangle (each piece drawn once).
     const dx = rect.x - a
     const dy = rect.y - a
     this.rails.set(cellKey(rec.cell), clipRails(win.rails.map((l) => l.map((p) => ({ x: p.x + dx, y: p.y + dy }))), rect))
-    this.changed(own)
-    return own
+    this.changed(before ? union(changed, before) : changed)
+    return changed
+  }
+
+  /** Tiles to widen the window by: the apron, or more when an owned building reaches farther out of `rect`. */
+  private apronFor(data: OsmData, mine: readonly OsmWay[], rect: TileRect): number {
+    let reach = 0
+    for (const w of mine) {
+      for (const n of w.nodes) {
+        const t = this.grid.toTileXY({ lat: data.lat[n]!, lon: data.lon[n]! })
+        reach = Math.max(reach, rect.x - t.x, t.x - (rect.x + rect.w), rect.y - t.y, t.y - (rect.y + rect.h))
+      }
+    }
+    return Math.max(APRON_TILES, Math.min(MAX_SPILL_TILES, Math.ceil(reach) + 2))
+  }
+
+  /** Forget a cell's unit and its spill; returns the rectangle it covered, if it had one. */
+  private dropUnit(c: CellId): TileRect | undefined {
+    const unit = this.units[this.slot(c)]
+    if (!unit) return undefined
+    const key = cellKey(c)
+    for (const i of unit.spilled) if (this.spill.get(i)?.owner === key) this.spill.delete(i)
+    this.units[this.slot(c)] = undefined
+    return unit.bounds
+  }
+
+  private addSpill(c: CellId, unit: TownUnit): void {
+    const key = cellKey(c)
+    const cols = this.grid.cols
+    const own = unit.rect
+    const inside = (x: number, y: number) => x >= own.x && y >= own.y && x < own.x + own.w && y < own.y + own.h
+    const at = (x: number, y: number): Spill => {
+      const i = y * cols + x
+      let e = this.spill.get(i)
+      if (!e || e.owner !== key) {
+        e = { owner: key, flags: 0 }
+        this.spill.set(i, e)
+        unit.spilled.push(i)
+      }
+      return e
+    }
+    for (const h of unit.houses) for (let y = h.y; y < h.y + h.h; y++) for (let x = h.x; x < h.x + h.w; x++) if (!inside(x, y)) at(x, y).house = h
+    for (const [set, bit] of [[unit.outside.trees, TREE], [unit.outside.fences, FENCE], [unit.outside.gates, GATE]] as const) {
+      for (const i of set) {
+        const e = at(i % cols, Math.floor(i / cols))
+        e.flags |= bit
+      }
+    }
   }
 
   /** Forget a cell's tiles, town and tracks. */
   clear(c: CellId): TileRect | undefined {
     const own = this.ownedRect(c)
     if (!own) return undefined
+    const before = this.dropUnit(c)
     this.grid.clearRect(own)
-    this.units[this.slot(c)] = undefined
     this.rails.delete(cellKey(c))
-    this.changed(own)
+    this.changed(before ? union(own, before) : own)
     return own
   }
 
@@ -174,13 +275,17 @@ export class TileWorld {
   private lookup(): TownLookup {
     const flag = (bit: number) => (i: number) => {
       const at = this.unitAt(i)
-      return !!at && (at.unit.flags[at.k]! & bit) !== 0
+      if (at && (at.unit.flags[at.k]! & bit) !== 0) return true
+      return this.spill.size > 0 && ((this.spill.get(i)?.flags ?? 0) & bit) !== 0
     }
     return {
       houseAt: (i) => {
         const at = this.unitAt(i)
         const h = at ? at.unit.houseAt[at.k]! : 0
-        return h ? at!.unit.houses[h - 1] : undefined
+        if (h) return at!.unit.houses[h - 1]
+        // A landmark of the cell that owns this tile wins over a house reaching in from a neighbour.
+        if (at && at.unit.landmarkAt[at.k]) return undefined
+        return this.spill.size > 0 ? this.spill.get(i)?.house : undefined
       },
       landmarkAt: (i) => {
         const at = this.unitAt(i)
@@ -201,7 +306,7 @@ export class TileWorld {
         const y0 = cy * size
         for (const unit of this.units) {
           if (!unit) continue
-          const r = unit.rect
+          const r = unit.bounds
           if (r.x >= x0 + size || r.x + r.w <= x0 || r.y >= y0 + size || r.y + r.h <= y0) continue
           let index = unit.byChunk.get(size)
           if (!index) unit.byChunk.set(size, (index = indexByChunk(unit.houses, unit.landmarks, size, chunkKeyOf)))
@@ -220,7 +325,7 @@ export class TileWorld {
 }
 
 /** Convert a window layout into a unit over `rect` (frame tiles); the window starts `apron` tiles before it. */
-function unitFrom(win: TileGrid, town: ReturnType<typeof layoutTown>, rect: TileRect, apron: number): TownUnit {
+function unitFrom(win: TileGrid, town: ReturnType<typeof layoutTown>, rect: TileRect, apron: number, frameCols: number): TownUnit {
   const dx = rect.x - apron
   const dy = rect.y - apron
   const houses = town.houses.map((h) => ({ ...h, x: h.x + dx, y: h.y + dy }))
@@ -229,16 +334,47 @@ function unitFrom(win: TileGrid, town: ReturnType<typeof layoutTown>, rect: Tile
   const houseAt = new Int32Array(n)
   const landmarkAt = new Int32Array(n)
   const flags = new Uint8Array(n)
+  const frame = (wi: number) => ({ x: (wi % win.cols) + dx, y: Math.floor(wi / win.cols) + dy })
+  const inRect = (x: number, y: number) => x >= rect.x && y >= rect.y && x < rect.x + rect.w && y < rect.y + rect.h
+  const outside = { trees: [] as number[], fences: [] as number[], gates: [] as number[] }
+  const flag = (set: ReadonlySet<number>, bit: number, out: number[]) => {
+    for (const wi of set) {
+      const { x, y } = frame(wi)
+      if (inRect(x, y)) flags[(y - rect.y) * rect.w + (x - rect.x)]! |= bit
+      else out.push(y * frameCols + x)
+    }
+  }
   for (let y = 0; y < rect.h; y++) {
     for (let x = 0; x < rect.w; x++) {
       const wi = win.index(x + apron, y + apron)
       const k = y * rect.w + x
       houseAt[k] = (town.houseAt[wi] ?? -1) + 1
       landmarkAt[k] = (town.landmarkAt[wi] ?? -1) + 1
-      flags[k] = (town.trees.has(wi) ? TREE : 0) | (town.fences.has(wi) ? FENCE : 0) | (town.gates.has(wi) ? GATE : 0)
     }
   }
-  return { rect, houses, landmarks, houseAt, landmarkAt, flags, byChunk: new Map() }
+  flag(town.trees, TREE, outside.trees)
+  flag(town.fences, FENCE, outside.fences)
+  flag(town.gates, GATE, outside.gates)
+  // Bounds of the unit: its rectangle and every house that reaches past it.
+  let x0 = rect.x
+  let y0 = rect.y
+  let x1 = rect.x + rect.w
+  let y1 = rect.y + rect.h
+  for (const h of houses) {
+    x0 = Math.min(x0, h.x)
+    y0 = Math.min(y0, h.y)
+    x1 = Math.max(x1, h.x + h.w)
+    y1 = Math.max(y1, h.y + h.h)
+  }
+  return { rect, bounds: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, spilled: [], houses, landmarks, houseAt, landmarkAt, flags, byChunk: new Map(), outside }
+}
+
+function union(a: TileRect, b: TileRect): TileRect {
+  const x0 = Math.min(a.x, b.x)
+  const y0 = Math.min(a.y, b.y)
+  const x1 = Math.max(a.x + a.w, b.x + b.w)
+  const y1 = Math.max(a.y + a.h, b.y + b.h)
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
 /** Clip polylines to a rectangle; pieces that leave and come back become separate polylines. */

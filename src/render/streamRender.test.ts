@@ -4,7 +4,8 @@ import { DEMO_AREA } from '../osm/demoArea.ts'
 import { cellOf, cellsInBBox } from '../world/cells.ts'
 import { LiveWorld } from '../world/liveWorld.ts'
 import { sliceToCells } from '../world/slice.ts'
-import { MAX_CELLS_PER_MINUTE } from '../world/streamer.ts'
+import { regionsOfCells } from '../world/regions.ts'
+import { QUEST_WINDOW_REGIONS } from '../world/window.ts'
 import { MapRenderer } from './MapRenderer.ts'
 import { P } from './palette.ts'
 import { installSoftCanvas, SoftCanvas } from './testing/softCanvas.ts'
@@ -111,13 +112,17 @@ describe('rendering a streamed world (19.13, 19.14)', () => {
     r.zoomStep(-1)
     r.render()
     expect(r.zoom).toBe(floor)
-    // The view at the floor touches no more cells than one minute of requests brings.
-    expect(cellsInBBox(r.viewBBox()).length).toBeLessThanOrEqual(MAX_CELLS_PER_MINUTE)
+    // The view at the floor touches no more coarse regions than the budget (the coarse layer draws it).
+    expect(regionsOfCells(cellsInBBox(r.viewBBox())).length).toBeLessThanOrEqual(QUEST_WINDOW_REGIONS)
+    // The horizon box (loaded ahead as coarse regions) is the view at the floor.
+    const h = r.horizonBBox()
+    const v = r.viewBBox()
+    expect(h.north - h.south).toBeCloseTo(v.north - v.south, 4)
     // A smaller window (rotation) never raises the floor above what it needs.
     canvas.clientWidth = 844
     canvas.clientHeight = 390
     r.render()
-    expect(cellsInBBox(r.viewBBox()).length).toBeLessThanOrEqual(MAX_CELLS_PER_MINUTE)
+    expect(regionsOfCells(cellsInBBox(r.viewBBox())).length).toBeLessThanOrEqual(QUEST_WINDOW_REGIONS)
     r.setQuest(undefined)
     r.render()
     expect(r.minZoom).toBe(0)

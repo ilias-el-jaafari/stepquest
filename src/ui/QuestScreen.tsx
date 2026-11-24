@@ -7,6 +7,7 @@ import { snapToRoute } from '../quest/snap.ts'
 import type { LocationErrorCode } from '../quest/geolocation.ts'
 import type { BBox, LatLon } from '../geo/geo.ts'
 import type { MapSource } from '../render/mapSource.ts'
+import type { MapLoad } from '../world/streamer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 import { useAudio } from '../audio/useAudio.ts'
 import { CompleteDialog } from './CompleteDialog.tsx'
@@ -19,7 +20,9 @@ import type { Pickup } from './useQuestRunner.ts'
 type Props = {
   map: TileGrid | MapSource
   /** Where the view is, for streaming the cells around it (new cells only add drawing). */
-  onViewBox?: (box: BBox, centre: LatLon) => void
+  onViewBox?: (box: BBox, centre: LatLon, zoom?: number) => void
+  /** What the map shows now (read-only state on the map element). */
+  load?: MapLoad
   quest: QuestState
   pickup: Pickup | undefined
   error: LocationErrorCode | undefined
@@ -37,7 +40,7 @@ const ignoreTap = () => {}
 /** The HUD sits 10 px above the screen edge; the stack's own bottom margin is 8 px, plus a little air. */
 const HUD_GAP = 6
 
-export function QuestScreen({ map, onViewBox, quest, pickup, error, wakeActive, resumed, onEnd, onUseSim }: Props) {
+export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeActive, resumed, onEnd, onUseSim }: Props) {
   const { t, locale } = useI18n()
   const { engine, status, settings: sound, phrase } = useAudio()
   const [now, setNow] = useState(() => Date.now())
@@ -173,6 +176,7 @@ export function QuestScreen({ map, onViewBox, quest, pickup, error, wakeActive, 
               <MapView
                 map={map}
                 onViewBox={onViewBox}
+                load={load}
                 route={quest.route}
                 markers={markers}
                 focus={focus}

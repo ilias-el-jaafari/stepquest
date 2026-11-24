@@ -46,6 +46,12 @@ export type OsmWay = {
   name?: string
   /** Safety proxies from the tags, as SAFETY_* bit flags (lighting, sidewalks, alleys…). */
   safety?: number
+  /**
+   * Vector-tile buildings only: the point that decides which cell builds the building's houses (the
+   * centre of the box of all its pieces across tile seams, requirement 21.6). Absent: the centre of
+   * this way's own box. Not stored by the codec (tile data is grouped again when it is assembled).
+   */
+  anchor?: { lat: number; lon: number }
 }
 
 /** lit=yes (or a lit time range). */
@@ -75,9 +81,15 @@ export type OsmData = {
    * single extract, where the whole `bbox` is loaded. The walking graph only uses points inside it.
    */
   coverage?: BBox[]
-  source: 'fixture' | 'overpass'
+  /** Where the data came from: the bundled extract, Overpass (walking graph), or vector tiles (drawing only). */
+  source: 'fixture' | 'overpass' | 'tiles'
   /** OSM base timestamp (ISO) reported by Overpass. */
   timestamp: string
 }
 
-export const OSM_ATTRIBUTION = '© OpenStreetMap contributors (ODbL)'
+/**
+ * The full credit shown on the map (requirement 21.12): the tile service, the tile schema and the
+ * data, each linked by the map view (openfreemap.org, openmaptiles.org, openstreetmap.org/copyright).
+ * The Spanish form is `map.creditTiles` + `map.creditSchema` + `map.attribution` in `es.ts`.
+ */
+export const OSM_ATTRIBUTION = 'OpenFreeMap © OpenMapTiles © OpenStreetMap contributors'
