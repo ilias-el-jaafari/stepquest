@@ -13,7 +13,10 @@ Read this before changing the planners, the safety weights, the reroute logic or
 - **Safety proxies** (`safetyFlags`): `lit` (yes/no), `sidewalk*` and `footway=sidewalk`, `highway=service` with an alley-type `service`, `tunnel`, `covered`, `indoor`, `layer < 0`, `tunnel=building_passage`.
 - **Liveliness**: `shop` (not vacant) and a small set of `amenity` values within 40 m of a street.
 - **Industrial land**: `landuse` values in the industrial set; edges inside count as unattractive.
-- **Crossings**: `footway=crossing`, `highway=crossing`, `crossing=*`.
+- **Crossings** (`footway=crossing`, `highway=crossing`, `crossing=*`): kept as ordinary walkable edges joined to the streets they cross; they do not change any safety weight (product decision). A "prefer marked crossings" weight is an open proposal in `.kiro/specs/routing/design.md`.
+- **Steps** (`highway=steps`) are walkable; step-free routing is not offered.
+- **Pedestrian direction**: `oneway`, `oneway:foot`, `foot:forward` and `foot:backward` are not read. The graph is undirected on purpose (foot traffic is usually exempt from vehicle one-ways). Do not assume direction support.
+- **Plazas**: a walkable closed `path` way with `area=yes` gets interior chords in `WalkGraph` (`plazaChords.ts`). `place=square` alone is not walkable.
 - **Roundabouts**: `junction=roundabout|circular`.
 
 ## Safety weights
@@ -32,7 +35,9 @@ Read this before changing the planners, the safety weights, the reroute logic or
 ## Step budget
 
 - `TARGET_TOLERANCE` is 0.05 (`src/geo/steps.ts`). A planned route, and a rerouted remainder, must land within ±5 % of the target distance. Planners tune a size parameter until they do.
-- If the goal cannot fit (shorter than the direct A→B path, or larger than the loaded area allows) return a reason and the nearest feasible number of steps, in plain words. Never return an out-of-budget route silently.
+- If the goal cannot fit (shorter than the direct A→B path or the smallest loop, or larger than the loaded area allows) return a reason and the nearest feasible number of steps, in plain words. Never return an out-of-budget route silently.
+- Goals outside `MIN_STEPS`..`MAX_STEPS` (or not finite) return `outOfRange` at once. Infeasible loops carry both `minSteps` and `maxSteps`.
+- Code layout: `planner.ts` is the public API; `routeBuild.ts` assembles routes, `tune.ts` holds the size search, `graph.ts` the graph and A* (reused working memory, not reentrant), `plazaChords.ts` plaza geometry. Time changes with `planBench.test.ts`.
 - Distance and steps convert only through `src/geo/steps.ts` with the user's stride.
 
 ## Rerouting

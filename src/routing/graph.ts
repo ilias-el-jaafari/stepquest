@@ -2,6 +2,7 @@ import { haversine, LocalProjection, type LatLon } from '../geo/geo.ts'
 import type { OsmData } from '../osm/types.ts'
 import { crossesIsland, findRoundabouts } from '../osm/roundabout.ts'
 import { MinHeap } from './heap.ts'
+import { plazaChords } from './plazaChords.ts'
 
 /**
  * Undirected pedestrian graph in compressed sparse row form. Nodes are the OSM
@@ -25,6 +26,15 @@ export class WalkGraph {
   private readonly projection: LocalProjection
   private readonly x: Float64Array
   private readonly y: Float64Array
+  // A* working memory, reused by every search (one allocation per graph, not per leg).
+  // An entry is valid only when its stamp equals the current search's generation.
+  private readonly gScore: Float64Array
+  private readonly prevNode: Int32Array
+  private readonly prevEdge: Int32Array
+  private readonly seenStamp: Uint32Array
+  private readonly closedStamp: Uint32Array
+  private readonly heap = new MinHeap()
+  private generation = 0
 
   constructor(data: OsmData) {
     const map = new Map<number, number>()
@@ -45,20 +55,27 @@ export class WalkGraph {
     const ringWays = new Set(islands.flatMap((r) => r.ways))
     const islandProjection = new LocalProjection({ lat: (south + north) / 2, lon: (east + west) / 2 })
     const xyOf = (n: number) => islandProjection.toXY({ lat: data.lat[n] ?? 0, lon: data.lon[n] ?? 0 })
+    const addEdge = (a: number, b: number, wayIndex: number, checkIsland: boolean) => {
+      if (a === b || !inside(a) || !inside(b)) return
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`
+      if (seen.has(key)) return
+      if (checkIsland && islands.length && crossesIsland(xyOf(a), xyOf(b), islands)) return
+      seen.add(key)
+      for (const n of [a, b]) if (!map.has(n)) map.set(n, map.size)
+      pairs.push([map.get(a)!, map.get(b)!])
+      pairWay.push(wayIndex)
+    }
     data.ways.forEach((way, wayIndex) => {
       if (!way.walkable) return
-      for (let i = 1; i < way.nodes.length; i++) {
-        const a = way.nodes[i - 1]!
-        const b = way.nodes[i]!
-        if (a === b || !inside(a) || !inside(b)) continue
-        const key = a < b ? `${a}:${b}` : `${b}:${a}`
-        if (seen.has(key)) continue
-        if (islands.length && !ringWays.has(wayIndex) && crossesIsland(xyOf(a), xyOf(b), islands)) continue
-        seen.add(key)
-        for (const n of [a, b]) if (!map.has(n)) map.set(n, map.size)
-        pairs.push([map.get(a)!, map.get(b)!])
-        pairWay.push(wayIndex)
-      }
+      for (let i = 1; i < way.nodes.length; i++) addEdge(way.nodes[i - 1]!, way.nodes[i]!, wayIndex, !ringWays.has(wayIndex))
+    })
+    // A pedestrian plaza (a closed footway/pedestrian area) is open ground: add walkable
+    // chords across it, after the ring edges so a ring edge always wins a duplicate.
+    data.ways.forEach((way, wayIndex) => {
+      if (!way.walkable || !way.area || way.kind !== 'path' || way.nodes.length < 5 || way.nodes[0] !== way.nodes[way.nodes.length - 1]) return
+      const ring = way.nodes.slice(0, -1)
+      if (!ring.every(inside)) return // clipped by the loaded box: the outline is not the real shape
+      for (const [i, j] of plazaChords(ring.map(xyOf))) addEdge(ring[i]!, ring[j]!, wayIndex, true)
     })
     this.size = map.size
     this.lat = new Float64Array(this.size)
@@ -100,6 +117,11 @@ export class WalkGraph {
       this.y[i] = p.y
     }
     this.component = this.labelComponents()
+    this.gScore = new Float64Array(this.size)
+    this.prevNode = new Int32Array(this.size)
+    this.prevEdge = new Int32Array(this.size)
+    this.seenStamp = new Uint32Array(this.size)
+    this.closedStamp = new Uint32Array(this.size)
   }
 
   point(n: number): LatLon {
@@ -163,47 +185,57 @@ export class WalkGraph {
    */
   shortestPath(from: number, to: number, penalty?: Float32Array, minPenalty = 1): { nodes: number[]; edges: number[]; length: number } | undefined {
     if (from === to) return { nodes: [from], edges: [], length: 0 }
-    const g = new Float64Array(this.size).fill(Infinity)
-    const prev = new Int32Array(this.size).fill(-1)
-    const prevEdge = new Int32Array(this.size).fill(-1)
-    const closed = new Uint8Array(this.size)
-    const heap = new MinHeap()
-    const tx = this.x[to]!
-    const ty = this.y[to]!
+    // New search: bump the generation instead of clearing the arrays.
+    if (++this.generation === 0xffffffff) {
+      this.seenStamp.fill(0)
+      this.closedStamp.fill(0)
+      this.generation = 1
+    }
+    const gen = this.generation
+    const { gScore, prevNode, prevEdge, seenStamp, closedStamp, heap, x, y } = this
+    heap.clear()
+    const tx = x[to]!
+    const ty = y[to]!
     const hScale = 0.995 * Math.min(1, minPenalty)
-    const h = (n: number) => Math.hypot(this.x[n]! - tx, this.y[n]! - ty) * hScale
-    g[from] = 0
+    const h = (n: number) => {
+      const dx = x[n]! - tx
+      const dy = y[n]! - ty
+      return Math.sqrt(dx * dx + dy * dy) * hScale
+    }
+    gScore[from] = 0
+    prevNode[from] = -1
+    prevEdge[from] = -1
+    seenStamp[from] = gen
     heap.push(h(from), from)
     while (heap.size) {
       const n = heap.pop()!
-      if (closed[n]) continue
-      closed[n] = 1
+      if (closedStamp[n] === gen) continue
+      closedStamp[n] = gen
       if (n === to) break
-      const gn = g[n]!
+      const gn = gScore[n]!
       for (let i = this.offsets[n]!; i < this.offsets[n + 1]!; i++) {
         const m = this.targets[i]!
-        if (closed[m]) continue
+        if (closedStamp[m] === gen) continue
         const e = this.edgeIds[i]!
         const cost = this.lengths[i]! * (penalty ? penalty[e]! : 1)
         if (cost === Infinity) continue
         const gm = gn + cost
-        if (gm < g[m]!) {
-          g[m] = gm
-          prev[m] = n
+        if (seenStamp[m] !== gen || gm < gScore[m]!) {
+          seenStamp[m] = gen
+          gScore[m] = gm
+          prevNode[m] = n
           prevEdge[m] = e
           heap.push(gm + h(m), m)
         }
       }
     }
-    if (prev[to] === -1) return undefined
+    if (closedStamp[to] !== gen) return undefined
     const nodes: number[] = []
     const edges: number[] = []
     let length = 0
-    for (let n = to; n !== -1; n = prev[n]!) {
+    for (let n = to; n !== -1; n = prevNode[n]!) {
       nodes.push(n)
-      if (prevEdge[n]! >= 0) {
-        edges.push(prevEdge[n]!)
-      }
+      if (prevEdge[n]! >= 0) edges.push(prevEdge[n]!)
     }
     nodes.reverse()
     edges.reverse()

@@ -89,15 +89,23 @@ describe('rerouting properties (Benicalap fixture)', () => {
           const old = route.points
           const cumulative = cumulativeDistances(old)
           const nextM = route.checkpoints[q.collected]!.distanceM
-          const joins: number[] = []
+          const joins: { i: number; at: number }[] = []
           for (let i = 1; i < old.length; i++) {
             if (cumulative[i]! < q.alongM - 1e-6 || cumulative[i]! > nextM + 1e-6) continue
             const tail = old.slice(i + 1)
             const at = p.points.length - tail.length - 1
             if (at < 0) continue
-            if (tail.every((pt, j) => pt.lat === p.points[at + 1 + j]!.lat && pt.lon === p.points[at + 1 + j]!.lon) && haversine(p.points[at]!, old[i]!) <= 8) joins.push(i)
+            if (tail.every((pt, j) => pt.lat === p.points[at + 1 + j]!.lat && pt.lon === p.points[at + 1 + j]!.lon) && haversine(p.points[at]!, old[i]!) <= 8) joins.push({ i, at })
           }
           expect(joins.length, 'a join vertex between the walker and the next gem').toBeGreaterThan(0)
+          // P-RR4 (61.8): the patch length is the graph's own edge lengths along the new leg, plus the hop to
+          // the old route, plus the kept tail of the old route (three independent length computations agree).
+          const { i, at } = joins[0]!
+          let legM = 0
+          for (let k = 0; k < at; k++) legM += graph.edgeLength(graph.nearestNode(p.points[k]!, false)!.node, graph.nearestNode(p.points[k + 1]!, false)!.node)
+          const hop = haversine(p.points[at]!, old[i + 1] ?? p.points[at]!)
+          const tailM = (cumulative.at(-1) ?? 0) - (cumulative[i + 1] ?? cumulative.at(-1)!)
+          expect(Math.abs(p.distanceM - (legM + hop + tailM))).toBeLessThan(0.05)
         } else {
           // A full replan spreads the uncollected gems evenly over the new route.
           const gaps = rest.map((c, i) => c.distanceM - (i ? rest[i - 1]!.distanceM : 0))

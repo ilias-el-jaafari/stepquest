@@ -1,108 +1,40 @@
 import { bboxContains, destination, haversine, type BBox, type LatLon } from '../geo/geo.ts'
-import { metresToSteps, stepsToMetres, TARGET_TOLERANCE, withinTolerance } from '../geo/steps.ts'
-import { defaultCheckpointCount, placeCheckpoints, type Checkpoint } from './checkpoints.ts'
+import { MAX_STEPS, metresToSteps, MIN_STEPS, stepsToMetres, TARGET_TOLERANCE } from '../geo/steps.ts'
 import type { WalkGraph } from './graph.ts'
+import type { InfeasibleReason, PlanResult, Route, RouteRequest } from './planTypes.ts'
+import { finish, isClean, routeVia, score } from './routeBuild.ts'
+import { Attempts, hash01, tune } from './tune.ts'
 
-export type RouteMode = 'loop' | 'oneway'
+/**
+ * Public API of the route planners: `planRoute` (dispatches on `req.mode`),
+ * `planLoop`, `planOneWay` and `bearingBetween`. Types live in `planTypes.ts`,
+ * route assembly in `routeBuild.ts`, the size search in `tune.ts`, the graph
+ * and A* in `graph.ts`, safety weights in `safety.ts`.
+ */
+export type { InfeasibleReason, PlanResult, Route, RouteMode, RouteRequest } from './planTypes.ts'
 
-export type RouteRequest = {
-  mode: RouteMode
-  start: LatLon
-  /** Required for one-way routes. */
-  end?: LatLon
-  targetSteps: number
-  strideM: number
-  /** Checkpoints to place; defaults to one per ~1,000 steps. */
-  checkpoints?: number
-  /** Changes the loop's direction so "Reroll" gives a different walk. */
-  seed?: number
-  /** Per-edge cost multipliers (safety weights; Infinity = never use). Lengths stay real. */
-  cost?: Float32Array
-  /** Smallest value in `cost` (keeps A* exact when some streets are preferred). */
-  minCost?: number
-}
-
-export type Route = {
-  mode: RouteMode
-  points: LatLon[]
-  nodes: number[]
-  distanceM: number
-  steps: number
-  targetSteps: number
-  targetM: number
-  /** Signed error versus the target, as a fraction (0.03 = 3 % long). */
-  error: number
-  /** Fraction of the distance walked twice (out-and-back sections). */
-  overlap: number
-  checkpoints: Checkpoint[]
-  withinTolerance: boolean
-}
-
-export type InfeasibleReason = 'tooShort' | 'tooLong' | 'noMatch' | 'outsideArea' | 'unreachable' | 'samePoint'
-
-export type PlanResult =
-  | { ok: true; route: Route }
-  | {
-      ok: false
-      reason: InfeasibleReason
-      /** Fewest steps that can work (e.g. the direct A→B distance). */
-      minSteps?: number
-      /** Most steps we could reach inside the loaded area. */
-      maxSteps?: number
-      /** Closest attempt, shown as a preview when there is one. */
-      closest?: Route
-    }
-
-/** Below this snap distance a tapped point counts as "on the network". */
+/**
+ * Distances that answer "is this point near enough?", from loosest to tightest.
+ * They are tuned together; keep the order when changing one:
+ *
+ * - `MAX_SNAP_M` (150 m, here): a tapped start/finish farther than this from the
+ *   walkable network is "unreachable".
+ * - `snapToRoute` window (`src/quest/snap.ts`, 60 m behind / 400 m ahead of the last position):
+ *   where along the planned route a GPS fix may snap.
+ * - `offRouteM` (40 m, `src/quest/quest.ts`): the fix is off the route beyond this.
+ * - `decideM` (20 m, same file): walking this far off the line decides "toward" or "away".
+ * - `retryM` (80 m, same file): walking needed before a failed reroute is retried.
+ * - `JOIN_SNAP_M` (8 m, `src/quest/reroute.ts`): a reconnection must start and end this close
+ *   to the graph and the planned line. It must stay far below `MAX_SNAP_M`.
+ */
 export const MAX_SNAP_M = 150
 /** Street networks are longer than straight lines by roughly this factor. */
 const DETOUR_FACTOR = 1.3
-/** Cost multiplier for a street already used earlier in the walk (strongly avoids repeats). */
-const REUSE_PENALTY = 25
-/** A route repeating at most this share of its length counts as clean. */
-const CLEAN_OVERLAP = 0.04
 
-type Leg = { nodes: number[]; edges: number[]; length: number }
-
-function joinLegs(legs: Leg[]): { nodes: number[]; edges: number[]; length: number } {
-  const nodes: number[] = []
-  const edges: number[] = []
-  let length = 0
-  for (const leg of legs) {
-    if (nodes.length && nodes[nodes.length - 1] === leg.nodes[0]) nodes.push(...leg.nodes.slice(1))
-    else nodes.push(...leg.nodes)
-    edges.push(...leg.edges)
-    length += leg.length
-  }
-  return { nodes, edges, length }
-}
-
-function overlapOf(graph: WalkGraph, joined: { nodes: number[]; edges: number[] }): number {
-  const seen = new Set<number>()
-  let repeated = 0
-  let total = 0
-  for (let i = 1; i < joined.nodes.length; i++) {
-    const e = joined.edges[i - 1]
-    const len = graph.edgeLength(joined.nodes[i - 1]!, joined.nodes[i]!)
-    total += len
-    if (e === undefined) continue
-    if (seen.has(e)) repeated += len
-    else seen.add(e)
-  }
-  return total === 0 ? 0 : repeated / total
-}
-
-/** Route through the given graph nodes in order, discouraging reuse of streets. */
-function routeVia(graph: WalkGraph, stops: number[], req: RouteRequest): Leg | undefined {
-  const penalty = req.cost ? Float32Array.from(req.cost) : new Float32Array(graph.edgeCount).fill(1)
-  const legs: Leg[] = []
-  for (let i = 1; i < stops.length; i++) {
-    const leg = graph.shortestPath(stops[i - 1]!, stops[i]!, penalty, req.minCost ?? 1)
-    if (!leg) return undefined
-    for (const e of leg.edges) penalty[e] = (req.cost?.[e] ?? 1) * REUSE_PENALTY
-    legs.push(leg)
-  }
-  return joinLegs(legs)
+/** Goals outside [MIN_STEPS, MAX_STEPS] are refused before any search (also NaN and ±Infinity). */
+function outOfRange(targetSteps: number): PlanResult | undefined {
+  if (Number.isFinite(targetSteps) && targetSteps >= MIN_STEPS && targetSteps <= MAX_STEPS) return undefined
+  return { ok: false, reason: 'outOfRange', minSteps: MIN_STEPS, maxSteps: MAX_STEPS }
 }
 
 function snap(graph: WalkGraph, p: LatLon, area: BBox): number | undefined {
@@ -113,65 +45,18 @@ function snap(graph: WalkGraph, p: LatLon, area: BBox): number | undefined {
   return graph.nearestNode(clamped)?.node
 }
 
-function finish(graph: WalkGraph, req: RouteRequest, joined: Leg, targetM: number): Route {
-  const points = joined.nodes.map((n) => graph.point(n))
-  const steps = metresToSteps(joined.length, req.strideM)
-  return {
-    mode: req.mode,
-    points,
-    nodes: joined.nodes,
-    distanceM: joined.length,
-    steps,
-    targetSteps: req.targetSteps,
-    targetM,
-    error: (joined.length - targetM) / targetM,
-    overlap: overlapOf(graph, joined),
-    checkpoints: placeCheckpoints(points, req.checkpoints ?? defaultCheckpointCount(steps)),
-    withinTolerance: withinTolerance(joined.length, targetM),
-  }
-}
-
-/** Lower is better: hitting the ±5 % window first, then little out-and-back walking. */
-function score(route: Route): number {
-  const distance = route.withinTolerance ? Math.abs(route.error) : 1 + Math.abs(route.error)
-  return distance + route.overlap * 2
-}
-
 /**
- * Tune one scalar size (a radius or an offset) so the routed length matches
- * the target. Lengths grow roughly linearly with size, so a damped secant
- * step converges in a handful of iterations.
+ * A walk that returns to the start. Tries triangle loops (start → A → B → start)
+ * in eight directions, tuning the triangle size to the goal.
+ *
+ * Infeasible results: `tooLong` (the best loop is shorter than the goal),
+ * `tooShort` (every loop built is more than 5 % longer than the goal), else
+ * `noMatch`. All of them carry `minSteps`/`maxSteps` (the shortest and longest
+ * loop built) and the closest loop as a preview.
  */
-function tune(
-  build: (size: number) => Route | undefined,
-  targetM: number,
-  initial: number,
-  maxSize: number,
-  iterations = 7,
-): Route | undefined {
-  let size = initial
-  let best: Route | undefined
-  for (let i = 0; i < iterations; i++) {
-    const route = build(size)
-    if (!route) {
-      size *= 0.8
-      continue
-    }
-    if (!best || score(route) < score(best)) best = route
-    if (route.withinTolerance && Math.abs(route.error) < 0.03 && route.overlap < CLEAN_OVERLAP) break
-    const ratio = targetM / Math.max(1, route.distanceM)
-    size = Math.min(maxSize, Math.max(20, size * (1 + (ratio - 1) * 0.9)))
-  }
-  return best
-}
-
-/** Deterministic pseudo-random in [0,1) from a seed. */
-function hash01(seed: number): number {
-  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453
-  return x - Math.floor(x)
-}
-
 export function planLoop(graph: WalkGraph, req: RouteRequest, area: BBox): PlanResult {
+  const refused = outOfRange(req.targetSteps)
+  if (refused) return refused
   const targetM = stepsToMetres(req.targetSteps, req.strideM)
   if (!bboxContains(area, req.start)) return { ok: false, reason: 'outsideArea' }
   const start = graph.nearestNode(req.start)
@@ -180,8 +65,8 @@ export function planLoop(graph: WalkGraph, req: RouteRequest, area: BBox): PlanR
   const seed = req.seed ?? 0
   const baseBearing = hash01(seed + 1) * 360
   const span = Math.max(area.north - area.south, area.east - area.west) * 111_000
+  const attempts = new Attempts()
   let best: Route | undefined
-  // Triangle loops: start → A → B → start, with A and B `size` metres away.
   for (let k = 0; k < 8; k++) {
     const bearing = (baseBearing + k * 45) % 360
     const spread = 70 + hash01(seed * 31 + k) * 40
@@ -191,7 +76,7 @@ export function planLoop(graph: WalkGraph, req: RouteRequest, area: BBox): PlanR
         const b = snap(graph, destination(req.start, bearing + spread, size), area)
         if (a === undefined || b === undefined || a === b || a === start.node || b === start.node) return undefined
         const joined = routeVia(graph, [start.node, a, b, start.node], req)
-        return joined ? finish(graph, req, joined, targetM) : undefined
+        return attempts.track(joined ? finish(graph, req, joined, targetM) : undefined)
       },
       targetM,
       // Perimeter ≈ size × (2 + chord), chord ≈ 2 sin(spread/2).
@@ -199,15 +84,22 @@ export function planLoop(graph: WalkGraph, req: RouteRequest, area: BBox): PlanR
       span,
     )
     if (route && (!best || score(route) < score(best))) best = route
-    if (best && best.withinTolerance && best.overlap < CLEAN_OVERLAP) break
+    if (isClean(best)) break
   }
-  if (!best) return { ok: false, reason: 'noMatch' }
+  if (!best || !attempts.shortest || !attempts.longest) return { ok: false, reason: 'noMatch' }
   if (best.withinTolerance) return { ok: true, route: best }
-  const reason: InfeasibleReason = best.error < 0 ? 'tooLong' : 'noMatch'
-  return { ok: false, reason, maxSteps: best.error < 0 ? best.steps : undefined, closest: best }
+  const reason: InfeasibleReason =
+    best.error < 0 ? 'tooLong' : attempts.shortest.distanceM > targetM * (1 + TARGET_TOLERANCE) ? 'tooShort' : 'noMatch'
+  return { ok: false, reason, minSteps: attempts.shortest.steps, maxSteps: attempts.longest.steps, closest: best }
 }
 
+/**
+ * A walk from A to B that adds detours until it matches the goal: one via
+ * point, two via points, then a triangle loop off the direct path.
+ */
 export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): PlanResult {
+  const refused = outOfRange(req.targetSteps)
+  if (refused) return refused
   const end = req.end
   if (!end) return { ok: false, reason: 'unreachable' }
   const targetM = stepsToMetres(req.targetSteps, req.strideM)
@@ -232,12 +124,8 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
   const extra = targetM - direct.length
   const span = Math.max(area.north - area.south, area.east - area.west) * 111_000
   let best: Route | undefined
-  const good = (r: Route | undefined) => !!r && r.withinTolerance && r.overlap < CLEAN_OVERLAP
-  let longest: Route | undefined
-  const track = (r: Route | undefined) => {
-    if (r && (!longest || r.distanceM > longest.distanceM)) longest = r
-    return r
-  }
+  const attempts = new Attempts()
+  const track = (r: Route | undefined) => attempts.track(r)
   outer: for (const fraction of [0.5, 0.3, 0.7]) {
     const anchor = destination(req.start, bearingAB, straight * fraction)
     for (const side of [90, -90]) {
@@ -269,12 +157,12 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
         span,
       )
       for (const r of [viaOne, viaTwo]) if (r && (!best || score(r) < score(best))) best = r
-      if (good(best)) break outer
+      if (isClean(best)) break outer
     }
   }
   // Long goals: the via shapes run out of room inside the area. Walk part of the way, do a
   // triangle loop off to one side of the direct path, then carry on to B (a "lollipop").
-  if (!good(best)) {
+  if (!isClean(best)) {
     outerLoop: for (const fraction of [0.5, 0.3, 0.7]) {
       const m = direct.nodes[Math.min(direct.nodes.length - 1, Math.max(1, Math.round((direct.nodes.length - 1) * fraction)))]!
       if (m === a.node || m === b.node) continue
@@ -294,13 +182,13 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
           span,
         )
         if (loop && (!best || score(loop) < score(best))) best = loop
-        if (good(best)) break outerLoop
+        if (isClean(best)) break outerLoop
       }
     }
   }
   if (best?.withinTolerance) return { ok: true, route: best }
   if (best && best.error < 0) {
-    const far = longest ?? best
+    const far = attempts.longest ?? best
     return { ok: false, reason: 'tooLong', minSteps, maxSteps: far.steps, closest: far }
   }
   return { ok: false, reason: 'noMatch', minSteps, closest: best ?? directRoute }

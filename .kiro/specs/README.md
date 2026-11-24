@@ -18,7 +18,7 @@ Each folder holds `requirements.md`, `design.md` and `tasks.md`. Requirement ids
 
 | Spec | Covers | Requirements | Tasks |
 | --- | --- | --- | --- |
-| [routing](routing/requirements.md) | planner, ±5 % budget, loop and A→B, checkpoints, roundabouts, fast rerouting, worker | 3, 4, 7b, 7c | 8, 33, 49d, 51b, 54, 56 |
+| [routing](routing/requirements.md) | planner, ±5 % budget, loop and A→B, checkpoints, roundabouts, fast rerouting, worker | 3, 4, 7b, 7c, 8, 9, 10 | 8, 33, 49d, 51b, 54, 56, 61 |
 | [safety-night](safety-night/requirements.md) | safety weights, night lighting from sunset, avoid-streets list | none numbered (see its requirements.md) | 43 to 48, 49b |
 | [map-rendering](map-rendering/requirements.md) | OSM data, Overpass client and cache, tiles, auto-tiling, chunks, town and landmarks, route path, walker, no black areas, auto-load | 1, 2, 6a, 7a, 9 | 3 to 7, 10, 22 to 27, 31, 32, 50b, 51, 58, 60 |
 | [voice-audio](voice-audio/requirements.md) | formant speech, callouts, speech bubbles, chiptune, effects, sound settings | 7 | 34 to 42, 50, 59 |

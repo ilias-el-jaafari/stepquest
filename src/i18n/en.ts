@@ -47,6 +47,8 @@ export const en = {
   'result.ready': 'Route ready! Collect {n} {n|checkpoint|checkpoints} and reach the flag.',
   'result.empty': 'Pick your start, set a goal, and press "Plan quest".',
   'error.tooShort': 'Too short: the direct way from A to B is already {min} {min|step|steps}. Pick at least {min} {min|step|steps} or move the finish closer.',
+  'error.tooShortLoop': 'Too short for a loop here: the smallest loop is about {min} {min|step|steps}. Pick at least {min} {min|step|steps}.',
+  'error.outOfRange': 'Pick a goal between {min} and {max} steps.',
   'error.tooLong': 'Too long for this area: the longest walk that fits is about {max} {max|step|steps}. Lower the goal or move the points.',
   'error.noMatch': 'Could not fit a route within ±5% of the goal here. Showing the closest one ({steps} {steps|step|steps}).',
   'error.outsideArea': 'That point is outside the loaded map. Load map data for that area first.',

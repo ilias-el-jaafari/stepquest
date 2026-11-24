@@ -48,6 +48,8 @@ export const es: Record<MessageKey, string> = {
   'result.ready': '¡Ruta lista! Recoge {n} {n|checkpoint|checkpoints} y llega a la bandera.',
   'result.empty': 'Elige la salida, pon un objetivo y pulsa «Planear misión».',
   'error.tooShort': 'Demasiado corto: el camino directo de A a B ya son {min} {min|paso|pasos}. Pon al menos {min} {min|paso|pasos} o acerca la meta.',
+  'error.tooShortLoop': 'Demasiado corto para un circuito aquí: el circuito más pequeño mide {min} {min|paso|pasos}. Pon al menos {min} {min|paso|pasos}.',
+  'error.outOfRange': 'Elige un objetivo entre {min} y {max} pasos.',
   'error.tooLong': 'Demasiado largo para esta zona: la ruta más larga que cabe ronda los {max} {max|paso|pasos}. Baja el objetivo o mueve los puntos.',
   'error.noMatch': 'No he encontrado una ruta a ±5 % del objetivo aquí. Te enseño la más cercana ({steps} {steps|paso|pasos}).',
   'error.outsideArea': 'Ese punto está fuera del mapa cargado. Carga antes los datos de esa zona.',

@@ -7,6 +7,12 @@ export class MinHeap {
     return this.keys.length
   }
 
+  /** Empty the heap, keeping its storage for reuse. */
+  clear(): void {
+    this.keys.length = 0
+    this.vals.length = 0
+  }
+
   push(key: number, val: number): void {
     const keys = this.keys
     const vals = this.vals

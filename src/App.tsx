@@ -842,10 +842,13 @@ function ResultBox({ result, onUseSteps }: { result: PlanResult | undefined; onU
   else if (result) {
     switch (result.reason) {
       case 'tooShort':
-        message = { text: t('error.tooShort', { min: n(result.minSteps ?? 0) }), ok: false, suggest: Math.ceil((result.minSteps ?? 0) / 100) * 100 }
+        message = { text: t(result.closest?.mode === 'loop' ? 'error.tooShortLoop' : 'error.tooShort', { min: n(result.minSteps ?? 0) }), ok: false, suggest: Math.ceil((result.minSteps ?? 0) / 100) * 100 }
         break
       case 'tooLong':
         message = { text: t('error.tooLong', { max: n(result.maxSteps ?? 0) }), ok: false, suggest: Math.floor((result.maxSteps ?? 0) / 100) * 100 }
+        break
+      case 'outOfRange':
+        message = { text: t('error.outOfRange', { min: n(result.minSteps ?? 0), max: n(result.maxSteps ?? 0) }), ok: false }
         break
       case 'noMatch':
         message = { text: t('error.noMatch', { steps: n(result.closest?.steps ?? 0) }), ok: false }
