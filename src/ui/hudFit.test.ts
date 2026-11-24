@@ -81,3 +81,29 @@ describe('style sheet rules for the bottom bar', () => {
     expect(Number(clamp![3])).toBe(10)
   })
 })
+
+describe('next-checkpoint line of the quest HUD', () => {
+  // Greedy wrap of the 7 px label in the column left of the gem and the top-right buttons.
+  it.each(WIDTHS)('wraps to at most two lines at %i px in both languages', (vw) => {
+    const room = vw - 2 * (6 + 3 + 8 + 10) - 8 - 58 - (24 + 10)
+    const perLine = Math.floor(room / 7)
+    for (const table of [en, es]) {
+      for (const text of [table['quest.next' as PlainKey].replace('{n}', '12'), table['quest.nextFinish' as PlainKey]]) {
+        expect(word(text), text).toBeLessThanOrEqual(perLine)
+        let lines = 1
+        let used = 0
+        for (const w of text.split(/\s+/)) {
+          if (used > 0 && used + 1 + len(w) > perLine) {
+            lines++
+            used = len(w)
+          } else used += (used ? 1 : 0) + len(w)
+        }
+        expect(lines, text).toBeLessThanOrEqual(2)
+      }
+    }
+  })
+  it('uses natural Spanish, not the English loanword', () => {
+    expect(es['quest.next' as PlainKey]).toBe('Siguiente: punto de control {n}')
+    for (const k of Object.keys(es) as PlainKey[]) expect(es[k], k).not.toMatch(/checkpoint/i)
+  })
+})

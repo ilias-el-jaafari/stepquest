@@ -132,3 +132,33 @@ describe('backing store (B5)', () => {
     expect(backingSize(0, 0, 3)).toEqual({ w: 0, h: 0, dpr: 3 })
   })
 })
+
+describe('minimum zoom (requirement 19.20)', () => {
+  it('stops every zoom path at the floor and leaves the default unchanged', () => {
+    const c = new Camera(100, 100)
+    c.setSize(390, 844)
+    c.zoom = 2
+    c.zoomStep(-1)
+    c.zoomStep(-1)
+    c.zoomStep(-1)
+    expect(c.zoom).toBe(0.75)
+    c.minZoom = 1.5
+    c.zoomTo(0.5)
+    expect(c.zoom).toBe(1.5)
+    c.zoomStep(-1)
+    expect(c.zoom).toBe(1.5)
+    c.zoomStep(1)
+    expect(c.zoom).toBe(2)
+  })
+  it('property: zoomTo never ends below the floor', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...ZOOM_LEVELS), fc.constantFrom(...ZOOM_LEVELS), (floor, target) => {
+        const c = new Camera(50, 50)
+        c.setSize(300, 300)
+        c.minZoom = floor
+        c.zoomTo(target)
+        expect(c.zoom).toBe(Math.max(floor, target))
+      }),
+    )
+  })
+})

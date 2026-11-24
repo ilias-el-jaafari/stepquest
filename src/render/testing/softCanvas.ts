@@ -7,7 +7,7 @@
  * pixel by pixel across refactors and to read pixels back in regression tests.
  */
 
-type Style = { fill: string; alpha: number; op: string; clip: [number, number, number, number] | undefined }
+type Style = { fill: string | SoftPattern; alpha: number; op: string; clip: [number, number, number, number] | undefined }
 
 function parseColour(css: string): [number, number, number, number] {
   const hex = /^#([0-9a-f]{6})$/i.exec(css)
@@ -20,8 +20,11 @@ function parseColour(css: string): [number, number, number, number] {
   throw new Error(`softCanvas: unsupported colour ${css}`)
 }
 
+/** A repeating pattern made by `createPattern` (anchored to the canvas origin, like the real one). */
+export type SoftPattern = { readonly tile: SoftCanvas }
+
 export class SoftContext {
-  fillStyle = '#000000'
+  fillStyle: string | SoftPattern = '#000000'
   strokeStyle = '#000000'
   globalAlpha = 1
   globalCompositeOperation = 'source-over'
@@ -96,6 +99,16 @@ export class SoftContext {
     const rx = Math.round(x)
     const ry = Math.round(y)
     const [x0, y0, x1, y1] = this.bounds(rx, ry, Math.round(x + w) - rx, Math.round(y + h) - ry)
+    if (typeof this.fillStyle !== 'string') {
+      const t = this.fillStyle.tile
+      for (let yy = y0; yy < y1; yy++)
+        for (let xx = x0; xx < x1; xx++) {
+          const si = ((yy % t.height) * t.width + (xx % t.width)) * 4
+          const sa = ((t.data[si + 3] ?? 0) / 255) * this.globalAlpha
+          if (sa > 0) this.blend((yy * this.canvas.width + xx) * 4, t.data[si] ?? 0, t.data[si + 1] ?? 0, t.data[si + 2] ?? 0, sa)
+        }
+      return
+    }
     const [r, g, b, ca] = parseColour(this.fillStyle)
     const a = ca * this.globalAlpha
     for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) this.blend((yy * this.canvas.width + xx) * 4, r, g, b, a)
@@ -125,6 +138,10 @@ export class SoftContext {
         if (sa > 0) this.blend((yy * this.canvas.width + xx) * 4, img.data[si] ?? 0, img.data[si + 1] ?? 0, img.data[si + 2] ?? 0, sa)
       }
     }
+  }
+
+  createPattern(tile: SoftCanvas, _repeat: string): SoftPattern {
+    return { tile }
   }
 
   createImageData(w: number, h: number): { data: Uint8ClampedArray; width: number; height: number } {

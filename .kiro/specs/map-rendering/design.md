@@ -410,6 +410,14 @@ src/routing/graph.ts  GraphAccumulator (shared by `new WalkGraph(data)` and the 
 src/render/*          TownLookup, chunk invalidation, loading stipple, incremental overview, far overview
 ```
 
+### Whole view covered, soft frontier (requirements 19.19 to 19.22)
+
+Field report 2 (390 × 844 phone, quest, furthest zoom, 75 s later): the loaded map still ends in straight top and bottom edges. Cause: at zoom 0.5 the view is about 3.9 × 8.4 km, 40 to 50 cells, and the unchanged budget (12 cells a minute, 4 per request, 10 s apart) needs minutes to fill it. The view box itself was already the real rectangle; the quest simply allowed a view the budget cannot cover. The loaded region ended at cell borders and nothing hid that.
+
+- `world/window.ts` (pure): `QUEST_WINDOW_CELLS = 12`; `worstCellsTouched(widthM, heightM, lat)` = (ceil(w / cellWidth) + 1) × (ceil(h / cellHeight) + 1), the most cells a box of that size can touch whatever its alignment (cell height 0.01° of latitude, width 0.01° of longitude times cos(lat), 2 % safety margin); `questMinZoom(cssW, cssH, metresPerTile, lat)` = smallest `ZOOM_LEVELS` entry whose view stays within the budget (the top level if none). On 390 × 844 at València it is 1.5; wider screens get a higher floor.
+- `Camera.minZoom` (default 0, so the planner is unchanged) clamps `zoomTo` and `zoomStep`. `MapRenderer` sets it from the canvas size and the view latitude each frame while a quest overlay is set, and lifts a smaller current zoom to it, so rotation and resize are covered. The `Streamer` keeps its per-view cap and nearest-first order; with a view of at most 12 cells the whole view is requested and, at 12 cells a minute, filled in about 70 s without touching the client limits.
+- Frontier: `LiveWorld.frontier()` (cached per `version`) lists the edges of loaded, covered rectangles whose far side is not loaded (cell border with a missing or partial neighbour, an inner edge of a partly covered cell, the frame edge). `render/frontier.ts` draws, for each edge, five bands on the loaded side, each `FOG_STEP_CSS` (8 CSS px) deep, with the ground colour through a 4 × 4 Bayer pattern of 2-device-pixel dots at 14, 11, 8, 5 and 2 of 16. Patterns are cached canvases anchored to the screen; the cost is one clipped fill per band (a few dozen per frame). It runs after the layers and before rails, lighting and the route, so it also covers the overviews. Convex corners overlap and darken slightly, which is fine.
+
 ### Data flow
 
 ```

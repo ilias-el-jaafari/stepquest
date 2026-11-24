@@ -133,3 +133,11 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
   - _Requirements: 19.12, 19.16, 19.18_
 - [x] 70.11 Docs: `osm-etiquette.md`, specs README, other specs' cross references; final `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
   - _Requirements: 19.1 to 19.18_
+
+- [x] 70.12 Field fix: whole view covered and soft frontier (requirements 19.19 to 19.22)
+  - [x] 70.12.1 Spec: requirements 19.19 to 19.22, design section
+  - [x] 70.12.2 `world/window.ts`: `worstCellsTouched`, `questMinZoom`; property tests
+  - [x] 70.12.3 `Camera.minZoom`, renderer floor while a quest is active; tests
+  - [x] 70.12.4 `LiveWorld.frontier()` and `render/frontier.ts` (dithered fog band); tests
+  - [x] 70.12.5 Spanish copy: "punto de control" in the quest HUD and results; 320 px fit test
+  - _Requirements: 19.19 to 19.22_

@@ -32,6 +32,8 @@ export class Camera {
   x: number
   y: number
   zoom = 16
+  /** Lowest zoom the view may reach (0: no floor). The quest raises it so the view stays coverable. */
+  minZoom = 0
   /** Screen size in CSS px (set by the renderer from the canvas). */
   width = 0
   height = 0
@@ -82,7 +84,7 @@ export class Camera {
   /** Zoom to `zoom`, keeping the tile under (sx, sy) fixed on screen. */
   zoomTo(zoom: number, sx = this.width / 2, sy = this.height / 2): void {
     const before = this.screenToTile(sx, sy)
-    this.zoom = zoom
+    this.zoom = Math.max(zoom, this.minZoom)
     const after = this.screenToTile(sx, sy)
     this.x += before.x - after.x
     this.y += before.y - after.y

@@ -1,6 +1,6 @@
 import { bboxCenter, type LatLon } from '../geo/geo.ts'
 import type { OsmData } from '../osm/types.ts'
-import type { MapSource } from '../render/mapSource.ts'
+import type { FrontierEdge, MapSource } from '../render/mapSource.ts'
 import { GraphAccumulator, WalkGraph } from '../routing/graph.ts'
 import { safetyContext, type SafetyContext } from '../routing/safety.ts'
 import type { TileGrid, TileRect } from '../tiles/grid.ts'
@@ -149,6 +149,36 @@ export class LiveWorld implements MapSource {
 
   loading(): readonly TileRect[] {
     return this.loadingRects
+  }
+
+  private frontierAt = -1
+  private frontierEdges: FrontierEdge[] = []
+
+  /**
+   * Straight edges of the loaded map that face ground with no data: a covered rectangle's side that
+   * is not shared with a complete neighbour (missing, partly covered, or outside the frame), or that
+   * lies inside its own cell (a partly covered record). Cached per `version`.
+   */
+  frontier(): readonly FrontierEdge[] {
+    if (this.frontierAt === this.version) return this.frontierEdges
+    const out: FrontierEdge[] = []
+    const solid = (c: CellId) => {
+      const r = this.records.get(cellKey(c))
+      return r !== undefined && isComplete(r)
+    }
+    for (const rec of this.records.values()) {
+      const own = this.tiles.ownedRect(rec.cell)
+      const r = own && this.tiles.coveredRect(rec)
+      if (!own || !r) continue
+      const { i, j } = rec.cell
+      if (r.x > own.x || !solid({ i, j: j - 1 })) out.push({ side: 'w', x: r.x, y: r.y, len: r.h })
+      if (r.x + r.w < own.x + own.w || !solid({ i, j: j + 1 })) out.push({ side: 'e', x: r.x + r.w, y: r.y, len: r.h })
+      if (r.y > own.y || !solid({ i: i + 1, j })) out.push({ side: 'n', x: r.x, y: r.y, len: r.w })
+      if (r.y + r.h < own.y + own.h || !solid({ i: i - 1, j })) out.push({ side: 's', x: r.x, y: r.y + r.h, len: r.w })
+    }
+    this.frontierEdges = out
+    this.frontierAt = this.version
+    return out
   }
 
   subscribe(fn: (rect: TileRect | undefined) => void): () => void {

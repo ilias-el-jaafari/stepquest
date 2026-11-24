@@ -1,7 +1,9 @@
 import type { BBox, LatLon } from '../geo/geo.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 import { Camera, DETAIL_ZOOM, FAR_ZOOM, ZOOM_LEVELS, type Pt } from './camera.ts'
+import { drawFrontier } from './frontier.ts'
 import { drawLoading } from './loading.ts'
+import { questMinZoom } from '../world/window.ts'
 import { isMapSource, staticSource, type MapSource } from './mapSource.ts'
 import { ChunkLayer } from './chunkLayer.ts'
 import type { Lighting } from './daylight.ts'
@@ -90,6 +92,25 @@ export class MapRenderer {
     return this.lastCss
   }
 
+  private questFloor = false
+
+  /** Lowest zoom the view may have now (requirement 19.20): in a quest, the view must stay coverable. */
+  get minZoom(): number {
+    return this.camera.minZoom
+  }
+
+  /** While a quest runs, keep the zoom at or above the floor for this screen size and place. */
+  private applyFloor(): void {
+    const cam = this.camera
+    if (!this.questFloor) {
+      cam.minZoom = 0
+      return
+    }
+    const lat = this.grid.tileToLatLon(cam.x, cam.y).lat
+    cam.minZoom = questMinZoom(cam.width, cam.height, this.grid.metresPerTile, lat)
+    if (cam.zoom < cam.minZoom) cam.zoomTo(cam.minZoom)
+  }
+
   /** Bring the camera's idea of the screen size up to date. Returns true when it changed. */
   private syncSize(): boolean {
     const { w, h } = this.measure()
@@ -127,6 +148,7 @@ export class MapRenderer {
 
   setQuest(quest: QuestOverlay | undefined): void {
     this.overlay.setQuest(quest)
+    this.questFloor = quest !== undefined
     this.requestRender()
   }
 
@@ -169,12 +191,14 @@ export class MapRenderer {
   /** Step the zoom ladder, keeping the point under (sx, sy) fixed on screen. */
   zoomStep(direction: 1 | -1, sx?: number, sy?: number): void {
     this.syncSize()
+    this.applyFloor()
     this.camera.zoomStep(direction, sx, sy)
     this.requestRender()
   }
 
   zoomTo(zoom: number, sx?: number, sy?: number): void {
     this.syncSize()
+    this.applyFloor()
     this.camera.zoomTo(zoom, sx, sy)
     this.requestRender()
   }
@@ -250,6 +274,7 @@ export class MapRenderer {
     const resized = this.syncSize()
     const b = backingSize(css.w, css.h, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1)
     if (resized) this.camera.clamp()
+    this.applyFloor()
     if (b.w > 0 && b.h > 0 && (this.canvas.width !== b.w || this.canvas.height !== b.h)) {
       this.canvas.width = b.w
       this.canvas.height = b.h
@@ -296,6 +321,8 @@ export class MapRenderer {
     }
     const loading = this.source.loading()
     if (loading.length) drawLoading(ctx, v, loading)
+    const edges = this.source.frontier?.()
+    if (edges?.length) drawFrontier(ctx, v, edges)
 
     // Tram, metro and train tracks above ground.
     if (this.grid.rails.length) drawRails(ctx, v, this.grid.rails, this.grid.cols, this.grid.rows)

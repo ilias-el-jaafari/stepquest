@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadDemoOsm } from '../osm/demo.ts'
 import { DEMO_AREA } from '../osm/demoArea.ts'
-import { cellOf } from '../world/cells.ts'
+import { cellOf, cellsInBBox } from '../world/cells.ts'
 import { LiveWorld } from '../world/liveWorld.ts'
 import { sliceToCells } from '../world/slice.ts'
+import { MAX_CELLS_PER_MINUTE } from '../world/streamer.ts'
 import { MapRenderer } from './MapRenderer.ts'
 import { P } from './palette.ts'
 import { installSoftCanvas, SoftCanvas } from './testing/softCanvas.ts'
@@ -90,6 +91,58 @@ describe('rendering a streamed world (19.13, 19.14)', () => {
     const box = r.viewBBox()
     expect(box.north).toBeGreaterThan(box.south)
     expect(lw.grid).toBe(r.grid)
+    r.dispose()
+  })
+
+  it('keeps a quest view coverable: no zoom path goes below the floor, the planner is not limited', () => {
+    const { canvas, r } = setup()
+    canvas.clientWidth = 390
+    canvas.clientHeight = 844
+    r.centerOn(DEMO_AREA.center, 16)
+    r.zoomTo(0.5)
+    r.render()
+    expect(r.zoom).toBe(0.5)
+    r.setQuest({ player: undefined, accuracyM: undefined, collected: 0, alongM: 0 })
+    r.render()
+    const floor = r.minZoom
+    expect(floor).toBeGreaterThan(0.5)
+    expect(r.zoom).toBe(floor)
+    r.zoomTo(0.5)
+    r.zoomStep(-1)
+    r.render()
+    expect(r.zoom).toBe(floor)
+    // The view at the floor touches no more cells than one minute of requests brings.
+    expect(cellsInBBox(r.viewBBox()).length).toBeLessThanOrEqual(MAX_CELLS_PER_MINUTE)
+    // A smaller window (rotation) never raises the floor above what it needs.
+    canvas.clientWidth = 844
+    canvas.clientHeight = 390
+    r.render()
+    expect(cellsInBBox(r.viewBBox()).length).toBeLessThanOrEqual(MAX_CELLS_PER_MINUTE)
+    r.setQuest(undefined)
+    r.render()
+    expect(r.minZoom).toBe(0)
+    r.zoomTo(0.5)
+    expect(r.zoom).toBe(0.5)
+    r.dispose()
+  })
+
+  it('fades the frontier: no straight cut where data stops, and only no-data ground colours', () => {
+    const { lw, canvas, r } = setup()
+    const own = lw.tiles.ownedRect(centre)!
+    // Detail zoom on the loaded cell's east border (the east cell is missing): the border is a frontier.
+    r.centerOn(lw.grid.tileToLatLon(own.x + own.w - 2, own.y + own.h / 2), 8)
+    r.render()
+    const edge = Math.round(120 + (2 * 8))
+    const column = (x: number) => Array.from({ length: 180 }, (_, y) => canvas.pixel(x, y))
+    // Right of the edge: plain ground, one colour.
+    expect(new Set(column(edge + 6))).toEqual(new Set([hex(P.groundB)]))
+    // Left of the edge, inside the fog band: a mix of ground and map, so the cut is broken up.
+    expect(new Set(column(edge - 3)).has(hex(P.groundB))).toBe(true)
+    expect(new Set(column(edge - 3)).size).toBeGreaterThan(1)
+    // Far inside the band's reach the map is untouched by fog.
+    const far = new Set<string>()
+    for (let x = edge - 90; x < edge - 70; x++) for (let y = 0; y < 180; y++) far.add(canvas.pixel(x, y))
+    expect(far.size).toBeGreaterThan(2)
     r.dispose()
   })
 })

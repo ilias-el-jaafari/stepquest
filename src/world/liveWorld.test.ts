@@ -127,3 +127,42 @@ describe('live world', () => {
     expect(subtract({ x: 0, y: 0, w: 10, h: 10 }, { x: 0, y: 0, w: 10, h: 10 })).toEqual([])
   })
 })
+
+describe('frontier (requirement 19.21)', () => {
+  it('lists only edges that face missing data, never a border shared with a complete cell', () => {
+    const a = { i: 10, j: 10 }
+    const b = { i: 10, j: 11 }
+    const lw = new LiveWorld(a, [makeRecord(a, []), makeRecord(b, [])])
+    const own = (c: typeof a) => lw.tiles.ownedRect(c)!
+    const edges = lw.frontier()
+    const ra = own(a)
+    const rb = own(b)
+    // a (west) has no east edge: b is its loaded neighbour. b has no west edge.
+    expect(edges.some((e) => e.side === 'e' && e.x === ra.x + ra.w && e.y === ra.y)).toBe(false)
+    expect(edges.some((e) => e.side === 'w' && e.x === rb.x && e.y === rb.y)).toBe(false)
+    // The outer sides all face missing data: 2 north, 2 south, 1 west, 1 east.
+    const count = (s: string) => edges.filter((e) => e.side === s).length
+    expect([count('n'), count('s'), count('w'), count('e')]).toEqual([2, 2, 1, 1])
+    // A cell arriving next to them removes the edges between and adds its own.
+    const c = { i: 10, j: 12 }
+    lw.add([makeRecord(c, [])])
+    expect(lw.frontier().filter((e) => e.side === 'e')).toHaveLength(1)
+    expect(lw.frontier().filter((e) => e.side === 'e')[0]!.x).toBe(own(c).x + own(c).w)
+    // Cached until the map changes.
+    expect(lw.frontier()).toBe(lw.frontier())
+  })
+
+  it('every cell on the edge of a loaded rectangle gets its outer sides, whatever the order of arrival', () => {
+    const cells = [0, 1, 2].flatMap((di) => [0, 1].map((dj) => ({ i: 20 + di, j: 30 + dj })))
+    const sig = (order: typeof cells) => {
+      const lw = new LiveWorld({ i: 21, j: 30 }, [])
+      for (const c of order) lw.add([makeRecord(c, [])])
+      return lw
+        .frontier()
+        .map((e) => `${e.side}${e.x},${e.y},${e.len}`)
+        .sort()
+    }
+    expect(sig([...cells].reverse())).toEqual(sig(cells))
+    expect(sig(cells)).toHaveLength(2 * 2 + 3 * 2)
+  })
+})
