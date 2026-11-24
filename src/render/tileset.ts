@@ -24,11 +24,19 @@ export type TileSpec = {
   diag?: number
   /** Share of a long asphalt wedge along a shallow diagonal street (rampCode). */
   ramp?: number
+  /** Lane marking on a wide road: axis 1 east–west / 2 north–south, +4 when the line sits on the far edge of an even-width road, +8 for the second half of the dash pattern. */
+  lane?: number
+  /** Path surface: 0 packed earth (park paths), 1 flagstones (footways and pedestrian streets). */
+  surface?: number
+  /** Water ripple frame, 0–2 (0 is the one baked into chunks). */
+  frame?: number
+  /** Grass decoration: 1 a bush beside a tree, making a small cluster. */
+  deco?: number
 }
 
 
 export function tileKey(s: TileSpec): string {
-  return `${s.terrain}:${s.m4}:${s.m8}:${s.variant}:${s.vertical ? 1 : 0}:${s.style ?? 0}:${s.barrier ?? 0}:${s.bm4 ?? 0}:${s.diag ?? 0}:${s.ramp ?? 0}`
+  return `${s.terrain}:${s.m4}:${s.m8}:${s.variant}:${s.vertical ? 1 : 0}:${s.style ?? 0}:${s.barrier ?? 0}:${s.bm4 ?? 0}:${s.diag ?? 0}:${s.ramp ?? 0}:${s.lane ?? 0}:${s.surface ?? 0}:${s.frame ?? 0}:${s.deco ?? 0}`
 }
 
 type Ctx = CanvasRenderingContext2D
@@ -73,6 +81,8 @@ function edgeBands(
   width: number,
   outer: string,
   inner?: string,
+  /** Inner line on the south and east bands, whose faces look towards the top-left light. */
+  innerLit?: string,
 ) {
   const n = !(m8 & Dir8.N)
   const e = !(m8 & Dir8.E)
@@ -84,9 +94,9 @@ function edgeBands(
   if (e) rect(ctx, ox + 16 - width, oy, width, 16, outer)
   if (inner) {
     if (n) rect(ctx, ox + (w ? width : 0), oy + width, 16 - (w ? width : 0) - (e ? width : 0), 1, inner)
-    if (s) rect(ctx, ox + (w ? width : 0), oy + 15 - width, 16 - (w ? width : 0) - (e ? width : 0), 1, inner)
+    if (s) rect(ctx, ox + (w ? width : 0), oy + 15 - width, 16 - (w ? width : 0) - (e ? width : 0), 1, innerLit ?? inner)
     if (w) rect(ctx, ox + width, oy + (n ? width : 0), 1, 16 - (n ? width : 0) - (s ? width : 0), inner)
-    if (e) rect(ctx, ox + 15 - width, oy + (n ? width : 0), 1, 16 - (n ? width : 0) - (s ? width : 0), inner)
+    if (e) rect(ctx, ox + 15 - width, oy + (n ? width : 0), 1, 16 - (n ? width : 0) - (s ? width : 0), innerLit ?? inner)
   }
   // Inner corners: both cardinals connect but the diagonal does not.
   const corner = (bit: number, a: number, b: number, cx: number, cy: number) => {
@@ -123,7 +133,7 @@ function paintTree(ctx: Ctx, ox: number, oy: number) {
   rect(ctx, ox + 5, oy + 14, 6, 1, P.treeDark)
 }
 
-function paintPark(ctx: Ctx, ox: number, oy: number, m8: number, variant: number, style: number) {
+function paintPark(ctx: Ctx, ox: number, oy: number, m8: number, variant: number, style: number, deco: number) {
   const name = PARK_STYLES[style] ?? 'park'
   switch (name) {
     case 'grass':
@@ -175,11 +185,48 @@ function paintPark(ctx: Ctx, ox: number, oy: number, m8: number, variant: number
         dots(ctx, ox, oy, [[7, 7], [12, 4], [4, 12]], P.flowerY)
         dots(ctx, ox, oy, [[2, 10], [11, 11]], P.flowerR)
         dots(ctx, ox, oy, [[9, 2]], P.white)
+        dots(ctx, ox, oy, [[7, 8], [12, 5], [4, 13], [2, 11], [11, 12], [9, 3]], P.grassTuft)
+      } else if (variant === 2 || variant === 3 || (variant <= 1 && m8 !== 255)) {
+        paintTufts(ctx, ox, oy, variant)
+      } else if (variant === 4 || variant === 7) {
+        paintStones(ctx, ox, oy, variant)
       }
       if (m8 === 255 && variant <= 1) paintTree(ctx, ox, oy)
+      else if (deco === 1) paintBush(ctx, ox, oy, variant)
       edgeBands(ctx, ox, oy, m8, 2, P.hedge, P.treeDark)
     }
   }
+}
+
+/** Small "V" grass tufts: dark blades with a light tip, lit from the top-left. */
+function paintTufts(ctx: Ctx, ox: number, oy: number, variant: number) {
+  const at: readonly (readonly [number, number])[] = variant === 2 ? [[3, 4], [11, 9], [6, 13]] : variant === 3 ? [[9, 3], [2, 10], [12, 13]] : [[5, 6], [12, 11]]
+  for (const [x, y] of at) {
+    dots(ctx, ox, oy, [[x, y], [x + 2, y], [x + 1, y + 1]], P.grassTuft)
+    dots(ctx, ox, oy, [[x, y - 1]], P.tallGrassHi)
+  }
+}
+
+/** Two or three small stones with a shadow pixel on the bottom-right. */
+function paintStones(ctx: Ctx, ox: number, oy: number, variant: number) {
+  const at: readonly (readonly [number, number])[] = variant === 4 ? [[4, 5], [10, 11]] : [[11, 4], [3, 11], [7, 8]]
+  for (const [x, y] of at) {
+    rect(ctx, ox + x, oy + y, 2, 1, P.stone)
+    rect(ctx, ox + x + 1, oy + y + 1, 2, 1, P.stoneDark)
+    rect(ctx, ox + x, oy + y, 1, 1, P.stoneLight)
+  }
+}
+
+/** A round bush that sits next to a tree; three bush tones, light from the top-left. */
+function paintBush(ctx: Ctx, ox: number, oy: number, variant: number) {
+  const x = ox + 3 + (variant % 3)
+  const y = oy + 6
+  rect(ctx, x + 1, y, 6, 1, P.treeDark)
+  rect(ctx, x, y + 1, 8, 5, P.treeDark)
+  rect(ctx, x + 1, y + 1, 6, 4, P.treeMid)
+  rect(ctx, x + 1, y + 1, 3, 2, P.treeLight)
+  rect(ctx, x + 1, y + 6, 6, 1, P.treeDark)
+  if (variant % 2) dots(ctx, x, y, [[5, 3]], P.flowerR)
 }
 
 /** Classic "tall grass" patch: dense blades with highlights. */
@@ -250,22 +297,25 @@ function paintSmallTree(ctx: Ctx, x: number, y: number) {
   rect(ctx, x + 4, y + 8, 2, 3, P.trunk)
 }
 
-function paintWater(ctx: Ctx, ox: number, oy: number, m8: number, variant: number) {
+function paintWater(ctx: Ctx, ox: number, oy: number, m8: number, variant: number, frame: number) {
   rect(ctx, ox, oy, 16, 16, P.waterA)
   ctx.fillStyle = P.waterB
   for (let y = 1; y < 16; y += 4) ctx.fillRect(ox, oy + y, 16, 1)
+  // Ripples drift one pixel per frame and the crest blinks on the middle frame, so three frames loop smoothly.
   const waves: readonly (readonly [number, number])[] = variant % 2 ? [[2, 3], [9, 10]] : [[8, 5], [3, 12]]
   for (const [x, y] of waves) {
-    rect(ctx, ox + x, oy + y, 3, 1, P.waterHi)
-    rect(ctx, ox + x + 1, oy + y - 1, 1, 1, P.waterHi)
+    const dx = frame === 1 ? 1 : frame === 2 ? 2 : 0
+    rect(ctx, ox + x + dx, oy + y, 3, 1, P.waterHi)
+    if (frame !== 1) rect(ctx, ox + x + dx + 1, oy + y - 1, 1, 1, P.waterHi)
+    else rect(ctx, ox + x + dx + 1, oy + y + 1, 1, 1, P.waterDeep)
   }
   edgeBands(ctx, ox, oy, m8, 3, P.sand, P.sandDark)
   // Foam where the water meets the shore.
   ctx.fillStyle = P.waterHi
-  if (!(m8 & Dir8.N)) for (let x = (variant % 3) + 1; x < 15; x += 3) ctx.fillRect(ox + x, oy + 4, 2, 1)
-  if (!(m8 & Dir8.S)) for (let x = (variant % 3) + 1; x < 15; x += 3) ctx.fillRect(ox + x, oy + 11, 2, 1)
-  if (!(m8 & Dir8.W)) for (let y = (variant % 3) + 1; y < 15; y += 3) ctx.fillRect(ox + 4, oy + y, 1, 2)
-  if (!(m8 & Dir8.E)) for (let y = (variant % 3) + 1; y < 15; y += 3) ctx.fillRect(ox + 11, oy + y, 1, 2)
+  if (!(m8 & Dir8.N)) for (let x = ((variant + frame) % 3) + 1; x < 15; x += 3) ctx.fillRect(ox + x, oy + 4, 2, 1)
+  if (!(m8 & Dir8.S)) for (let x = ((variant + frame) % 3) + 1; x < 15; x += 3) ctx.fillRect(ox + x, oy + 11, 2, 1)
+  if (!(m8 & Dir8.W)) for (let y = ((variant + frame) % 3) + 1; y < 15; y += 3) ctx.fillRect(ox + 4, oy + y, 1, 2)
+  if (!(m8 & Dir8.E)) for (let y = ((variant + frame) % 3) + 1; y < 15; y += 3) ctx.fillRect(ox + 11, oy + y, 1, 2)
 }
 
 /** Lot ground under houses: a mown lawn; houses and garden details are drawn on top. */
@@ -289,15 +339,49 @@ function paintPlaza(ctx: Ctx, ox: number, oy: number, m8: number, variant: numbe
   ctx.fillRect(ox + (variant % 2 ? 3 : 11), oy, 1, 7)
   ctx.fillRect(ox + (variant % 2 ? 11 : 3), oy + 8, 1, 7)
   dots(ctx, ox, oy, [[5, 3], [13, 11]], P.plazaB)
+  // Lit top-left corner of each slab.
+  dots(ctx, ox, oy, [[0, 0], [variant % 2 ? 4 : 12, 0], [0, 8], [variant % 2 ? 12 : 4, 8]], P.stoneLight)
   edgeBands(ctx, ox, oy, m8, 2, P.stoneDark, P.stone)
 }
 
-function paintRoad(ctx: Ctx, ox: number, oy: number, m8: number, variant: number) {
+/** Sparse asphalt grain: a stable hash of the pixel and the tile variant, so it never shimmers. */
+function asphaltGrain(ctx: Ctx, ox: number, oy: number, variant: number) {
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      let h = (Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263) ^ Math.imul(variant + 1, 2246822519)) >>> 0
+      h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0
+      const k = ((h ^ (h >>> 16)) >>> 0) % 31
+      if (k === 0) rect(ctx, ox + x, oy + y, 1, 1, P.asphaltDot)
+      else if (k < 4) rect(ctx, ox + x, oy + y, 1, 1, P.asphaltB)
+    }
+  }
+  // A hairline crack on a few tiles.
+  if (variant === 5) dots(ctx, ox, oy, [[3, 6], [4, 7], [5, 7], [6, 8], [7, 9], [7, 10]], P.asphaltDot)
+}
+
+function paintRoad(ctx: Ctx, ox: number, oy: number, m8: number, variant: number, lane: number) {
   rect(ctx, ox, oy, 16, 16, P.asphaltA)
-  ctx.fillStyle = P.asphaltB
-  for (let y = 0; y < 16; y += 2) for (let x = y % 4 === 0 ? 0 : 1; x < 16; x += 2) ctx.fillRect(ox + x, oy + y, 1, 1)
-  dots(ctx, ox, oy, GROUND_DOTS[(variant + 2) % 8] ?? [], P.asphaltDot)
-  edgeBands(ctx, ox, oy, m8, 2, P.curb, P.curbShadow)
+  asphaltGrain(ctx, ox, oy, variant)
+  const axis = lane & 3
+  if (axis) {
+    // Dashed centre line: 8 px painted, 8 px gap, continuing across tiles.
+    const far = lane & 4 ? 13 : 7
+    const a = lane & 8 ? 8 : 0
+    if (axis === 1) rect(ctx, ox + a, oy + far, 8, 2, P.laneMark)
+    else rect(ctx, ox + far, oy + a, 2, 8, P.laneMark)
+  }
+  // Kerb with a paving joint every 5 px; the face towards the light (south and east bands) is bright.
+  edgeBands(ctx, ox, oy, m8, 2, P.curb, P.curbShadow, P.kerbLight)
+  const joints = (alongX: boolean, fixed: number) => {
+    for (let i = variant % 5; i < 16; i += 5) {
+      if (alongX) rect(ctx, ox + i, oy + fixed, 1, 1, P.stoneDark)
+      else rect(ctx, ox + fixed, oy + i, 1, 1, P.stoneDark)
+    }
+  }
+  if (!(m8 & Dir8.N)) joints(true, 0)
+  if (!(m8 & Dir8.S)) joints(true, 15)
+  if (!(m8 & Dir8.W)) joints(false, 0)
+  if (!(m8 & Dir8.E)) joints(false, 15)
 }
 
 /** 16×16 coverage mask for a path body plus its connectors. */
@@ -332,7 +416,27 @@ export function pathCoverage(m4: number): boolean[] {
   return cov
 }
 
-function paintPath(ctx: Ctx, ox: number, oy: number, m4: number, variant: number) {
+/** Packed earth of park paths: two tans, dark specks and the odd pebble. */
+function earth(x: number, y: number, edge: boolean, variant: number): string {
+  if (edge) return P.pathEdge
+  const k = (x * 7 + y * 3 + variant) % 11
+  if (k === 0) return P.pathB
+  if ((x * 5 + y * 13 + variant * 3) % 29 === 0) return P.pebble
+  if ((x * 3 + y * 11 + variant) % 17 === 0) return P.pathEdge
+  return P.pathA
+}
+
+/** Flagstones, 4×4 px slabs laid in staggered rows: a joint line, a lit top-left corner, a stone body. */
+function flagstone(x: number, y: number, edge: boolean, variant: number): string {
+  if (edge) return P.stoneDark
+  const row = y >> 2
+  if (y % 4 === 3) return P.stoneDark
+  if ((x + (row % 2) * 2 + variant % 2) % 4 === 3) return P.stoneDark
+  if (y % 4 === 0 && (x + (row % 2) * 2 + variant % 2) % 4 === 0) return P.stoneLight
+  return (row + x + variant) % 7 === 0 ? P.plazaB : P.stone
+}
+
+function paintPath(ctx: Ctx, ox: number, oy: number, m4: number, variant: number, surface: number) {
   paintGround(ctx, ox, oy, (variant + 3) % 8)
   const cov = pathCoverage(m4)
   for (let y = 0; y < 16; y++) {
@@ -346,17 +450,23 @@ function paintPath(ctx: Ctx, ox: number, oy: number, m4: number, variant: number
         return !cov[ny * 16 + nx]
       }
       const edge = open(1, 0) || open(-1, 0) || open(0, 1) || open(0, -1)
-      rect(ctx, ox + x, oy + y, 1, 1, edge ? P.pathEdge : (x * 7 + y * 3 + variant) % 11 === 0 ? P.pathB : P.pathA)
+      rect(ctx, ox + x, oy + y, 1, 1, surface === 1 ? flagstone(x, y, edge, variant) : earth(x, y, edge, variant))
     }
   }
 }
 
 function paintCrossing(ctx: Ctx, ox: number, oy: number, vertical: boolean) {
   rect(ctx, ox, oy, 16, 16, P.asphaltA)
-  ctx.fillStyle = P.white
+  asphaltGrain(ctx, ox, oy, 2)
   for (let i = 1; i < 16; i += 5) {
-    if (vertical) ctx.fillRect(ox + i, oy + 1, 3, 14)
-    else ctx.fillRect(ox + 1, oy + i, 14, 3)
+    // White bar, with a shaded bottom or right row (light from the top-left).
+    if (vertical) {
+      rect(ctx, ox + i, oy + 1, 3, 14, P.white)
+      rect(ctx, ox + i + 2, oy + 1, 1, 14, P.fenceShade)
+    } else {
+      rect(ctx, ox + 1, oy + i, 14, 3, P.white)
+      rect(ctx, ox + 1, oy + i + 2, 14, 1, P.fenceShade)
+    }
   }
 }
 
@@ -364,10 +474,10 @@ function paintCrossing(ctx: Ctx, ox: number, oy: number, vertical: boolean) {
 export function paintTile(ctx: Ctx, ox: number, oy: number, spec: TileSpec): void {
   switch (spec.terrain) {
     case Terrain.park:
-      paintPark(ctx, ox, oy, spec.m8, spec.variant, spec.style ?? 0)
+      paintPark(ctx, ox, oy, spec.m8, spec.variant, spec.style ?? 0, spec.deco ?? 0)
       break
     case Terrain.water:
-      paintWater(ctx, ox, oy, spec.m8, spec.variant)
+      paintWater(ctx, ox, oy, spec.m8, spec.variant, spec.frame ?? 0)
       break
     case Terrain.building:
       paintLot(ctx, ox, oy, spec.variant)
@@ -376,10 +486,10 @@ export function paintTile(ctx: Ctx, ox: number, oy: number, spec: TileSpec): voi
       paintPlaza(ctx, ox, oy, spec.m8, spec.variant)
       break
     case Terrain.road:
-      paintRoad(ctx, ox, oy, spec.m8, spec.variant)
+      paintRoad(ctx, ox, oy, spec.m8, spec.variant, spec.lane ?? 0)
       break
     case Terrain.path:
-      paintPath(ctx, ox, oy, spec.m4, spec.variant)
+      paintPath(ctx, ox, oy, spec.m4, spec.variant, spec.surface ?? 0)
       break
     case Terrain.crossing:
       paintCrossing(ctx, ox, oy, spec.vertical)

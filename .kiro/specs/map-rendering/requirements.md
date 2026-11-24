@@ -59,3 +59,19 @@ Related: [routing](../routing/requirements.md), [quest](../quest/requirements.md
 5. WHEN the user rests the map for 1.2 s with its centre outside the loaded area, AND no route is planned and no quest runs, AND no download is running, THE SYSTEM SHALL load the area under the view by itself, using the same polite Overpass client (cache first, one request at a time, at least 10 s between requests).
 6. IF loading that spot failed, THEN THE SYSTEM SHALL NOT ask again for a view within 500 m of it, and SHALL keep the "Load this area" button.
 7. WHILE a route is planned or a quest runs, THE SYSTEM SHALL NOT replace the loaded area without a tap on "Load this area".
+
+### Requirement 8 (task 51): Tile art
+
+**User Story:** As a walker, I want the streets, parks, water and buildings to look like a polished handheld-console game, so that the map is pleasant to look at while I walk.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL draw every terrain tile with original pixel art made in code from the palette in `src/render/palette.ts`, with no external image, font or sound asset and no design taken from a commercial game, and SHALL light every tile from the top-left (highlights on top and left, shade on the bottom and right).
+2. THE SYSTEM SHALL draw asphalt with a sparse stable grain, kerbs of pale paving with joints along open road edges (south and east kerb faces bright, north and west faces shaded), and zebra bars with a shaded lower or right row where OSM marks a crossing.
+3. WHEN a street is at least 3 tiles wide and clearly longer than wide, THE SYSTEM SHALL draw a dashed centre line (8 px dash, 8 px gap) through the middle of its width, and SHALL NOT draw one on narrower streets or on stair-stepped diagonal streets.
+4. THE SYSTEM SHALL draw footpaths in or next to parks as packed earth, and all other footpaths and plazas (pedestrian areas) as flagstones with joints and lit slab corners.
+5. THE SYSTEM SHALL vary park grass with tufts, small stones, flowers and trees, and bushes beside trees to form small clusters, chosen only from stable per-tile hashes, so that the same map position always shows the same art and nothing shimmers when panning or zooming.
+6. THE SYSTEM SHALL draw water with three ripple frames and a shore with foam, and WHILE the user prefers reduced motion, THE SYSTEM SHALL show only the first frame and SHALL NOT schedule animation.
+7. THE SYSTEM SHALL draw houses with one of three roof styles (shingles, standing-seam stripes, clay tiles), optional shutters, a stone base course, an optional door porch, a chimney on some houses, and ground-floor shop fronts with striped awnings on some apartment blocks, all chosen from the building's seed.
+8. THE SYSTEM SHALL keep 4-bit and blob-mask auto-tiling, lazily painted atlas tiles and chunk caching unchanged, and SHALL add no per-frame cost except redrawing the water tiles of painted visible chunks once per ripple frame (450 ms).
+

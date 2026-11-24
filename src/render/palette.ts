@@ -30,6 +30,15 @@ export const P = {
   curb: '#d9d8e6',
   curbShadow: '#5d5c72',
   laneMark: '#f4e9a0',
+  /** Task 51 additions: kerb face lit from the top-left, loose pebbles, shop awning stripes. */
+  kerbLight: '#f1f0fa',
+  pebble: '#b7ad9a',
+  awnings: [
+    ['#e0524a', '#fbf7ec'],
+    ['#3f8fd0', '#fbf7ec'],
+    ['#3fa39b', '#f4e9a0'],
+    ['#e29444', '#fbf7ec'],
+  ] as const,
   pathA: '#ecc98f',
   pathB: '#e2bb7c',
   pathEdge: '#b98d55',

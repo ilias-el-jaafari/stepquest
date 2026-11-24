@@ -9,7 +9,7 @@ import { railStamps } from './rails.ts'
 import { dirIndex, FOOT_DIRS, FOOT_PATTERNS, footprints, routeCells, smoothPolyline, type RouteCell } from './routePath.ts'
 import { CHECKPOINT, facingFrom, FINISH_FLAG, paintSprite, START_MAT, walkFrame, WALKER, type Facing, type Sprite } from './sprites.ts'
 import { paintFrontFence, paintGardenPath, paintGardenTree, paintHouse, paintLandmark } from './structures.ts'
-import { paintTile, tileHash, tileKey } from './tileset.ts'
+import { paintTile, tileHash, tileKey, type TileSpec } from './tileset.ts'
 import { tileSpecAt } from './tileSpecs.ts'
 import { chunkLimit, LruCache, planChunks, type ChunkPlan, type ChunkRef } from './chunkPlan.ts'
 import { wrapBubbleText } from '../audio/speechBubble.ts'
@@ -24,6 +24,16 @@ export const CHUNK_BUDGET_MS = 6
 /** Chunks beyond the screen that are painted ahead while the map is idle. */
 export const PREFETCH_MARGIN = 1
 const ATLAS_TILES = 64
+/** Water ripple animation: three frames, each shown this long (ms). */
+export const WATER_FRAME_MS = 450
+export const WATER_FRAMES = 3
+/** The water frame shown at time `now` (always 0 when the user prefers reduced motion). */
+export function waterFrame(now: number, reduced: boolean): number {
+  return reduced ? 0 : Math.floor(now / WATER_FRAME_MS) % WATER_FRAMES
+}
+
+/** Water tiles of one painted chunk, redrawn per frame; atlas slots are looked up once per frame. */
+type ChunkWater = { tiles: { tx: number; ty: number; spec: TileSpec }[]; slots: (AtlasSlot[] | undefined)[] }
 
 export type Markers = { start?: LatLon; end?: LatLon }
 
@@ -91,6 +101,9 @@ export class MapRenderer {
   /** Structures (houses, landmarks) touching each chunk, by chunk key. */
   private readonly chunkStructures = new Map<string, { houses: number[]; landmarks: number[] }>()
   private readonly atlas = new TileAtlas()
+  /** Water tiles by chunk key, for the ripple animation. */
+  private readonly chunkWater = new Map<string, ChunkWater>()
+  private waterTimer: ReturnType<typeof setTimeout> | undefined
   private readonly chunks = new LruCache<HTMLCanvasElement>(MAX_CHUNKS)
   /** Keys of the chunks on screen, which the cache must not evict. */
   private onScreen = new Set<string>()
@@ -346,6 +359,9 @@ export class MapRenderer {
   dispose(): void {
     if (this.frame && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(this.frame)
     this.chunks.clear()
+    this.chunkWater.clear()
+    if (this.waterTimer !== undefined) clearTimeout(this.waterTimer)
+    this.waterTimer = undefined
   }
 
   /** Chunks painted so far (tests and diagnostics). */
@@ -359,17 +375,21 @@ export class MapRenderer {
     if (found) return found
     const canvas = makeCanvas(CHUNK * TILE_PX, CHUNK * TILE_PX)
     const ctx = canvas.getContext('2d')!
+    const water: ChunkWater = { tiles: [], slots: [] }
     for (let ty = 0; ty < CHUNK; ty++) {
       for (let tx = 0; tx < CHUNK; tx++) {
         const gx = cx * CHUNK + tx
         const gy = cy * CHUNK + ty
         if (!this.grid.inBounds(gx, gy)) continue
         const spec = tileSpecAt(this.grid, gx, gy)
+        if (spec.terrain === Terrain.water) water.tiles.push({ tx, ty, spec })
         const slot = this.atlas.slot(tileKey(spec), (actx, x, y) => paintTile(actx, x, y, spec))
         ctx.drawImage(slot.page, slot.sx, slot.sy, TILE_PX, TILE_PX, tx * TILE_PX, ty * TILE_PX, TILE_PX, TILE_PX)
       }
     }
     this.paintStructures(ctx, cx, cy)
+    if (water.tiles.length) this.chunkWater.set(key, water)
+    else this.chunkWater.delete(key)
     this.chunks.set(key, canvas, this.onScreen)
     return canvas
   }
@@ -416,6 +436,46 @@ export class MapRenderer {
       }
     }
     return pending
+  }
+
+  /**
+   * Ripples: frame 0 is baked into the chunks; on the other frames the water tiles of the
+   * painted visible chunks are redrawn from the atlas (3 frames, one tick per 450 ms), so the
+   * only per-frame cost is the water on screen. Static with reduced motion.
+   */
+  private drawWater(ctx: CanvasRenderingContext2D, plan: ChunkPlan, originX: number, originY: number, scale: number): void {
+    if (this.waterTimer !== undefined) clearTimeout(this.waterTimer)
+    this.waterTimer = undefined
+    if (prefersReducedMotion()) return
+    const now = typeof performance === 'undefined' ? 0 : performance.now()
+    const frame = waterFrame(now, false)
+    let any = false
+    for (const c of plan.visible) {
+      const key = `${c.cx},${c.cy}`
+      const water = this.chunkWater.get(key)
+      if (!water || !this.chunks.has(key)) continue
+      any = true
+      if (frame === 0) continue
+      const slots = (water.slots[frame] ??= water.tiles.map(({ spec }) => {
+        const framed = { ...spec, frame }
+        return this.atlas.slot(tileKey(framed), (actx, x, y) => paintTile(actx, x, y, framed))
+      }))
+      water.tiles.forEach(({ tx, ty }, i) => {
+        const slot = slots[i]!
+        const x0 = Math.round(originX + (c.cx * CHUNK + tx) * scale)
+        const y0 = Math.round(originY + (c.cy * CHUNK + ty) * scale)
+        const x1 = Math.round(originX + (c.cx * CHUNK + tx + 1) * scale)
+        const y1 = Math.round(originY + (c.cy * CHUNK + ty + 1) * scale)
+        ctx.drawImage(slot.page, slot.sx, slot.sy, TILE_PX, TILE_PX, x0, y0, x1 - x0, y1 - y0)
+      })
+    }
+    if (any && typeof setTimeout !== 'undefined') {
+      const wait = WATER_FRAME_MS - (now % WATER_FRAME_MS)
+      this.waterTimer = setTimeout(() => {
+        this.waterTimer = undefined
+        this.requestRender()
+      }, wait)
+    }
   }
 
   /** Garden details, houses and landmark buildings over a chunk's tiles (drawn north to south). */
@@ -519,6 +579,7 @@ export class MapRenderer {
       ctx.fillRect(originX, originY, Math.round(this.grid.cols * scale), Math.round(this.grid.rows * scale))
       const plan = planChunks({ camX: this.camX, camY: this.camY, zoom: this.zoom, cssW, cssH, cols: this.grid.cols, rows: this.grid.rows, chunk: CHUNK, margin: PREFETCH_MARGIN })
       if (this.drawChunks(ctx, plan, originX, originY, scale)) this.requestRender()
+      this.drawWater(ctx, plan, originX, originY, scale)
     } else {
       ctx.fillStyle = P.groundA
       ctx.fillRect(originX, originY, Math.round(this.grid.cols * scale), Math.round(this.grid.rows * scale))

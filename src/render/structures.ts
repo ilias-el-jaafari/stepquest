@@ -28,12 +28,29 @@ function icon(ctx: Ctx, x: number, y: number, rows: readonly string[], colors: R
 type RoofColours = readonly [string, string, string]
 
 /** Gabled roof seen from the south: ridge highlight, staggered shingles, dark eave. */
-function gabledRoof(ctx: Ctx, x: number, y: number, w: number, h: number, [base, dark, light]: RoofColours) {
+function gabledRoof(ctx: Ctx, x: number, y: number, w: number, h: number, [base, dark, light]: RoofColours, style = 0) {
   rect(ctx, x, y, w, h, base)
-  for (let yy = y + 5; yy < y + h - 2; yy += 4) {
-    rect(ctx, x + 1, yy, w - 2, 1, dark)
-    const offset = ((yy - y) / 4) % 2 ? 2 : 6
-    for (let xx = x + offset; xx < x + w - 1; xx += 8) rect(ctx, xx, yy - 3, 1, 3, dark)
+  if (style === 1) {
+    // Standing-seam stripes: a dark seam and a light edge every 4 px, running down the slope.
+    for (let xx = x + 2; xx < x + w - 1; xx += 4) {
+      rect(ctx, xx, y + 3, 1, h - 5, dark)
+      rect(ctx, xx + 1, y + 3, 1, h - 5, light)
+    }
+  } else if (style === 2) {
+    // Clay tiles: rows of scallops, each row shifted by half a tile.
+    for (let yy = y + 5; yy < y + h - 2; yy += 3) {
+      const shift = ((yy - y - 5) / 3) % 2 ? 2 : 0
+      for (let xx = x + 1 + shift; xx < x + w - 2; xx += 4) {
+        rect(ctx, xx, yy, 3, 1, dark)
+        rect(ctx, xx, yy - 1, 1, 1, light)
+      }
+    }
+  } else {
+    for (let yy = y + 5; yy < y + h - 2; yy += 4) {
+      rect(ctx, x + 1, yy, w - 2, 1, dark)
+      const offset = ((yy - y) / 4) % 2 ? 2 : 6
+      for (let xx = x + offset; xx < x + w - 1; xx += 8) rect(ctx, xx, yy - 3, 1, 3, dark)
+    }
   }
   rect(ctx, x + 1, y + 1, w - 2, 2, light)
   rect(ctx, x + 1, y + h - 2, w - 2, 1, dark)
@@ -115,6 +132,7 @@ export function paintHouse(ctx: Ctx, x: number, y: number, house: House): void {
   if (house.kind === 'apartments') {
     const floors = Math.max(2, Math.min(4, house.h - 2))
     const wallH = 8 + floors * 10
+    const shop = (house.seed >>> 5) % 3 === 0
     flatRoof(ctx, x, y, W, H - wallH, roof, house.seed)
     wall(ctx, x + 1, y + H - wallH, W - 2, wallH, wallC, shade)
     for (let f = 0; f < floors; f++) {
@@ -122,6 +140,15 @@ export function paintHouse(ctx: Ctx, x: number, y: number, house: House): void {
       const ground = f === floors - 1
       for (let c = 0; c < house.w; c++) {
         if (ground && c === house.door) continue
+        if (ground && shop) {
+          // Shop front: a wide display window under a striped awning.
+          const [a, b] = P.awnings[(house.seed >>> 6) % P.awnings.length]!
+          rect(ctx, x + c * 16 + 1, wy + 3, 14, 7, P.ink)
+          rect(ctx, x + c * 16 + 2, wy + 4, 12, 5, P.glass)
+          rect(ctx, x + c * 16 + 2, wy + 4, 3, 1, P.glassHi)
+          awning(ctx, x + c * 16 + 1, wy - 1, 14, a, b)
+          continue
+        }
         windowAt(ctx, x + c * 16 + 4, wy, 8, 6)
         // Balcony rails on upper floors, every other column.
         if (!ground && (c + house.seed) % 2 === 0) {
@@ -160,12 +187,17 @@ export function paintHouse(ctx: Ctx, x: number, y: number, house: House): void {
     rect(ctx, cx + 1, y + 1, 4, 6, P.brick)
     rect(ctx, cx + 1, y + 3, 4, 1, P.brickDark)
   }
-  gabledRoof(ctx, x, y + (house.seed % 3 === 0 ? 2 : 0), W, roofH - (house.seed % 3 === 0 ? 2 : 0), roof)
+  gabledRoof(ctx, x, y + (house.seed % 3 === 0 ? 2 : 0), W, roofH - (house.seed % 3 === 0 ? 2 : 0), roof, (house.seed >>> 4) % 3)
   const wy = y + roofH
   wall(ctx, x + 1, wy, W - 2, wallH, wallC, shade)
   for (let c = 0; c < house.w; c++) {
     if (c === house.door) continue
     windowAt(ctx, x + c * 16 + 4, wy + 4)
+    // Shutters on some houses, in the roof's dark tone.
+    if ((house.seed >>> 9) % 2 === 0) {
+      rect(ctx, x + c * 16 + 2, wy + 4, 2, 7, roof[1])
+      rect(ctx, x + c * 16 + 12, wy + 4, 2, 7, roof[1])
+    }
     // Flower box under some windows.
     if ((house.seed >>> (c + 3)) % 3 === 0) {
       rect(ctx, x + c * 16 + 3, wy + 11, 10, 2, P.trunk)
@@ -174,7 +206,15 @@ export function paintHouse(ctx: Ctx, x: number, y: number, house: House): void {
       rect(ctx, x + c * 16 + 10, wy + 10, 1, 1, P.flowerR)
     }
   }
+  // Stone base course along the foot of the wall.
+  rect(ctx, x + 2, wy + wallH - 3, W - 4, 2, shade)
   doorAt(ctx, doorX, wy + wallH - 13, 12)
+  // A small porch roof over the door on some houses.
+  if ((house.seed >>> 11) % 3 === 0) {
+    rect(ctx, doorX - 1, wy + wallH - 15, 10, 3, P.ink)
+    rect(ctx, doorX, wy + wallH - 14, 8, 1, roof[0])
+    rect(ctx, doorX, wy + wallH - 13, 8, 1, roof[1])
+  }
   // Door step.
   rect(ctx, doorX - 1, wy + wallH - 1, 10, 1, P.stoneDark)
 }

@@ -17,6 +17,15 @@ A handheld-RPG overworld, in the spirit of Game Boy Color / Game Boy Advance era
 - The route is a trail of red footprints; checkpoints are numbered gold "step gems"; the finish is a chequered flag; the walker is a small kid with a beanie and yellow headphones (our own design); the player dresses it in the Hero tab (boy or girl; skin, hair, cap, shirt and trousers from palettes of 6–8 swatches), and the map walker and header avatar wear that look.
 - Shallow diagonal streets get one long asphalt wedge per flat run, so kerbs run straight instead of in stairs.
 
+## Tile rules (task 51)
+
+- Light comes from the top-left: highlights on top and left edges, shade on the bottom and right. Kerbs on the south and east side of a road are bright, north and west are shaded; zebra bars shade their lower or right row.
+- Streets: sparse asphalt grain (no checkerboard), pale kerbs with paving joints, a dashed `laneMark` centre line (8 px on, 8 px off) only on streets at least 3 tiles wide. Park paths are packed earth; other footways and plazas are flagstones.
+- Grass varies by tile hash only: tufts, stones, flowers, trees with bushes beside them. Never use random numbers or time, so panning never shimmers.
+- Water has three ripple frames at 450 ms; with `prefers-reduced-motion` only frame 0 is shown.
+- Houses pick one of three roof styles (shingles, seams, clay tiles), shutters, base course, porch and chimney from their seed; some apartment blocks get shop fronts with striped awnings.
+- Palette: stay inside `src/render/palette.ts`. Task 51 added `kerbLight #f1f0fa`, `pebble #b7ad9a` and four awning stripe pairs; add colours sparingly and document them here. No external art, nothing resembling another game's tiles.
+
 ## UI
 
 - Dark ink background with a subtle dot grid; panels are RPG dialog boxes: black outline with notched 8-bit corners (drawn with offset box-shadows, never border-radius), blue inner rule, warm paper fill, stepped hard drop shadow.
