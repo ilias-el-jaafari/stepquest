@@ -95,6 +95,7 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 - [x] 50. Speech bubbles on the map: the phrase on air (from the voice queue, so it always matches what is spoken) is drawn as a pixel-art bubble next to the walker in the app language and removed when the phrase ends or is cut; muted or locked audio still shows it for a time based on text length
 - [x] 50b. Map without holes: ground colour instead of black, time-budgeted nearest-first chunk painting with town-map stand-ins, idle prefetch ring, size-limited chunk cache that keeps on-screen chunks, automatic loading of the area under a rested view (debounced, one request at a time, no retry storms) when no route would be lost; tests for chunk planning, cache, auto-load rule and renderer fills
 - [ ] 51. New tile art
+- [x] 51b. Field fix: routes go around roundabouts (ring detection incl. split arcs and untagged loops, island edges removed from the walking graph, ways split at out-of-box nodes instead of chords); tests on synthetic plazas and the Benicalap fixture
 
 ## Phase 5 — Submission
 

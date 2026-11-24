@@ -1,5 +1,6 @@
 import { haversine, LocalProjection, type LatLon } from '../geo/geo.ts'
 import type { OsmData } from '../osm/types.ts'
+import { crossesIsland, findRoundabouts } from '../osm/roundabout.ts'
 import { MinHeap } from './heap.ts'
 
 /**
@@ -38,6 +39,12 @@ export class WalkGraph {
       const lo = data.lon[n] ?? 0
       return la >= south && la <= north && lo >= west && lo <= east
     }
+    // Roundabout islands are never walked across: an edge that runs through
+    // one (a path mapped over the island, a chord between two ring nodes) is dropped.
+    const islands = findRoundabouts(data)
+    const ringWays = new Set(islands.flatMap((r) => r.ways))
+    const islandProjection = new LocalProjection({ lat: (south + north) / 2, lon: (east + west) / 2 })
+    const xyOf = (n: number) => islandProjection.toXY({ lat: data.lat[n] ?? 0, lon: data.lon[n] ?? 0 })
     data.ways.forEach((way, wayIndex) => {
       if (!way.walkable) return
       for (let i = 1; i < way.nodes.length; i++) {
@@ -46,6 +53,7 @@ export class WalkGraph {
         if (a === b || !inside(a) || !inside(b)) continue
         const key = a < b ? `${a}:${b}` : `${b}:${a}`
         if (seen.has(key)) continue
+        if (islands.length && !ringWays.has(wayIndex) && crossesIsland(xyOf(a), xyOf(b), islands)) continue
         seen.add(key)
         for (const n of [a, b]) if (!map.has(n)) map.set(n, map.size)
         pairs.push([map.get(a)!, map.get(b)!])

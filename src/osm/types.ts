@@ -27,6 +27,8 @@ export type OsmWay = {
   area: boolean
   /** Underground (tunnel=yes); drawn as nothing but still routable when walkable. */
   tunnel: boolean
+  /** Ring (or one arc of the ring) of a roundabout (junction=roundabout or circular); its inside is an island that is never walked across. */
+  roundabout?: boolean
   /** A marked pedestrian crossing over a road (footway=crossing). */
   crossing: boolean
   /** Drawing style within the kind: park style, barrier type, building type or 'plaza'. */

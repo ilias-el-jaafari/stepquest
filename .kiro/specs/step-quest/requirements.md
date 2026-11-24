@@ -129,6 +129,18 @@ StepQuest turns a step goal into an 8-bit overworld quest on real streets. The u
 6. IF loading that spot failed, THEN THE SYSTEM SHALL NOT ask again for a view within 500 m of it, and SHALL keep the "Load this area" button.
 7. WHILE a route is planned or a quest runs, THE SYSTEM SHALL NOT replace the loaded area without a tap on "Load this area".
 
+### Requirement 7b: Routes go around roundabouts
+
+**User Story:** As a walker, I want the route to follow the roundabout and its crossings, so that I am never sent across the central island.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL recognise a roundabout from junction=roundabout or junction=circular ways, including rings that OSM splits into several arcs joined end to end, and from a small (20-220 m), round, closed road loop without the tag (service roads excepted).
+2. THE SYSTEM SHALL NOT use any walking-graph edge that passes through the inside of a roundabout ring, whatever way it belongs to (a footway mapped over the island, a chord between two ring nodes); the ring itself stays walkable.
+3. WHEN a way from Overpass has nodes without geometry (outside the query box), THE SYSTEM SHALL split the line there and SHALL NOT join the nodes on either side with a straight segment.
+4. WHEN the start and the end of a leg lie on opposite sides of a roundabout, THE SYSTEM SHALL return a route that never enters the island interior.
+5. THE SYSTEM SHALL keep the safety weights and the ±5 % length tolerance unchanged, and SHALL make no new Overpass request for this (the existing query already returns the junction tag).
+
 ### Requirement 8: Engineering
 
 1. THE SYSTEM SHALL keep domain logic in pure, unit-tested TypeScript and run all tests offline.

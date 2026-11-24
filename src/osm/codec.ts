@@ -35,6 +35,7 @@ const FLAG_WALKABLE = 1
 const FLAG_AREA = 2
 const FLAG_TUNNEL = 4
 const FLAG_CROSSING = 8
+const FLAG_ROUNDABOUT = 16
 
 export function encodeOsm(data: OsmData): CompactOsm {
   const dlat: number[] = []
@@ -89,7 +90,7 @@ export function encodeOsm(data: OsmData): CompactOsm {
         hwIndex.set(way.highway, hw)
       }
     }
-    const flags = (way.walkable ? FLAG_WALKABLE : 0) | (way.area ? FLAG_AREA : 0) | (way.tunnel ? FLAG_TUNNEL : 0) | (way.crossing ? FLAG_CROSSING : 0)
+    const flags = (way.walkable ? FLAG_WALKABLE : 0) | (way.area ? FLAG_AREA : 0) | (way.tunnel ? FLAG_TUNNEL : 0) | (way.crossing ? FLAG_CROSSING : 0) | (way.roundabout ? FLAG_ROUNDABOUT : 0)
     const row = [FEATURE_KINDS.indexOf(way.kind), hw, flags, sub]
     let prev = 0
     for (const n of way.nodes) {
@@ -138,6 +139,7 @@ export function decodeOsm(compact: CompactOsm): OsmData {
       area: (flags & FLAG_AREA) !== 0,
       tunnel: (flags & FLAG_TUNNEL) !== 0,
       crossing: (flags & FLAG_CROSSING) !== 0,
+      ...((flags & FLAG_ROUNDABOUT) !== 0 ? { roundabout: true } : {}),
       sub: compact.v === 1 ? undefined : compact.subs?.[row[3] ?? -1],
       nodes,
       ...(compact.names && (compact.wn?.[i] ?? -1) >= 0 ? { name: compact.names[compact.wn![i]!] } : {}),

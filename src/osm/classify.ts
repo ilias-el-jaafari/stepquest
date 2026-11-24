@@ -128,6 +128,11 @@ export function isArea(kind: FeatureKind, tags: Tags, closed: boolean): boolean 
   return kind !== 'waterway' && kind !== 'barrier' && kind !== 'rail'
 }
 
+/** junction=roundabout or junction=circular (a closed ring around an island). */
+export function isRoundaboutTag(tags: Tags): boolean {
+  return tags.junction === 'roundabout' || tags.junction === 'circular'
+}
+
 /** Footway segments that cross a carriageway (drawn as zebra crossings). */
 export function isCrossing(tags: Tags): boolean {
   return tags.footway === 'crossing' || tags.highway === 'crossing' || (tags.crossing !== undefined && tags.crossing !== 'no' && tags.highway !== undefined && tags.highway !== 'cycleway')

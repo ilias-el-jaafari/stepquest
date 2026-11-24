@@ -1,5 +1,5 @@
 import type { BBox } from '../geo/geo.ts'
-import { classifyWay, isArea, isCrossing, isIndustrialLand, isLively, isTunnel, isWalkable, safetyFlags, wayStyle, type Tags } from './classify.ts'
+import { classifyWay, isArea, isCrossing, isIndustrialLand, isLively, isRoundaboutTag, isTunnel, isWalkable, safetyFlags, wayStyle, type Tags } from './classify.ts'
 import { dedupePois, landmarkKind } from './landmarks.ts'
 import type { OsmData, OsmWay, Poi } from './types.ts'
 
@@ -67,11 +67,16 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
     const industrialLand = isIndustrialLand(tags)
     const kind = classifyWay(tags)
     if ((!kind && !industrialLand) || !way.nodes || !way.geometry || way.nodes.length < 2) continue
-    const nodes: number[] = []
+    // A node without geometry lies outside the query box. Split the way there:
+    // joining its neighbours would draw (and route) a chord across the gap.
+    const runs: number[][] = [[]]
     for (let i = 0; i < way.nodes.length; i++) {
       const id = way.nodes[i]
       const point = way.geometry[i]
-      if (id === undefined || !point) continue
+      if (id === undefined || !point) {
+        if (runs[runs.length - 1]!.length) runs.push([])
+        continue
+      }
       let at = index.get(id)
       if (at === undefined) {
         at = lat.length
@@ -79,26 +84,37 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
         lat.push(point.lat)
         lon.push(point.lon)
       }
-      if (nodes[nodes.length - 1] !== at) nodes.push(at)
+      const run = runs[runs.length - 1]!
+      if (run[run.length - 1] !== at) run.push(at)
     }
-    if (nodes.length < 2) continue
-    const closed = way.nodes[0] === way.nodes[way.nodes.length - 1]
-    if (industrialLand && closed && nodes.length >= 4) industrial.push(nodes)
-    if (!kind) continue
-    const walkable = isWalkable(tags)
-    ways.push({
-      id: way.id,
-      kind,
-      highway: tags.highway,
-      walkable,
-      area: isArea(kind, tags, closed),
-      tunnel: isTunnel(tags),
-      crossing: kind === 'path' && isCrossing(tags),
-      sub: wayStyle(kind, tags),
-      nodes,
-      ...(walkable && tags.name ? { name: tags.name } : {}),
-      ...(walkable ? { safety: safetyFlags(tags) } : {}),
-    })
+    // Polygons clipped by the box keep the old behaviour (one ring, closed by the clip).
+    const isLine = kind === 'road' || kind === 'path' || kind === 'waterway' || kind === 'barrier' || kind === 'rail'
+    if (!isLine && runs.length > 1) {
+      const merged: number[] = []
+      for (const r of runs) for (const n of r) if (merged[merged.length - 1] !== n) merged.push(n)
+      runs.splice(0, runs.length, merged)
+    }
+    const closed = runs.length === 1 && way.nodes[0] === way.nodes[way.nodes.length - 1]
+    const walkable = kind ? isWalkable(tags) : false
+    for (const nodes of runs) {
+      if (nodes.length < 2) continue
+      if (industrialLand && closed && nodes.length >= 4) industrial.push(nodes)
+      if (!kind) continue
+      ways.push({
+        id: way.id,
+        kind,
+        highway: tags.highway,
+        walkable,
+        area: isArea(kind, tags, closed),
+        tunnel: isTunnel(tags),
+        crossing: kind === 'path' && isCrossing(tags),
+        ...(kind === 'road' && isRoundaboutTag(tags) ? { roundabout: true } : {}),
+        sub: wayStyle(kind, tags),
+        nodes,
+        ...(walkable && tags.name ? { name: tags.name } : {}),
+        ...(walkable ? { safety: safetyFlags(tags) } : {}),
+      })
+    }
   }
   candidates.sort((a, b) => a.rank - b.rank)
   const pois = dedupePois(candidates.map((c) => c.poi))
