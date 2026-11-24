@@ -4,7 +4,8 @@ import { useI18n } from '../i18n/index.ts'
 import { PixelIcon } from './PixelIcons.tsx'
 import { parseTimeParam } from '../render/daylight.ts'
 import { MapRenderer, type Markers, type QuestOverlay, type RouteShape } from '../render/MapRenderer.ts'
-import type { MapSource } from '../render/mapSource.ts'
+import { isMapSource, type MapSource } from '../render/mapSource.ts'
+import type { MapLoad } from '../world/streamer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 import { walkerFor } from '../hero/look.ts'
 import { useLook } from '../hero/useLook.ts'
@@ -42,14 +43,16 @@ type Props = {
   /** Height an overlaying HUD takes at the bottom of the map (px), so the buttons stay clear of it. */
   bottomReserve?: number
   /** Where the view is after every move (pan, zoom, follow), for streaming the cells around it. */
-  onViewBox?: (box: BBox, centre: LatLon) => void
+  onViewBox?: (box: BBox, centre: LatLon, zoom?: number) => void
+  /** What the map shows now; set as `data-map-ready` and `data-map-pending` on the canvas (no visible change). */
+  load?: MapLoad
 }
 
 /**
  * Memoised on purpose: the screen around it re-renders on every keystroke and every clock tick,
  * and the map only needs to follow its own props (callers pass stable callbacks and objects).
  */
-export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve, onViewBox }: Props) {
+export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve, onViewBox, load }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<HTMLDivElement>(null)
@@ -61,6 +64,15 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
   const onUserPanRef = useRef(onUserPan)
   const onViewRef = useRef(onView)
   const onViewBoxRef = useRef(onViewBox)
+  // A streamed world can move its frame (a new grid) when the view leaves it: rebuild the renderer then,
+  // at the same place and zoom (requirement 20.17).
+  const [frame, setFrame] = useState(0)
+  useEffect(() => {
+    if (!isMapSource(map) || !map.subscribeFrame) return
+    const stop = map.subscribeFrame(() => setFrame((f) => f + 1))
+    return () => void stop()
+  }, [map])
+  const carry = useRef<{ map: TileGrid | MapSource; at: LatLon; zoom: number } | undefined>(undefined)
 
   useEffect(() => {
     onTapRef.current = onTap
@@ -75,7 +87,10 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
     if (!canvas) return
     const renderer = new MapRenderer(canvas, map)
     rendererRef.current = renderer
-    renderer.onViewChange((box, centre) => onViewBoxRef.current?.(box, centre))
+    const kept = carry.current
+    if (kept && kept.map === map) renderer.centerOn(kept.at, kept.zoom)
+    carry.current = undefined
+    renderer.onViewChange((box, centre, zoom) => onViewBoxRef.current?.(box, centre, zoom))
     // `?time=19:45` previews the lighting at that local time (screenshots, demo video).
     if (typeof location !== 'undefined') renderer.setClockOverride(parseTimeParam(location.search))
     renderer.requestRender()
@@ -88,40 +103,41 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
       view: (c) => onViewRef.current?.(c),
     }))
     return () => {
+      carry.current = { map, at: renderer.screenToLatLon(renderer.cssWidth / 2, renderer.cssHeight / 2), zoom: renderer.zoom }
       observer?.disconnect()
       detach()
       renderer.dispose()
       rendererRef.current = undefined
     }
-  }, [map])
+  }, [map, frame])
 
   useEffect(() => {
     rendererRef.current?.setRoute(route)
-  }, [route, map])
+  }, [route, map, frame])
 
   const look = useLook()
   useEffect(() => {
     rendererRef.current?.setWalker(walkerFor(look))
-  }, [look, map])
+  }, [look, map, frame])
 
   useEffect(() => {
     rendererRef.current?.setMarkers(markers)
-  }, [markers, map])
+  }, [markers, map, frame])
 
   useEffect(() => {
     rendererRef.current?.setAvoided(avoided ?? [])
-  }, [avoided, map])
+  }, [avoided, map, frame])
 
   useEffect(() => {
     const r = rendererRef.current
     if (!r) return
     r.setQuest(quest)
     if (follow && quest?.player) r.follow(quest.player)
-  }, [quest, follow, map])
+  }, [quest, follow, map, frame])
 
   useEffect(() => {
     rendererRef.current?.setBubble(bubble)
-  }, [bubble, map])
+  }, [bubble, map, frame])
 
   const pickupN = pickup?.n ?? 0
   const pickupRef = useRef(pickup)
@@ -195,7 +211,16 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
 
   return (
     <div className="map" ref={mapRef}>
-      <canvas ref={canvasRef} className="map-canvas" data-testid="map-canvas" tabIndex={0} role="application" aria-label={t('map.canvas')} />
+      <canvas
+        ref={canvasRef}
+        className="map-canvas"
+        data-testid="map-canvas"
+        data-map-ready={load?.ready ?? 'full'}
+        data-map-pending={load?.pending ?? 0}
+        tabIndex={0}
+        role="application"
+        aria-label={t('map.canvas')}
+      />
       <div className="map-buttons" data-columns={plan.columns} style={{ '--stack-rows': plan.rows } as React.CSSProperties}>
         {plan.shown.map(button)}
         {hasMore && (
@@ -205,9 +230,18 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
         )}
         {hasMore && moreOpen && <div className="map-more" data-testid="map-more-row">{plan.more.map(button)}</div>}
       </div>
-      <a className="map-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
-        {t('map.attribution')}
-      </a>
+      {/* Required credits (requirement 21.12): the map is drawn from OpenFreeMap tiles in the OpenMapTiles schema, made from OpenStreetMap data. */}
+      <p className="map-attribution" data-testid="map-attribution">
+        <a href="https://openfreemap.org" target="_blank" rel="noopener noreferrer">
+          {t('map.creditTiles')}
+        </a>{' '}
+        <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener noreferrer">
+          {t('map.creditSchema')}
+        </a>{' '}
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
+          {t('map.attribution')}
+        </a>
+      </p>
     </div>
   )
 })

@@ -1,9 +1,10 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { ZOOM_LEVELS } from '../render/camera.ts'
+import { FAR_ZOOM, ZOOM_LEVELS } from '../render/camera.ts'
 import { cellsInBBox } from './cells.ts'
-import { MAX_CELLS_PER_MINUTE } from './streamer.ts'
-import { QUEST_WINDOW_CELLS, questMinZoom, worstCellsTouched } from './window.ts'
+import { COARSE_Z, DETAIL_Z } from '../vector/assemble.ts'
+import { tilesInBBox } from '../vector/tileMath.ts'
+import { FRAME_CELLS, QUEST_WINDOW_TILES, questMinZoom, worstCellsAlong, worstTilesTouched } from './window.ts'
 
 const M_PER_DEG = 111_320
 const VALENCIA = 39.48
@@ -16,9 +17,10 @@ function box(lat: number, lon: number, wM: number, hM: number) {
   return { south: lat - dLat, north: lat + dLat, west: lon - dLon, east: lon + dLon }
 }
 
-describe('quest window (requirement 19.20)', () => {
-  it('is the request budget of one minute', () => {
-    expect(QUEST_WINDOW_CELLS).toBe(MAX_CELLS_PER_MINUTE)
+describe('quest window (requirement 21.11)', () => {
+  it('budgets six tiles of the layer a zoom draws from, and a view that fits the 9 × 9-cell frame', () => {
+    expect(QUEST_WINDOW_TILES).toBe(6)
+    expect(FRAME_CELLS).toBe(9)
   })
 
   it('never undercounts the cells a view of that size touches, at any alignment', () => {
@@ -29,14 +31,30 @@ describe('quest window (requirement 19.20)', () => {
         fc.double({ min: 50, max: 9000, noNaN: true }),
         fc.double({ min: 50, max: 9000, noNaN: true }),
         (lat, lon, w, h) => {
-          expect(cellsInBBox(box(lat, lon, w, h)).length).toBeLessThanOrEqual(worstCellsTouched(w, h, lat))
+          expect(cellsInBBox(box(lat, lon, w, h)).length).toBeLessThanOrEqual((({ w: a, h: b }) => a * b)(worstCellsAlong(w, h, lat)))
         },
       ),
       { numRuns: 400 },
     )
   })
 
-  it('keeps every quest view within the budget at the chosen zoom, for any screen and place', () => {
+  it('never undercounts the vector tiles a view of that size touches, at any alignment', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 60, noNaN: true }),
+        fc.double({ min: -1, max: 1, noNaN: true }),
+        fc.double({ min: 50, max: 20000, noNaN: true }),
+        fc.double({ min: 50, max: 20000, noNaN: true }),
+        fc.constantFrom(COARSE_Z, DETAIL_Z),
+        (lat, lon, w, h, z) => {
+          expect(tilesInBBox(box(lat, lon, w, h), z).length).toBeLessThanOrEqual(worstTilesTouched(w, h, lat, z))
+        },
+      ),
+      { numRuns: 400 },
+    )
+  })
+
+  it('keeps every quest view within its budget and inside the frame at the chosen zoom, for any screen and place', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 280, max: 1600 }),
@@ -46,12 +64,19 @@ describe('quest window (requirement 19.20)', () => {
         (w, h, lat, lon) => {
           const z = questMinZoom(w, h, TILE_M, lat)
           expect((ZOOM_LEVELS as readonly number[]).includes(z)).toBe(true)
-          const cells = cellsInBBox(box(lat, lon, (w / z) * TILE_M, (h / z) * TILE_M)).length
-          // Within budget, unless even the top zoom level could not fit (not reachable for these sizes).
-          expect(cells).toBeLessThanOrEqual(QUEST_WINDOW_CELLS)
-          // And the next level out would break the budget (the floor is the lowest allowed).
+          const view = box(lat, lon, (w / z) * TILE_M, (h / z) * TILE_M)
+          expect(tilesInBBox(view, z <= FAR_ZOOM ? COARSE_Z : DETAIL_Z).length).toBeLessThanOrEqual(QUEST_WINDOW_TILES)
+          const along = worstCellsAlong((w / z) * TILE_M, (h / z) * TILE_M, lat)
+          expect(Math.max(along.w, along.h)).toBeLessThanOrEqual(FRAME_CELLS)
+          // The next level out breaks a rule (the floor is the lowest allowed).
           const below = ZOOM_LEVELS[(ZOOM_LEVELS as readonly number[]).indexOf(z) - 1]
-          if (below !== undefined) expect(worstCellsTouched((w / below) * TILE_M, (h / below) * TILE_M, lat)).toBeGreaterThan(QUEST_WINDOW_CELLS)
+          if (below !== undefined) {
+            const bw = (w / below) * TILE_M
+            const bh = (h / below) * TILE_M
+            const a = worstCellsAlong(bw, bh, lat)
+            const tooMany = worstTilesTouched(bw, bh, lat, below <= FAR_ZOOM ? COARSE_Z : DETAIL_Z) > QUEST_WINDOW_TILES
+            expect(tooMany || a.w > FRAME_CELLS || a.h > FRAME_CELLS).toBe(true)
+          }
         },
       ),
       { numRuns: 300 },
@@ -66,16 +91,16 @@ describe('quest window (requirement 19.20)', () => {
     )
   })
 
-  it('on the 390 × 844 phone of the field check the floor is above the old furthest zoom and still the overview', () => {
-    const z = questMinZoom(390, 844, TILE_M, VALENCIA)
-    expect(z).toBeGreaterThan(0.5)
-    expect(z).toBeLessThanOrEqual(1.5)
-    // At the old furthest zoom the same view needed far more than a minute of requests.
-    expect(worstCellsTouched((390 / 0.5) * TILE_M, (844 / 0.5) * TILE_M, VALENCIA)).toBeGreaterThan(3 * QUEST_WINDOW_CELLS)
+  it('lifts the floor on the 390 × 844 phone of the field check (the coarse tiles are 7.5 km), and keeps a wide screen inside the frame', () => {
+    expect(questMinZoom(390, 844, TILE_M, VALENCIA)).toBe(ZOOM_LEVELS[0])
+    // The furthest phone view touches at most six coarse tiles.
+    expect(worstTilesTouched((390 / 0.5) * TILE_M, (844 / 0.5) * TILE_M, VALENCIA, COARSE_Z)).toBeLessThanOrEqual(QUEST_WINDOW_TILES)
+    // A 1280 × 800 window would be wider than the frame at 0.5 and 0.75.
+    expect(questMinZoom(1280, 800, TILE_M, VALENCIA)).toBe(1)
   })
 
   it('uses the real aspect ratio: a tall view needs a different floor than a wide one of the same area', () => {
     expect(questMinZoom(844, 390, TILE_M, VALENCIA)).not.toBe(Number.NaN)
-    expect(worstCellsTouched(2000, 8000, VALENCIA)).not.toBe(worstCellsTouched(8000, 2000, VALENCIA))
+    expect(worstCellsAlong(2000, 8000, VALENCIA)).not.toEqual(worstCellsAlong(8000, 2000, VALENCIA))
   })
 })

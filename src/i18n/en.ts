@@ -62,6 +62,8 @@ export const en = {
   'map.me': 'Centre on me and follow',
   'map.loading': 'Building the overworld…',
   'map.canvas': 'Map. Arrow keys move it, plus and minus zoom.',
+  'map.creditTiles': 'OpenFreeMap',
+  'map.creditSchema': '© OpenMapTiles',
   'map.attribution': '© OpenStreetMap contributors',
   'safety.avoid': 'Streets to avoid',
   'safety.search': 'Search a street',

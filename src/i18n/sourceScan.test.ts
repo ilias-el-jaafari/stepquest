@@ -110,6 +110,7 @@ describe('source scan: numbers follow the language', () => {
     'geo/coords.ts': 'coordinates are typed and parsed with a point (data.badCoords shows the format)',
     'osm/overpass.ts': 'bounding box in the query string',
     'osm/demoArea.ts': 'bounding box in the query string',
+    'osm/coarse.ts': 'bounding box in the query string',
   }
 
   it('does not print numbers for people with toFixed or an argument-less toLocaleString', () => {

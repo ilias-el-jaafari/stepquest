@@ -1,4 +1,4 @@
-import type { TileGrid } from '../tiles/grid.ts'
+import { Terrain, type TileGrid } from '../tiles/grid.ts'
 import { analyseBlocks, components, largestRect, subdivide } from './blocks.ts'
 import { houseKind, placeHouses } from './houses.ts'
 import { findParkGates, LANDMARK_RADIUS, LANDMARK_SIZES, landmarkSites, placeLandmarks } from './landmarks.ts'
@@ -23,13 +23,17 @@ export { analyseBlocks, components, findParkGates, hash2, houseKind, largestRect
 export type { House, HouseKind, Landmark, Rect, StructureKind, TownLayout }
 
 /**
- * `keepOut` marks tiles nothing may be built on (a streamed cell keeps out of the apron around it,
- * so its structures stay on its own tiles); it is copied, not changed.
+ * `keepOut` marks tiles landmarks and park gates may not use (a streamed cell keeps them on its own
+ * tiles); it is copied, not changed. `housesOn` (a streamed cell) marks the building tiles whose
+ * houses this layout builds, whole, even where they reach past `keepOut`: houses go only on those
+ * tiles and never on landmark or gate tiles. Without it, houses follow `keepOut` too.
  */
-export function layoutTown(grid: TileGrid, keepOut?: Uint8Array): TownLayout {
+export function layoutTown(grid: TileGrid, keepOut?: Uint8Array, housesOn?: Uint8Array): TownLayout {
   const n = grid.cols * grid.rows
   // Tiles taken by landmarks and gates; houses are only placed on the rest.
   const reserved = keepOut ? Uint8Array.from(keepOut) : new Uint8Array(n)
+  // A building another cell owns is that cell's to build on, so no landmark stands on it here.
+  if (housesOn) for (let i = 0; i < n; i++) if (grid.terrain[i] === Terrain.building && !housesOn[i]) reserved[i] = 1
   const special = placeLandmarks(grid, reserved)
   const gates = findParkGates(grid, reserved)
   const landmarks = [...special, ...gates]
@@ -37,7 +41,13 @@ export function layoutTown(grid: TileGrid, keepOut?: Uint8Array): TownLayout {
   landmarks.forEach((l, k) => {
     for (let y = l.y; y < l.y + l.h; y++) for (let x = l.x; x < l.x + l.w; x++) landmarkAt[grid.index(x, y)] = k
   })
-  const { houses, houseAt, trees, fences, gates: gateTiles } = placeHouses(grid, reserved)
+  let forHouses = reserved
+  if (housesOn) {
+    forHouses = new Uint8Array(n)
+    for (let i = 0; i < n; i++) if (!housesOn[i]) forHouses[i] = 1
+    for (const l of landmarks) for (let y = l.y; y < l.y + l.h; y++) for (let x = l.x; x < l.x + l.w; x++) forHouses[grid.index(x, y)] = 1
+  }
+  const { houses, houseAt, trees, fences, gates: gateTiles } = placeHouses(grid, forHouses)
   return { houses, landmarks, houseAt, landmarkAt, trees, fences, gates: gateTiles }
 }
 

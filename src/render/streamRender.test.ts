@@ -4,7 +4,9 @@ import { DEMO_AREA } from '../osm/demoArea.ts'
 import { cellOf, cellsInBBox } from '../world/cells.ts'
 import { LiveWorld } from '../world/liveWorld.ts'
 import { sliceToCells } from '../world/slice.ts'
-import { MAX_CELLS_PER_MINUTE } from '../world/streamer.ts'
+import { COARSE_Z } from '../vector/assemble.ts'
+import { tilesInBBox } from '../vector/tileMath.ts'
+import { FRAME_CELLS, QUEST_WINDOW_TILES } from '../world/window.ts'
 import { MapRenderer } from './MapRenderer.ts'
 import { P } from './palette.ts'
 import { installSoftCanvas, SoftCanvas } from './testing/softCanvas.ts'
@@ -95,9 +97,10 @@ describe('rendering a streamed world (19.13, 19.14)', () => {
   })
 
   it('keeps a quest view coverable: no zoom path goes below the floor, the planner is not limited', () => {
+    // A desktop window: the phone of the field check has no floor any more (the coarse tiles cover its furthest view).
     const { canvas, r } = setup()
-    canvas.clientWidth = 390
-    canvas.clientHeight = 844
+    canvas.clientWidth = 1280
+    canvas.clientHeight = 800
     r.centerOn(DEMO_AREA.center, 16)
     r.zoomTo(0.5)
     r.render()
@@ -111,13 +114,19 @@ describe('rendering a streamed world (19.13, 19.14)', () => {
     r.zoomStep(-1)
     r.render()
     expect(r.zoom).toBe(floor)
-    // The view at the floor touches no more cells than one minute of requests brings.
-    expect(cellsInBBox(r.viewBBox()).length).toBeLessThanOrEqual(MAX_CELLS_PER_MINUTE)
-    // A smaller window (rotation) never raises the floor above what it needs.
-    canvas.clientWidth = 844
-    canvas.clientHeight = 390
+    // The view at the floor fits the frame and touches no more coarse tiles than the budget.
+    const fits = () => {
+      const cells = cellsInBBox(r.viewBBox())
+      expect(new Set(cells.map((c) => c.j)).size).toBeLessThanOrEqual(FRAME_CELLS)
+      expect(new Set(cells.map((c) => c.i)).size).toBeLessThanOrEqual(FRAME_CELLS)
+      expect(tilesInBBox(r.viewBBox(), COARSE_Z).length).toBeLessThanOrEqual(QUEST_WINDOW_TILES)
+    }
+    fits()
+    // Rotation keeps it so.
+    canvas.clientWidth = 800
+    canvas.clientHeight = 1280
     r.render()
-    expect(cellsInBBox(r.viewBBox()).length).toBeLessThanOrEqual(MAX_CELLS_PER_MINUTE)
+    fits()
     r.setQuest(undefined)
     r.render()
     expect(r.minZoom).toBe(0)

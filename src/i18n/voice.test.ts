@@ -27,6 +27,8 @@ describe('product voice (user-facing copy)', () => {
       for (const key of keys) {
         if (key === 'map.attribution') expect(table[key]).toMatch(/OpenStreetMap/)
         else expect(table[key], key).not.toMatch(/OpenStreetMap/i)
+        // The tile credits are names and appear only in their own keys.
+        if (key !== 'map.creditTiles' && key !== 'map.creditSchema') expect(table[key], key).not.toMatch(/OpenFreeMap|OpenMapTiles/)
       }
     }
     expect(en['map.attribution']).toBe('© OpenStreetMap contributors')

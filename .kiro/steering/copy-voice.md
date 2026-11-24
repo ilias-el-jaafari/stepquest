@@ -12,7 +12,7 @@ Everything the player reads (`src/i18n/en.ts`, `es.ts`, speech phrases included)
 1. **Pitch the benefit.** Say what the player gets ("Your routes always favour safer, better-lit streets"), not how it was built.
 2. **Explain only what is needed to use it.** One or two short sentences. No history, no reasons behind a decision.
 3. **Never describe the product's own constraints.** No settings that cannot be turned off, no toggles that do not exist, no "always on".
-4. **No development talk.** Nothing about hackathons, judges, contests, specs, phases, demos for a video, workers, caches, APIs, Overpass, tiles, chunks, graphs or algorithms. OpenStreetMap appears only in the required attribution `map.attribution` ("© OpenStreetMap contributors (ODbL)").
+4. **No development talk.** Nothing about hackathons, judges, contests, specs, phases, demos for a video, workers, caches, APIs, Overpass, tiles, chunks, graphs or algorithms. OpenStreetMap, OpenFreeMap and OpenMapTiles appear only in the required credit (`map.creditTiles`, `map.creditSchema`, `map.attribution`: "OpenFreeMap © OpenMapTiles © OpenStreetMap contributors").
 5. **Errors say what to do next.** Plain words, no codes, no blame.
 6. **Buttons stay short.** Never lengthen a button or tab label (`fit.test.ts`).
 7. **Spanish is written for Spain, not translated.** Natural phrasing, always "tú", inverted `¡ ¿`, percentages as "5 %" with a no-break space. Same keys, placeholders and plural forms as English.

@@ -1,209 +1,317 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryCache } from '../osm/cache.ts'
-import { encodeOsm } from '../osm/codec.ts'
-import { normalizeOverpass } from '../osm/normalize.ts'
-import { MIN_REQUEST_GAP_MS, OverpassClient, OverpassError, type Downloader } from '../osm/overpass.ts'
+import type { OsmData } from '../osm/types.ts'
+import { OverpassError } from '../osm/overpass.ts'
+import { FAR_ZOOM } from '../render/camera.ts'
+import { COARSE_Z, DETAIL_Z, tilesForCell } from '../vector/assemble.ts'
+import type { TileSource } from '../vector/client.ts'
+import { TileError } from '../vector/fetchTile.ts'
+import { emptyTile } from '../vector/testing.ts'
+import { tileKey, type TileId } from '../vector/tileMath.ts'
 import { cellBBox, cellKey, cellsBBox, type CellId } from './cells.ts'
-import type { CellRecord } from './slice.ts'
-import { BACKOFF_MAX_MS, BACKOFF_START_MS, backoffMs, MAX_CELLS_PER_MINUTE, SETTLE_MS, Streamer, type CellClient, type StreamTarget } from './streamer.ts'
 import { LiveWorld } from './liveWorld.ts'
+import type { CellRecord } from './slice.ts'
+import {
+  AHEAD_MAX_CELLS,
+  BACKOFF_START_MS,
+  backoffMs,
+  BACKOFF_MAX_MS,
+  MAX_TILE_CONCURRENT,
+  RATE_LIMIT_PAUSE_MS,
+  SETTLE_MS,
+  Streamer,
+  UNIT_WATCHDOG_MS,
+  wantsDetail,
+  type GraphClient,
+  type MapLoad,
+} from './streamer.ts'
 import { makeRecord } from './testing.ts'
 
 const C = { i: 3949, j: -40 }
-/** A view box of (2r+1)² cells around C. */
-const around = (r: number, at: CellId = C) => cellsBBox([{ i: at.i - r, j: at.j - r }, { i: at.i + r, j: at.j + r }])
 const centreOf = (c: CellId) => ({ lat: (c.i + 0.5) / 100, lon: (c.j + 0.5) / 100 })
+const around = (r: number, at: CellId = C) => cellsBBox([{ i: at.i - r, j: at.j - r }, { i: at.i + r, j: at.j + r }])
 const shrink = (b: ReturnType<typeof around>) => ({ south: b.south + 1e-5, west: b.west + 1e-5, north: b.north - 1e-5, east: b.east - 1e-5 })
+const DETAIL = 16
+const FAR = 1
 
-/** A world that only remembers which cells it has. */
-function fakeWorld(): StreamTarget & { have: Set<string>; loading: CellId[] } {
-  const have = new Set<string>()
-  const w = {
-    have,
-    loading: [] as CellId[],
-    inFrame: (c: CellId) => Math.abs(c.i - C.i) <= 4 && Math.abs(c.j - C.j) <= 4,
-    needs: (c: CellId) => w.inFrame(c) && !have.has(cellKey(c)),
-    add: (recs: readonly CellRecord[]) => recs.filter((r) => !have.has(cellKey(r.cell)) && have.add(cellKey(r.cell))).map((r) => r.cell),
-    setLoading: (cells: readonly CellId[]) => void (w.loading = [...cells]),
-    touch: () => undefined,
-    evict: () => [],
-  }
-  return w
-}
+type Call = { at: number; t: TileId }
 
-/** A real client with a fake downloader that logs every request and can be made to fail. */
-function client(opts: { fail?: () => OverpassError | undefined; delayMs?: number } = {}) {
-  const log: { at: number; cells: number }[] = []
+/** A fake tile server with a cache: logs every download, can be slow, fail, or hang. */
+function tileServer(opts: { fail?: (t: TileId) => TileError | undefined; delayMs?: (t: TileId) => number; hang?: (t: TileId) => boolean } = {}) {
+  const log: Call[] = []
+  const cache = new Map<string, OsmData>()
   let inFlight = 0
   let maxInFlight = 0
-  const download: Downloader = async (bbox) => {
-    inFlight++
-    maxInFlight = Math.max(maxInFlight, inFlight)
-    log.push({ at: Date.now(), cells: Math.round(((bbox.north - bbox.south) * (bbox.east - bbox.west)) / 1e-4) })
-    try {
-      if (opts.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs))
-      const err = opts.fail?.()
-      if (err) throw err
-      return encodeOsm(normalizeOverpass({ elements: [] }, bbox))
-    } finally {
-      inFlight--
-    }
+  const source: TileSource = {
+    busy: false,
+    cachedTile: async (t) => cache.get(tileKey(t)),
+    loadTile: async (t) => {
+      const hit = cache.get(tileKey(t))
+      if (hit) return hit
+      log.push({ at: Date.now(), t })
+      inFlight++
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      try {
+        if (opts.hang?.(t)) await new Promise<never>(() => undefined)
+        const d = opts.delayMs?.(t) ?? 0
+        if (d) await new Promise((r) => setTimeout(r, d))
+        const err = opts.fail?.(t)
+        if (err) throw err
+        const data = emptyTile(t)
+        cache.set(tileKey(t), data)
+        return data
+      } finally {
+        inFlight--
+      }
+    },
   }
-  const c = new OverpassClient({ cache: new MemoryCache(), download })
-  return { c, log, maxInFlight: () => maxInFlight }
+  return { source, log, cache, maxInFlight: () => maxInFlight }
 }
 
+/** A fake Overpass for the graph lane. */
+function overpass(fail: () => boolean) {
+  const asked: string[] = []
+  const g: GraphClient = {
+    busy: false,
+    waitMs: () => 0,
+    cachedCell: async () => undefined,
+    loadCells: async (cells) => {
+      asked.push(...cells.map(cellKey))
+      if (fail()) throw new OverpassError('rateLimited', '502 at capacity')
+      return { records: cells.map((c) => makeRecord(c, [])) as CellRecord[], cached: [], downloaded: [...cells] }
+    },
+  }
+  return { g, asked }
+}
+
+const settle = (ms = SETTLE_MS + 1) => vi.advanceTimersByTimeAsync(ms)
+
 beforeEach(() => {
-  localStorage.clear()
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-11-25T12:00:00Z'))
 })
 afterEach(() => vi.useRealTimers())
 
-describe('cell streamer (19.2 to 19.5)', () => {
-  it('sends nothing while the map keeps moving, then asks once it rests', async () => {
-    const { c, log } = client()
-    const s = new Streamer({ client: c, world: fakeWorld(), online: () => true })
-    for (let k = 0; k < 10; k++) {
-      s.setView(shrink(around(0, { i: C.i, j: C.j + (k % 3) - 1 })), centreOf(C))
+describe('streamer: what it asks for (requirements 21.4, 21.5, 21.8)', () => {
+  it('sends nothing while the map moves, then the coarse tiles first and the detail tiles after, at most six at once', async () => {
+    const srv = tileServer({ delayMs: () => 200 })
+    const world = new LiveWorld(C)
+    const s = new Streamer({ tiles: srv.source, world, online: () => true })
+    for (let k = 0; k < 6; k++) {
+      s.setView(shrink(around(1, { i: C.i, j: C.j + (k % 3) - 1 })), centreOf(C), DETAIL)
       await vi.advanceTimersByTimeAsync(SETTLE_MS / 2)
     }
-    expect(log).toHaveLength(0)
-    await vi.advanceTimersByTimeAsync(SETTLE_MS)
-    expect(log).toHaveLength(1)
+    expect(srv.log).toHaveLength(0)
+    s.setView(shrink(around(1)), centreOf(C), DETAIL)
+    await settle(30_000)
+    expect(srv.log[0]!.t.z).toBe(COARSE_Z)
+    const firstDetail = srv.log.findIndex((l) => l.t.z === DETAIL_Z)
+    expect(firstDetail).toBeGreaterThan(0)
+    expect(srv.log.slice(0, firstDetail).every((l) => l.t.z === COARSE_Z)).toBe(true)
+    expect(srv.maxInFlight()).toBeLessThanOrEqual(MAX_TILE_CONCURRENT)
+    expect(srv.maxInFlight()).toBeGreaterThan(1)
+    // Each tile once.
+    expect(new Set(srv.log.map((l) => tileKey(l.t))).size).toBe(srv.log.length)
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) expect(world.needs({ i: C.i + di, j: C.j + dj })).toBe(false)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
     s.dispose()
   })
 
-  it('does not restart the wait while the view keeps the same cells (follow mode)', async () => {
-    const { c, log } = client()
-    const s = new Streamer({ client: c, world: fakeWorld(), online: () => true })
-    const b = shrink(around(0))
-    for (let k = 0; k < 4; k++) {
-      s.setView({ ...b, south: b.south + k * 1e-4, north: b.north - k * 1e-4 }, centreOf(C))
-      await vi.advanceTimersByTimeAsync(SETTLE_MS / 2)
-    }
-    expect(log).toHaveLength(1)
+  it('asks only for coarse tiles at a zoom that does not show buildings', async () => {
+    expect(wantsDetail(FAR_ZOOM)).toBe(false)
+    expect(wantsDetail(2)).toBe(true)
+    const srv = tileServer()
+    const world = new LiveWorld(C)
+    const s = new Streamer({ tiles: srv.source, world, online: () => true })
+    s.setView(shrink(around(2)), centreOf(C), FAR)
+    await settle(10_000)
+    expect(srv.log.length).toBeGreaterThan(0)
+    expect(srv.log.every((l) => l.t.z === COARSE_Z)).toBe(true)
+    // A 5 × 5-cell view is one or two z12 tiles.
+    expect(srv.log.length).toBeLessThanOrEqual(4)
+    expect(world.needs(C)).toBe(true)
+    expect(world.hasAny(C)).toBe(true)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
     s.dispose()
   })
 
-  it('asks for the nearest cells first, at most four per request, one request in flight, 10 s apart, 12 cells a minute', async () => {
-    const { c, log, maxInFlight } = client({ delayMs: 3000 })
-    const world = fakeWorld()
-    const s = new Streamer({ client: c, world, online: () => true })
-    s.setView(shrink(around(2)), centreOf(C))
-    await vi.advanceTimersByTimeAsync(SETTLE_MS + 1)
-    expect(log[0]!.cells).toBeLessThanOrEqual(4)
-    await vi.advanceTimersByTimeAsync(5 * 60_000)
-    expect(world.have.has(cellKey(C))).toBe(true)
-    expect(world.have.size).toBe(25)
-    expect(maxInFlight()).toBe(1)
-    for (let k = 1; k < log.length; k++) expect(log[k]!.at - log[k - 1]!.at).toBeGreaterThanOrEqual(MIN_REQUEST_GAP_MS)
-    for (const a of log) expect(log.filter((b) => b.at >= a.at && b.at < a.at + 60_000).reduce((n, b) => n + b.cells, 0)).toBeLessThanOrEqual(MAX_CELLS_PER_MINUTE)
-    expect(log.reduce((n, b) => n + b.cells, 0)).toBe(25)
+  it('shows cached tiles at once, before the view rests, with no download', async () => {
+    const srv = tileServer()
+    for (const z of [COARSE_Z, DETAIL_Z]) for (const t of tilesForCell(C, z)) srv.cache.set(tileKey(t), emptyTile(t))
+    const world = new LiveWorld(C)
+    const s = new Streamer({ tiles: srv.source, world, online: () => true })
+    s.setView(shrink(cellBBox(C)), centreOf(C), DETAIL)
+    await vi.advanceTimersByTimeAsync(50)
+    expect(world.needs(C)).toBe(false)
+    expect(srv.log).toHaveLength(0)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
     s.dispose()
   })
 
-  it('drops the stale wish list when the view moves before a request', async () => {
-    const { c, log } = client()
-    const world = fakeWorld()
-    const s = new Streamer({ client: c, world, online: () => true })
-    s.setView(shrink(around(0)), centreOf(C))
-    await vi.advanceTimersByTimeAsync(SETTLE_MS / 2)
-    const other = { i: C.i + 3, j: C.j + 3 }
-    s.setView(shrink(around(0, other)), centreOf(other))
-    await vi.advanceTimersByTimeAsync(SETTLE_MS * 2)
-    expect(log).toHaveLength(1)
-    expect([...world.have]).toEqual([cellKey(other)])
+  it('loads the route ahead of the view, not behind it', async () => {
+    const srv = tileServer()
+    const world = new LiveWorld(C)
+    const lat = (C.i + 0.5) / 100
+    // A route running east from the view centre, 2 km.
+    const route = Array.from({ length: 41 }, (_, k) => ({ lat, lon: (C.j + 0.5) / 100 + k * 0.0006 }))
+    const s = new Streamer({ tiles: srv.source, world, online: () => true, keep: () => route })
+    s.setView(shrink(cellBBox(C)), centreOf(C), DETAIL)
+    await settle(30_000)
+    expect(world.needs({ i: C.i, j: C.j + 1 })).toBe(false)
+    expect(world.needs({ i: C.i, j: C.j - 1 })).toBe(true)
+    expect(AHEAD_MAX_CELLS).toBe(6)
     s.dispose()
   })
+})
 
-  it('backs off after a failure (30 s, doubling, capped at 5 min) and never retries in a loop', async () => {
-    let failing = true
-    const { c, log } = client({ fail: () => (failing ? new OverpassError('network', 'down') : undefined) })
+describe('streamer: painting never waits for Overpass (requirement 21.10, field benchmark)', () => {
+  it('reaches full while every Overpass request fails, and keeps the graph lane in its own back-off', async () => {
+    const srv = tileServer()
+    const op = overpass(() => true)
+    const world = new LiveWorld(C)
+    const lat = (C.i + 0.5) / 100
+    const route = Array.from({ length: 21 }, (_, k) => ({ lat, lon: (C.j + 0.5) / 100 + k * 0.0004 }))
     const errors: string[] = []
-    const s = new Streamer({ client: c, world: fakeWorld(), online: () => true, onError: (e) => errors.push(e) })
-    s.setView(shrink(around(0)), centreOf(C))
-    await vi.advanceTimersByTimeAsync(SETTLE_MS + 1)
-    expect(log).toHaveLength(1)
-    await vi.advanceTimersByTimeAsync(BACKOFF_START_MS - 1000)
-    expect(log).toHaveLength(1)
-    await vi.advanceTimersByTimeAsync(2000)
-    expect(log).toHaveLength(2)
-    await vi.advanceTimersByTimeAsync(2 * BACKOFF_START_MS + 1000)
-    expect(log).toHaveLength(3)
-    expect(backoffMs(10)).toBe(BACKOFF_MAX_MS)
+    const s = new Streamer({ tiles: srv.source, graph: op.g, world, online: () => true, keep: () => route, random: () => 0.5, onError: (e) => errors.push(e) })
+    s.setView(shrink(around(1)), centreOf(C), DETAIL)
+    await settle(20_000)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
+    expect(op.asked.length).toBeGreaterThan(0)
+    expect(errors).toContain('rateLimited')
+    // The graph has nothing for the route yet; the drawing has everything.
+    expect(world.needsGraph(C)).toBe(true)
+    // A 502 from Overpass never pauses the tiles.
+    s.setView(shrink(around(1, { i: C.i + 3, j: C.j })), centreOf({ i: C.i + 3, j: C.j }), DETAIL)
+    await settle(5_000)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
+    s.dispose()
+  })
+
+  it('adds graph cells along the route when Overpass answers, without repainting what the tiles drew', async () => {
+    const srv = tileServer()
+    const op = overpass(() => false)
+    const world = new LiveWorld(C)
+    const lat = (C.i + 0.5) / 100
+    const route = Array.from({ length: 11 }, (_, k) => ({ lat, lon: (C.j + 0.5) / 100 + k * 0.0002 }))
+    const s = new Streamer({ tiles: srv.source, graph: op.g, world, online: () => true, keep: () => route })
+    s.setView(shrink(cellBBox(C)), centreOf(C), DETAIL)
+    await settle(20_000)
+    expect(world.needsGraph(C)).toBe(false)
+    expect(world.needs(C)).toBe(false)
+    s.dispose()
+  })
+})
+
+describe('streamer: slow and failing tiles (requirement 21.8)', () => {
+  it('keeps the coarse placeholder where detail tiles fail, says so, and retries with a jittered back-off until they come', async () => {
+    let failing = true
+    const srv = tileServer({ fail: (t) => (failing && t.z === DETAIL_Z ? new TileError('network', 'timed out') : undefined) })
+    const world = new LiveWorld(C)
+    const s = new Streamer({ tiles: srv.source, world, online: () => true, random: () => 0.5 })
+    s.setView(shrink(cellBBox(C)), centreOf(C), DETAIL)
+    await settle(1_000)
+    expect(s.status()).toEqual({ ready: 'coarse', pending: 1 })
+    expect(world.loading()).toEqual([])
+    const tries = () => srv.log.filter((l) => l.t.z === DETAIL_Z).length
+    const first = tries()
+    await vi.advanceTimersByTimeAsync(BACKOFF_START_MS + 500)
+    expect(tries()).toBeGreaterThan(first)
+    expect(backoffMs(20)).toBe(BACKOFF_MAX_MS)
     failing = false
     await vi.advanceTimersByTimeAsync(BACKOFF_MAX_MS)
-    expect(log).toHaveLength(4)
-    expect(errors).toEqual(['network', 'network', 'network'])
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
     s.dispose()
   })
 
-  it('pauses every request after a 429', async () => {
+  it('shows the stipple and says loading while not even the coarse tile has come', async () => {
+    const srv = tileServer({ fail: () => new TileError('network', 'offline-ish') })
+    const world = new LiveWorld(C)
+    const s = new Streamer({ tiles: srv.source, world, online: () => true, random: () => 0.5 })
+    s.setView(shrink(cellBBox(C)), centreOf(C), DETAIL)
+    await settle(3_000)
+    expect(s.status()).toEqual({ ready: 'loading', pending: 1 })
+    expect(world.loading().length).toBeGreaterThan(0)
+    s.dispose()
+  })
+
+  it('gives up on a tile that never answers, frees its slot, and the other tiles still arrive', async () => {
+    let hang = true
+    const stuck = (t: TileId) => hang && t.z === DETAIL_Z && t.x % 2 === 0
+    const srv = tileServer({ hang: stuck })
+    const world = new LiveWorld(C)
+    const s = new Streamer({ tiles: srv.source, world, online: () => true, random: () => 0.5 })
+    s.setView(shrink(around(1)), centreOf(C), DETAIL)
+    await settle(5_000)
+    expect(s.status().ready).not.toBe('loading')
+    hang = false
+    await vi.advanceTimersByTimeAsync(UNIT_WATCHDOG_MS + BACKOFF_START_MS * 2)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
+    s.dispose()
+  })
+
+  it('pauses the tiles after a 429, then goes on', async () => {
     let first = true
-    const { c, log } = client({
+    const srv = tileServer({
       fail: () => {
-        const e = first ? new OverpassError('rateLimited', '429') : undefined
+        const e = first ? new TileError('rateLimited', '429') : undefined
         first = false
         return e
       },
     })
-    const s = new Streamer({ client: c, world: fakeWorld(), online: () => true })
-    s.setView(shrink(around(0)), centreOf(C))
-    await vi.advanceTimersByTimeAsync(SETTLE_MS + 1)
-    // Another cell comes into view: it waits too.
-    s.setView(shrink(around(0, { i: C.i, j: C.j + 1 })), centreOf({ i: C.i, j: C.j + 1 }))
-    await vi.advanceTimersByTimeAsync(BACKOFF_START_MS - 2000)
-    expect(log).toHaveLength(1)
-    await vi.advanceTimersByTimeAsync(4000)
-    expect(log).toHaveLength(2)
+    const s = new Streamer({ tiles: srv.source, world: new LiveWorld(C), online: () => true, random: () => 0.5 })
+    s.setView(shrink(cellBBox(C)), centreOf(C), FAR)
+    await settle(1_000)
+    const n = srv.log.length
+    await vi.advanceTimersByTimeAsync(RATE_LIMIT_PAUSE_MS - 2_000)
+    expect(srv.log.length).toBe(n)
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(srv.log.length).toBeGreaterThan(n)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
     s.dispose()
   })
 
-  it('loads cached cells without a request, and requests nothing offline', async () => {
-    const cached: CellClient = {
-      busy: false,
-      waitMs: () => 0,
-      cachedCell: async (c) => (c.i === C.i && c.j === C.j ? makeRecord(c, []) : undefined),
-      loadCells: vi.fn(async () => ({ records: [], cached: [], downloaded: [] })),
+  it('requests nothing offline and goes on when the device is back', async () => {
+    let online = false
+    const srv = tileServer()
+    const s = new Streamer({ tiles: srv.source, world: new LiveWorld(C), online: () => online })
+    s.setView(shrink(cellBBox(C)), centreOf(C), DETAIL)
+    await settle(5_000)
+    expect(srv.log).toHaveLength(0)
+    expect(s.status().ready).toBe('loading')
+    online = true
+    s.retry()
+    await settle(5_000)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
+    s.dispose()
+  })
+})
+
+describe('streamer: what the map shows (requirement 20.15)', () => {
+  it('goes loading, coarse, full, counting the visible cells that still lack what the zoom needs', async () => {
+    const seen: MapLoad[] = []
+    const srv = tileServer({ delayMs: (t) => (t.z === COARSE_Z ? 300 : 3_000) })
+    const s = new Streamer({ tiles: srv.source, world: new LiveWorld(C), online: () => true, onLoad: (l) => seen.push(l) })
+    s.setView(shrink(around(1)), centreOf(C), DETAIL)
+    expect(s.status()).toEqual({ ready: 'loading', pending: 9 })
+    await settle(1_500)
+    expect(s.status()).toEqual({ ready: 'coarse', pending: 9 })
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
+    const rank = { loading: 0, coarse: 1, full: 2 }
+    for (let k = 1; k < seen.length; k++) {
+      expect(rank[seen[k]!.ready]).toBeGreaterThanOrEqual(rank[seen[k - 1]!.ready])
+      expect(seen[k]!.pending).toBeLessThanOrEqual(seen[k - 1]!.pending)
     }
-    const world = fakeWorld()
-    const changes: CellId[][] = []
-    const s = new Streamer({ client: cached, world, online: () => false, onChange: (c) => changes.push(c) })
-    s.setView(shrink(around(1)), centreOf(C))
-    expect(world.loading).toEqual([])
-    await vi.advanceTimersByTimeAsync(SETTLE_MS * 5)
-    expect(world.have.has(cellKey(C))).toBe(true)
-    expect(changes).toEqual([[C]])
-    expect(cached.loadCells).not.toHaveBeenCalled()
     s.dispose()
   })
 
-  it('marks the wanted cells as loading at once, and none outside the frame', () => {
-    const world = fakeWorld()
-    const s = new Streamer({ client: client().c, world, online: () => true })
-    s.setView(shrink(around(0, { i: C.i + 4, j: C.j })), centreOf(C))
-    expect(world.loading).toEqual([{ i: C.i + 4, j: C.j }])
-    s.setView(shrink(around(0, { i: C.i + 6, j: C.j })), centreOf(C))
-    expect(world.loading).toEqual([])
+  it('adds one cell per change notice', async () => {
+    const srv = tileServer()
+    const batches: number[] = []
+    const s = new Streamer({ tiles: srv.source, world: new LiveWorld(C), online: () => true, onChange: (c) => batches.push(c.length) })
+    s.setView(shrink(around(1)), centreOf(C), DETAIL)
+    await settle(10_000)
+    expect(batches.length).toBeGreaterThanOrEqual(18)
+    expect(batches.every((n) => n === 1)).toBe(true)
     s.dispose()
-  })
-
-  it('grows a real live world from downloaded cells, and the second visit reads the cache', async () => {
-    const { c, log } = client()
-    const lw = new LiveWorld(C)
-    const s = new Streamer({ client: c, world: lw, online: () => true })
-    s.setView(shrink(cellBBox(C)), centreOf(C))
-    await vi.advanceTimersByTimeAsync(SETTLE_MS + 1)
-    expect(lw.needs(C)).toBe(false)
-    expect(lw.loading()).toEqual([])
-    const again = new LiveWorld(C)
-    const s2 = new Streamer({ client: c, world: again, online: () => true })
-    s2.setView(shrink(cellBBox(C)), centreOf(C))
-    await vi.advanceTimersByTimeAsync(SETTLE_MS + 1)
-    expect(again.needs(C)).toBe(false)
-    expect(log).toHaveLength(1)
-    s.dispose()
-    s2.dispose()
   })
 })

@@ -63,6 +63,8 @@ export const es: Record<MessageKey, string> = {
   'map.me': 'Centrar en mí y seguir',
   'map.loading': 'Construyendo el mapa…',
   'map.canvas': 'Mapa. Las flechas lo mueven, más y menos acercan.',
+  'map.creditTiles': 'OpenFreeMap',
+  'map.creditSchema': '© OpenMapTiles',
   'map.attribution': '© colaboradores de OpenStreetMap',
   'safety.avoid': 'Calles a evitar',
   'safety.search': 'Buscar una calle',

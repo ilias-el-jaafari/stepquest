@@ -1,7 +1,7 @@
 // Service worker for the installed app: the app shell and the bundled demo map work offline.
 // The build (vite.config.ts) fills in the two placeholders below and writes the result to `sw.js`.
-// Rules: only same-origin GET requests are cached; map downloads from Overpass go straight to the
-// network (their own IndexedDB cache handles them); a new version waits until the user taps
+// Rules: only same-origin GET requests are cached; map downloads (Overpass, OpenFreeMap tiles) go
+// straight to the network (their own IndexedDB cache and the browser's HTTP cache handle them); a new version waits until the user taps
 // "Update" in the app, so a quest in progress is never reloaded by surprise.
 const BUILD = '__BUILD_ID__'
 const FILES = /* __PRECACHE__ */ []

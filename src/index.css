@@ -136,11 +136,18 @@ body {
   padding: 0 6px;
   overflow: hidden;
   white-space: nowrap;
+  /* A narrow sans font: the three required credits fit one line on a 320 px screen, which the pixel font cannot do. */
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
   font-size: 8px;
+  margin: 0;
   color: #1b1a2e;
   text-decoration: underline;
   background: rgba(251, 247, 236, 0.92);
   border-radius: 0;
+}
+
+.map-attribution a {
+  color: inherit;
 }
 
 .panel {

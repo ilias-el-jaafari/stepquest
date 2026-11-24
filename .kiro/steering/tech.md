@@ -13,8 +13,9 @@ inclusion: always
 
 ## Map data
 
-- OpenStreetMap through the Overpass API (`out geom`, ways only: highways, buildings, parks/green landuse, water, waterways).
-- Polite client (`src/osm/overpass.ts`): cache first (IndexedDB, 7-day TTL, plus an area index), one download at a time per tab (a second one is refused as `busy`), at least 10 s between downloads, a size cap (36 km²), and the public mirrors in `OVERPASS_ENDPOINTS` raced in parallel (`src/osm/download.ts`): each mirror gets one request with a timeout, the first good answer wins and the others are aborted. No retry loops; 429 and 504 map to `rateLimited`. See `osm-etiquette.md`. Browsers send their own Referer and User-Agent; Node scripts must send a descriptive User-Agent with a contact address.
+- **Drawing:** OpenFreeMap vector tiles (OpenMapTiles schema, OSM data, no key; `src/vector/`): z12 for the coarse layer, z14 for detail, URL from the TileJSON at run time, decoded with `@mapbox/vector-tile` + `pbf` (BSD-3-Clause) in the download worker, mapped onto the OSM tag rules of `src/osm/classify.ts`, cached in IndexedDB and the HTTP cache. Drawing never waits for Overpass (map-rendering requirement 21).
+- **Walking graph:** OpenStreetMap through the Overpass API (`out geom`, ways only: highways, buildings, parks/green landuse, water, waterways), for the planning area and the graph cells along the route; tiles lack `lit`, sidewalks and per-way names, so safety and night weights stay on Overpass data.
+- Polite clients: see `osm-etiquette.md` for every limit (Overpass: cache first, 2 in flight, 1.5 s apart, hedged mirrors, 36 km² cap; OpenFreeMap: 6 in flight, view and route look-ahead only). Browsers send their own Referer and User-Agent; Node scripts must send a descriptive User-Agent with a contact address.
 - The offline demo is a compact, delta-encoded extract of Benicalap, València (`src/data/benicalap.osm.json`, rebuilt with `npm run fixture -- <out.json> <overpass.json> [more.json ...]`, merging the main `out geom` extract with the barrier/square and landmark (`out tags center`) extracts). It is ODbL data; keep the attribution.
 
 ## App shell

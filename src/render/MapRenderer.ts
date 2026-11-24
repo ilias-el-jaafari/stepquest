@@ -39,7 +39,7 @@ export class MapRenderer {
   private readonly overlay: OverlayLayer
   private readonly stopPixelRatio: () => void
   private readonly stopSource: () => void
-  private viewListener: ((box: BBox, centre: LatLon) => void) | undefined
+  private viewListener: ((box: BBox, centre: LatLon, zoom: number) => void) | undefined
   private lastViewKey = ''
   /** Last CSS size of the canvas that had a layout (kept while the canvas is hidden). */
   private lastCss: { w: number; h: number } | undefined
@@ -94,7 +94,7 @@ export class MapRenderer {
 
   private questFloor = false
 
-  /** Lowest zoom the view may have now (requirement 19.20): in a quest, the view must stay coverable. */
+  /** Lowest zoom the view may have now (requirement 20.13): in a quest, the view must stay coverable. */
   get minZoom(): number {
     return this.camera.minZoom
   }
@@ -226,8 +226,8 @@ export class MapRenderer {
     return { south: Math.min(a.lat, b.lat), west: Math.min(a.lon, b.lon), north: Math.max(a.lat, b.lat), east: Math.max(a.lon, b.lon) }
   }
 
-  /** Hear where the view is after every frame that moved it (pan, zoom, follow, fit, resize). */
-  onViewChange(fn: ((box: BBox, centre: LatLon) => void) | undefined): void {
+  /** Hear where the view is after every frame that moved it (pan, zoom, follow, fit, resize), with its zoom. */
+  onViewChange(fn: ((box: BBox, centre: LatLon, zoom: number) => void) | undefined): void {
     this.viewListener = fn
     this.lastViewKey = ''
     this.requestRender()
@@ -319,9 +319,11 @@ export class MapRenderer {
       // Far out: the simplified map (streets, water, parks; no houses), quick for a whole world on screen.
       this.chunks.drawOverview(ctx, v, cam.zoom <= FAR_ZOOM)
     }
-    const loading = this.source.loading()
+    // A source whose frame moved describes another grid until the map view rebuilds this renderer.
+    const current = this.source.grid === this.grid
+    const loading = current ? this.source.loading() : []
     if (loading.length) drawLoading(ctx, v, loading)
-    const edges = this.source.frontier?.()
+    const edges = current ? this.source.frontier?.() : undefined
     if (edges?.length) drawFrontier(ctx, v, edges)
 
     // Tram, metro and train tracks above ground.
@@ -345,6 +347,6 @@ export class MapRenderer {
     const key = `${v.camX},${v.camY},${v.zoom},${v.cssW},${v.cssH}`
     if (key === this.lastViewKey) return
     this.lastViewKey = key
-    fn(this.viewBBox(), this.grid.tileToLatLon(v.camX, v.camY))
+    fn(this.viewBBox(), this.grid.tileToLatLon(v.camX, v.camY), v.zoom)
   }
 }

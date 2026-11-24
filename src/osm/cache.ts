@@ -1,5 +1,5 @@
 import { CACHE_DB_NAME } from '../config/brand.ts'
-import type { CompactOsm } from './codec.ts'
+import { CODEC_VERSION, type CompactOsm } from './codec.ts'
 
 export type CacheEntry = { savedAt: number; data: CompactOsm }
 
@@ -114,4 +114,55 @@ export class IndexedDbCache implements AreaCache {
 
 export function defaultCache(): AreaCache {
   return typeof indexedDB === 'undefined' ? new MemoryCache() : new IndexedDbCache()
+}
+
+/** A cache read that takes longer than this counts as a miss; a write that takes longer counts as not saved (a stuck IndexedDB must not stop the map). */
+export const CACHE_READ_TIMEOUT_MS = 2_000
+export const CACHE_WRITE_TIMEOUT_MS = 5_000
+
+/** `promise`, or `fallback` when it rejects or takes longer than `ms`. */
+export function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms)
+    promise.then(
+      (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      () => {
+        clearTimeout(timer)
+        resolve(fallback)
+      },
+    )
+  })
+}
+
+/** One saved entry in a size-limited index kept in localStorage (cells, vector tiles). */
+export type IndexEntry = { key: string; savedAt: number }
+
+export function readEntryIndex(indexKey: string): IndexEntry[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(indexKey) ?? '[]') as unknown
+    return Array.isArray(raw) ? raw.filter((e): e is IndexEntry => !!e && typeof e === 'object' && typeof (e as IndexEntry).key === 'string' && typeof (e as IndexEntry).savedAt === 'number') : []
+  } catch {
+    return []
+  }
+}
+
+export function writeEntryIndex(indexKey: string, entries: IndexEntry[]): void {
+  try {
+    localStorage.setItem(indexKey, JSON.stringify(entries))
+  } catch {
+    // Storage full or blocked: the entries are still cached, only pruning waits.
+  }
+}
+
+/** Keep the newest `max` fresh entries of an index (current codec only) and delete the data of the rest. Local only, never a request. */
+export async function pruneEntries(cache: AreaCache, indexKey: string, max: number, index: IndexEntry[], now: number, prefix = `v${CODEC_VERSION}:`): Promise<void> {
+  const live = index.filter((e) => isFresh(e.savedAt, now) && e.key.startsWith(prefix))
+  live.sort((a, b) => a.savedAt - b.savedAt)
+  const kept = live.slice(-max)
+  const keptKeys = new Set(kept.map((e) => e.key))
+  if (cache.delete) for (const e of index) if (!keptKeys.has(e.key)) await cache.delete(e.key).catch(() => undefined)
+  writeEntryIndex(indexKey, kept)
 }

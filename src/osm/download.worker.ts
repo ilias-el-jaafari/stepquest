@@ -1,21 +1,41 @@
-// Downloads and converts a map area off the main thread, so the map stays smooth.
+// Off the main thread: Overpass downloads (parsed and converted) and vector tiles (fetched, decoded, converted).
 import type { BBox } from '../geo/geo.ts'
-import type { CompactOsm } from './codec.ts'
+import { encodeOsm, type CompactOsm } from './codec.ts'
 import { DownloadError, downloadArea } from './download.ts'
+import { fetchTileBytes, TileError } from '../vector/fetchTile.ts'
+import { tileToOsm } from '../vector/omt.ts'
+import type { TileId } from '../vector/tileMath.ts'
 
-export type WorkerRequest = { bbox: BBox; endpoints: string[] }
+/** `endpoints` are in the order to ask them. A tile request carries an id: one worker serves many tiles. */
+export type WorkerRequest = { type: 'overpass'; bbox: BBox; endpoints: string[] } | { type: 'tile'; id: number; url: string; tile: TileId; coarse: boolean }
 export type WorkerMessage =
   | { type: 'progress'; bytes: number }
+  | { type: 'mirror'; endpoint: string }
   | { type: 'done'; data: CompactOsm }
   | { type: 'error'; code: DownloadError['code']; message: string }
+  | { type: 'tile'; id: number; data: CompactOsm; bytes: number }
+  | { type: 'tileError'; id: number; code: TileError['code']; message: string }
 
 const scope = self as unknown as { postMessage(m: WorkerMessage): void; onmessage: ((e: MessageEvent<WorkerRequest>) => void) | null }
 let last = 0
 scope.onmessage = async (e: MessageEvent<WorkerRequest>) => {
+  const req = e.data
+  if (req.type === 'tile') {
+    try {
+      const bytes = await fetchTileBytes(req.url, (input, init) => fetch(input, init))
+      const data = encodeOsm(tileToOsm(bytes, req.tile, { coarse: req.coarse }))
+      scope.postMessage({ type: 'tile', id: req.id, data, bytes: bytes.length } satisfies WorkerMessage)
+    } catch (error) {
+      const code = error instanceof TileError ? error.code : 'badResponse'
+      scope.postMessage({ type: 'tileError', id: req.id, code, message: error instanceof Error ? error.message : String(error) } satisfies WorkerMessage)
+    }
+    return
+  }
   try {
-    const data = await downloadArea(e.data.bbox, {
-      endpoints: e.data.endpoints,
+    const data = await downloadArea(req.bbox, {
+      endpoints: req.endpoints,
       fetch: (input, init) => fetch(input, init),
+      onMirror: (endpoint) => scope.postMessage({ type: 'mirror', endpoint } satisfies WorkerMessage),
       onProgress: (bytes) => {
         if (bytes - last < 64_000) return
         last = bytes

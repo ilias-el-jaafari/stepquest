@@ -8,7 +8,8 @@ inclusion: always
 src/
   config/brand.ts        APP_NAME and storage keys (rename the app here only)
   geo/                   geodesy helpers and step maths
-  osm/                   tag classification, Overpass client, cache, compact codec, demo area
+  osm/                   tag classification, Overpass client (walking graph), cache, compact codec, demo area
+  vector/                OpenFreeMap vector tiles: tile maths, OpenMapTiles mapping and clipping, cell assembly, tile client (drawing)
   data/                  bundled OSM extract (ODbL)
   tiles/                 TileGrid, rasterization, auto-tiling masks, diagonal smoothing
   town/                  lots, houses, gardens and landmark placement (town layout)
