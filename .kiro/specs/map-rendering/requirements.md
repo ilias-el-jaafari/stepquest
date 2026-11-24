@@ -16,7 +16,7 @@ Related: [routing](../routing/requirements.md), [quest](../quest/requirements.md
 2. WHEN the user asks for a live area, THE SYSTEM SHALL request streets, footways, buildings, parks/green areas and water for a bounding box sized to the walk from the Overpass API.
 3. THE SYSTEM SHALL cache downloaded areas on the device for 7 days and serve repeated requests from the cache.
 4. THE SYSTEM SHALL send at most one Overpass request at a time, wait at least 10 s between requests, refuse areas larger than 36 km², and try a fallback endpoint when the first is busy.
-5. THE SYSTEM SHALL show "© OpenStreetMap contributors (ODbL)" on the map at all times.
+5. THE SYSTEM SHALL show "OpenFreeMap © OpenMapTiles © OpenStreetMap contributors" (ODbL data) on the map at all times.
 
 ### Requirement 2: Tile map
 
@@ -224,7 +224,7 @@ Related: 2.1 to 2.3 (layers, terrain priority, 4-connected paths), 6a.
 
 #### Acceptance Criteria
 
-1. THE SYSTEM SHALL show the credit "© OpenStreetMap contributors" (Spanish: "© colaboradores de OpenStreetMap") on the planner map and on the quest map, as a link to `https://www.openstreetmap.org/copyright`, in the bottom-left corner of the map viewport.
+1. THE SYSTEM SHALL show the credit "OpenFreeMap © OpenMapTiles © OpenStreetMap contributors" (Spanish: "OpenFreeMap © OpenMapTiles © colaboradores de OpenStreetMap") on the planner map and on the quest map, as a link to `https://www.openstreetmap.org/copyright`, in the bottom-left corner of the map viewport.
 2. THE SYSTEM SHALL keep that position constant whatever the content: it SHALL NOT depend on the panels, banners, dialogs or HUD that are shown, and no rule for `.map-attribution` outside the single base rule SHALL move it.
 3. THE SYSTEM SHALL keep the credit clear of everything else: the quest bottom HUD and the map banners SHALL start above the credit strip (`--attr-h`), and the credit SHALL be above the map canvas in stacking order so the link can be tapped.
 4. THE SYSTEM SHALL draw the credit with a font size of at least 7 px (the page-zoom-lock minimum), dark ink on a paper backing of at least 85 % opacity (contrast above 4.5:1), and SHALL NOT hide it at any viewport size.

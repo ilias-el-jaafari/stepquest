@@ -44,6 +44,7 @@ inclusion: always
 
 ## Quality bar
 
+- Test tooling: Vitest, happy-dom, fast-check, and `rolldown` (devDependency, `~1.2` as Vite 8 uses) for `parseAst` in the i18n source scan; keep it in step with Vite. TypeScript 7 has no JS compiler API to parse with.
 - `npm test` (Vitest, happy-dom) and `npm run lint` (Oxlint) must be green and `npm run build` must pass before a phase is called done. Do not start the next phase while the current one is broken.
 - Tests run on the bundled fixture, so they never touch the network.
 - Screenshots for review: `npm run build && npx vite preview --host 127.0.0.1 --port 4188` then `PHASE1_URL=http://127.0.0.1:4188/stepquest/ npm run screenshots`.

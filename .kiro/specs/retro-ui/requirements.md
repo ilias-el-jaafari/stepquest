@@ -139,6 +139,6 @@ Related: [quest](../quest/requirements.md) (HUD content, resume after reload), [
 
 1. THE SYSTEM SHALL write all user-facing copy (onboarding, Info and FAQ, settings, bag, errors, notices, banners, speech phrases and dialogues) as a short, friendly, benefit-focused pitch in a light retro-game tone, explaining only what the player needs to use a feature.
 2. THE SYSTEM SHALL NOT mention decisions, settings that cannot be turned off, toggles that do not exist, contests, judges, development, specs, caches, workers, map servers' names or technical terms (such as graph, tiles or chunks) in any user-facing string.
-3. THE SYSTEM SHALL name OpenStreetMap only in the map attribution "© OpenStreetMap contributors" and its Spanish twin, and SHALL keep that attribution on screen.
+3. THE SYSTEM SHALL name OpenStreetMap, OpenFreeMap and OpenMapTiles only in the map attribution "OpenFreeMap © OpenMapTiles © OpenStreetMap contributors" and its Spanish twin, and SHALL keep that attribution on screen.
 4. THE SYSTEM SHALL write Spanish as natural Spain Spanish, consistently in the "tú" form, with the same keys, placeholders and plural forms as English, and SHALL NOT lengthen any button or tab label.
 5. WHEN a user-facing string matches a banned dev-speak phrase, THE BUILD SHALL fail (`src/i18n/voice.test.ts`); the voice rules live in `.kiro/steering/copy-voice.md`.

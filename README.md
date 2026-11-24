@@ -64,7 +64,7 @@ Offline map extract: save Overpass responses for the demo area (the main query w
 
 ## How it works
 
-- **Map data**: the map is drawn from [OpenFreeMap](https://openfreemap.org) vector tiles (OpenMapTiles schema, OpenStreetMap data, no key): z12 tiles for the wide zooms, z14 for streets and houses, decoded in a Web Worker and cached on the device for a week. The walking graph for routes and reroutes comes from the Overpass API (cached for a week, polite limits, hedged mirrors), or from the bundled offline extract of Benicalap, València, which also draws the demo area offline.
+- **Map data**: the map is drawn from [OpenFreeMap](https://openfreemap.org) vector tiles (OpenMapTiles schema, OpenStreetMap data, no key): z12 tiles for the wide zooms, z14 for streets and houses, decoded in a Web Worker and cached on the device for a week. The walking graph for routes and reroutes comes from the Overpass API (cached for a week, polite limits, hedged mirrors), or from the bundled offline extract of Benicalap, València, which also draws the demo area offline. Open `?demo=1` for a self-playing demo run.
 - **Tiles**: features are rasterized into a grid of 16×16 tiles (about 5 m each) and auto-tiled with 4-bit masks (paths) and 8-bit "blob" masks (roads, buildings, parks, water).
 - **Town**: building blocks are cut into lots with small houses, gardens and fences; hospitals and health centres, stations, schools, park entrances and supermarkets from OSM get their own special buildings (generic, original designs; no brand names or logos).
 - **Art**: every tile, building and sprite is painted procedurally or hand-coded in `src/render/`. No assets from any commercial game.
@@ -85,6 +85,6 @@ The project is set up for [Kiro](https://kiro.dev). Everything lives in `.kiro/`
 
 - Code: MIT (see `LICENSE`).
 - Map data: © OpenStreetMap contributors, available under the [Open Database License](https://www.openstreetmap.org/copyright). The extract in `src/data/` is ODbL data.
-- Map tiles: [OpenFreeMap](https://openfreemap.org) © [OpenMapTiles](https://www.openmaptiles.org/), credited on the map.
+- Map tiles (credited on the map as "OpenFreeMap © OpenMapTiles © OpenStreetMap contributors"): [OpenFreeMap](https://openfreemap.org) © [OpenMapTiles](https://www.openmaptiles.org/).
 - Vector tile decoding: [`@mapbox/vector-tile`](https://github.com/mapbox/vector-tile-js) and [`pbf`](https://github.com/mapbox/pbf), BSD-3-Clause.
 - Font: [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) by CodeMan38, SIL Open Font License 1.1.

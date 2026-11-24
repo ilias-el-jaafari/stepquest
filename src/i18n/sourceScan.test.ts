@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 /**
  * Source scan for the i18n rules in requirements 8.9 to 8.12 (retro-ui): no user-facing
  * text typed into JSX or accessibility attributes, and no number formatting that ignores
- * the language. The parser is the one Vite already ships (`rolldown/parseAst`, ESTree).
+ * the language. The parser is `rolldown/parseAst` (ESTree), a pinned devDependency (`~1.2`, the line Vite 8 uses; TypeScript 7 has no JS parser API).
  */
 const raw = import.meta.glob<string>(['../**/*.{ts,tsx}', '!../**/*.test.*', '!../i18n/**', '!../**/testing/**'], { query: '?raw', import: 'default', eager: true })
 /** Source files by path relative to `src/` (the `../` prefix of the glob removed). */

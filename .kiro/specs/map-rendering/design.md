@@ -672,7 +672,7 @@ Pure and fake-timer tests, no network. `osm/download.test.ts`: hedging order, he
 - The quest floor on the reference phone is 1.0, not 1.5.
 - Requests: up to 2 at once, 1.5 s apart, back-off from 4 s. Limits and reasons are in `osm-etiquette.md`.
 - While a route or quest exists the frame follows the view, so the map has no edge in a quest; the grid object changes when it moves (requirement 19.12 amended), the route and the graph do not.
-- `OSM_ATTRIBUTION` now reads "© OpenStreetMap contributors", as the map shows it (the link goes to the copyright page).
+- `OSM_ATTRIBUTION` read "© OpenStreetMap contributors" at this point; task 74.8 changed it to "OpenFreeMap © OpenMapTiles © OpenStreetMap contributors".
 
 ## Map data from vector tiles (requirement 21, task 74)
 
