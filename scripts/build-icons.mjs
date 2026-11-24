@@ -1,11 +1,14 @@
 // Renders the pixel favicon (public/favicon.svg) into the PNG app icons used by
-// the web app manifest and iOS (apple-touch-icon). Run after changing the icon:
+// the web app manifest and iOS (apple-touch-icon). Also rewrites it from the logo grid. Run after changing the logo:
 //   node scripts/build-icons.mjs
 import { chromium } from 'playwright-core'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-const svg = await readFile(resolve('public/favicon.svg'), 'utf8')
+// The logo grid in src/ui/logoArt.ts is the single source of the favicon and the icons.
+import { logoSvg } from '../src/ui/logoArt.ts'
+const svg = logoSvg()
+await writeFile(resolve('public/favicon.svg'), svg)
 const outDir = resolve('public/icons')
 await mkdir(outDir, { recursive: true })
 // [file, size, inset fraction (maskable icons keep the art inside the safe zone)]

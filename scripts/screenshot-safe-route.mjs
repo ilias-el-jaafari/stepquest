@@ -30,6 +30,7 @@ for (const vp of viewports) {
   await page.evaluate((locale) => {
     localStorage.clear()
     localStorage.setItem('stepquest.locale', locale)
+    localStorage.setItem('stepquest.onboarded', '1')
   }, vp.locale)
   await page.goto(url, { waitUntil: 'networkidle' })
   await page.getByTestId('map-canvas').waitFor()

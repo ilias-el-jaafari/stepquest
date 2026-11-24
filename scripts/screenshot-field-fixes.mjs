@@ -27,6 +27,7 @@ await page.goto(url, { waitUntil: 'networkidle' })
 await page.evaluate(() => {
   localStorage.clear()
   localStorage.setItem('stepquest.locale', 'en')
+  localStorage.setItem('stepquest.onboarded', '1')
 })
 await page.goto(url, { waitUntil: 'networkidle' })
 await page.getByTestId('map-canvas').waitFor()

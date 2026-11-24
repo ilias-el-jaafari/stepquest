@@ -29,7 +29,7 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 
 ## Phase 5 — Submission
 
-- [ ] 52. Onboarding, logo
+- [x] 52. Onboarding and logo (requirement 9): original pixel gem logo drawn from a grid (header, intro, favicon and PWA icons via build-icons.mjs); first-run 3-screen intro in EN and ES with pixel illustrations, Skip, Back, Next, Start, Esc and arrow keys, focus trap, stored under `stepquest.onboarded`, reopened with "Show intro" in Settings; screenshot scripts set the key
 - [ ] 53. Public repo with `/.kiro`, OSI licence, Pages deploy, demo video under 3 minutes, write-up
 
 ## Property-based tests

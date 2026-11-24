@@ -16,6 +16,7 @@ beforeEach(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   localStorage.clear()
   localStorage.setItem('stepquest.locale', 'en')
+  localStorage.setItem('stepquest.onboarded', '1')
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)

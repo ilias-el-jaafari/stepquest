@@ -32,7 +32,10 @@ async function open(vp) {
   const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 2, hasTouch: vp.mobile, isMobile: vp.mobile, locale: vp.locale })
   page.on('pageerror', (e) => console.error('pageerror', e.message))
   await page.goto(url, { waitUntil: 'networkidle' })
-  await page.evaluate(() => localStorage.clear())
+  await page.evaluate(() => {
+    localStorage.clear()
+    localStorage.setItem('stepquest.onboarded', '1')
+  })
   await page.goto(url, { waitUntil: 'networkidle' })
   await page.getByTestId('map-canvas').waitFor()
   await page.evaluate(() => document.fonts.ready)

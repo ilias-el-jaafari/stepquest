@@ -63,6 +63,7 @@ async function open(viewport, mobile) {
   await page.evaluate(() => {
     localStorage.clear()
     localStorage.setItem('stepquest.locale', 'en')
+    localStorage.setItem('stepquest.onboarded', '1') // skip the first-run intro
   })
   await page.goto(url, { waitUntil: 'networkidle' })
   await page.getByTestId('map-canvas').waitFor()

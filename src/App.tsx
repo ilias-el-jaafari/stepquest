@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { APP_NAME } from './config/brand.ts'
 import { bboxContains, type BBox, type LatLon } from './geo/geo.ts'
 import { MAX_STEPS, MAX_STRIDE_M, MIN_STEPS, MIN_STRIDE_M, stepsToMetres } from './geo/steps.ts'
 import { useI18n, type Locale } from './i18n/index.ts'
@@ -14,6 +13,9 @@ import { isDark } from './geo/sun.ts'
 import { addAvoid, loadAvoid, removeAvoid, saveAvoid } from './ui/avoidList.ts'
 import { AvoidStreetsBox } from './ui/AvoidStreetsBox.tsx'
 import { InfoMenu } from './ui/InfoMenu.tsx'
+import { Logo } from './ui/Logo.tsx'
+import { Onboarding } from './ui/Onboarding.tsx'
+import { hasSeenOnboarding, markOnboardingSeen } from './ui/onboarding.ts'
 import { locateOnce, type LocationErrorCode } from './quest/geolocation.ts'
 import { createQuest, type AreaRef, type QuestState } from './quest/quest.ts'
 import { audioEngine } from './audio/engine.ts'
@@ -76,6 +78,7 @@ export default function App() {
   const [simNoise, setSimNoise] = useState(true)
   const [resumed, setResumed] = useState(false)
   const [tab, setTab] = useState<Tab>('map')
+  const [intro, setIntro] = useState(() => !hasSeenOnboarding())
   /** Map centre after a pan or zoom, to offer loading an area that is not loaded yet. */
   const [viewCentre, setViewCentre] = useState<LatLon>()
   /** Location permission not granted yet: offer planning around the walker's position. */
@@ -443,9 +446,19 @@ export default function App() {
 
   return (
     <div className={`app tab-${tab}`}>
+      {intro && (
+        <Onboarding
+          onClose={() => {
+            markOnboardingSeen()
+            setIntro(false)
+          }}
+        />
+      )}
       <header className="topbar">
         <div className="brand">
-          <h1 className="logo">{APP_NAME}</h1>
+          <h1 className="logo">
+            <Logo />
+          </h1>
           <p className="tagline">{t('app.tagline')}</p>
         </div>
         <div className="status-row">
@@ -760,6 +773,9 @@ export default function App() {
           <div className="box">
             <h2 className="box-title">{t('settings.about')}</h2>
             <InfoMenu place={start} now={today} />
+            <button type="button" className="pix-btn" data-testid="show-intro" onClick={() => setIntro(true)}>
+              {t('onboarding.show')}
+            </button>
           </div>
           <div className="box">
             <h2 className="box-title">{t('data.label')}</h2>

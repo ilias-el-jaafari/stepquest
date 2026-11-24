@@ -50,7 +50,10 @@ for (const vp of viewports) {
   page.on('pageerror', (e) => errors.push(e.message))
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
   await page.goto(url, { waitUntil: 'networkidle' })
-  await page.evaluate(() => localStorage.clear())
+  await page.evaluate(() => {
+    localStorage.clear()
+    localStorage.setItem('stepquest.onboarded', '1')
+  })
   await page.goto(url, { waitUntil: 'networkidle' })
   await page.getByTestId('map-canvas').waitFor()
   await page.evaluate(() => document.fonts.ready)

@@ -23,6 +23,7 @@ beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   localStorage.clear()
   localStorage.setItem('stepquest.locale', 'en')
+  localStorage.setItem('stepquest.onboarded', '1')
   setAudioEngineForTests(new AudioEngine(loadAudioSettings()))
   host = document.createElement('div')
   document.body.append(host)

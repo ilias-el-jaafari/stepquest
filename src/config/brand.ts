@@ -9,4 +9,5 @@ export const CONTEST_CATEGORY = 'Resurrection'
 export const LOCALE_STORAGE_KEY = `${APP_SLUG}.locale`
 export const SETTINGS_STORAGE_KEY = `${APP_SLUG}.settings`
 export const AVOID_STORAGE_KEY = `${APP_SLUG}.avoidStreets`
+export const ONBOARDING_STORAGE_KEY = `${APP_SLUG}.onboarded`
 export const CACHE_DB_NAME = `${APP_SLUG}-osm-cache`

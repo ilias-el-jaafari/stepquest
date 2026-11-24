@@ -30,6 +30,7 @@ for (const vp of viewports) {
   await page.evaluate((locale) => {
     localStorage.clear()
     localStorage.setItem('stepquest.locale', locale)
+    localStorage.setItem('stepquest.onboarded', '1')
     localStorage.setItem('stepquest.avoidStreets', JSON.stringify(['Carrer del Pintor Matarana']))
     localStorage.setItem('stepquest.dailySteps', JSON.stringify({ day: new Date().toLocaleDateString('sv'), steps: 4280 }))
   }, vp.locale)
