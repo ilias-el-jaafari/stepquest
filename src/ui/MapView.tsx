@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import type { BBox, LatLon } from '../geo/geo.ts'
 import { useI18n } from '../i18n/index.ts'
+import { DEMO_CLOSE_ZOOM } from '../demo/script.ts'
 import { PixelIcon } from './PixelIcons.tsx'
 import { parseTimeParam } from '../render/daylight.ts'
 import { MapRenderer, type Markers, type QuestOverlay, type RouteShape } from '../render/MapRenderer.ts'
@@ -46,13 +47,17 @@ type Props = {
   onViewBox?: (box: BBox, centre: LatLon, zoom?: number) => void
   /** What the map shows now; set as `data-map-ready` and `data-map-pending` on the canvas (no visible change). */
   load?: MapLoad
+  /** The demo run's day-cycle moment (epoch ms); wins over `?time=`. */
+  clockAt?: number
+  /** The demo run's camera: blend 0 is close on the walker, 1 shows the whole `bounds`. */
+  shot?: { blend: number; bounds: BBox }
 }
 
 /**
  * Memoised on purpose: the screen around it re-renders on every keystroke and every clock tick,
  * and the map only needs to follow its own props (callers pass stable callbacks and objects).
  */
-export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve, onViewBox, load }: Props) {
+export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve, onViewBox, load, clockAt, shot }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<HTMLDivElement>(null)
@@ -136,8 +141,17 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
   }, [quest, follow, map, frame])
 
   useEffect(() => {
+    if (clockAt !== undefined) rendererRef.current?.setClockAt(clockAt)
+  }, [clockAt, map, frame])
+
+  useEffect(() => {
     rendererRef.current?.setBubble(bubble)
   }, [bubble, map, frame])
+
+  // After the follow effect above, so the demo camera has the last word on the zoom and the centre.
+  useEffect(() => {
+    if (shot && quest?.player) rendererRef.current?.autoShot(quest.player, shot.bounds, shot.blend, DEMO_CLOSE_ZOOM)
+  }, [shot, quest, map, frame])
 
   const pickupN = pickup?.n ?? 0
   const pickupRef = useRef(pickup)

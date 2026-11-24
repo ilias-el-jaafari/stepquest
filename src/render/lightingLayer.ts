@@ -29,6 +29,7 @@ const DOT_COLOR = '#ffd98a'
 export class LightingLayer {
   /** Lighting preview clock (minutes after local midnight); undefined follows the real time. */
   private clockOverride: number | undefined
+  private clockAt: number | undefined
   private cache: { key: number; value: Lighting } | undefined
   private timer: ReturnType<typeof setInterval> | undefined
   private visibility: (() => void) | undefined
@@ -55,10 +56,16 @@ export class LightingLayer {
     this.cache = undefined
   }
 
+  /** A fixed moment (epoch ms) for the lighting, winning over the preview clock; undefined lets go of it. */
+  setClockAt(ms: number | undefined): void {
+    this.clockAt = ms
+    this.cache = undefined
+  }
+
   /** Current lighting from the real (or overridden) clock and the map's location. */
   get lighting(): Lighting {
     const now = Date.now()
-    const ms = this.clockOverride === undefined ? now : atLocalMinutes(now, this.clockOverride)
+    const ms = this.clockAt ?? (this.clockOverride === undefined ? now : atLocalMinutes(now, this.clockOverride))
     const key = Math.floor(ms / LIGHT_CACHE_MS)
     if (this.cache?.key !== key) {
       const b = this.grid.bbox

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { parseDemo } from '../demo/script.ts'
 import { en, type MessageKey, type Translate } from './en.ts'
 import { es } from './es.ts'
 import { I18nContext } from './context.ts'
@@ -7,7 +8,7 @@ import { detectLocale, interpolate, persistLocale, type Locale } from './locale.
 const dictionaries: Record<Locale, Record<MessageKey, string>> = { en, es }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(() => detectLocale())
+  const [locale, setLocaleState] = useState<Locale>(() => (typeof location === 'undefined' ? undefined : parseDemo(location.search)?.lang) ?? detectLocale())
 
   // The page language, title and description follow the interface language.
   useEffect(() => {

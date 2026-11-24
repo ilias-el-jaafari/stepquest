@@ -6,6 +6,7 @@ import { drawLoading } from './loading.ts'
 import { questMinZoom } from '../world/window.ts'
 import { isMapSource, staticSource, type MapSource } from './mapSource.ts'
 import { ChunkLayer } from './chunkLayer.ts'
+import { shotAt } from '../demo/camera.ts'
 import type { Lighting } from './daylight.ts'
 import { OverlayLayer, type Markers, type QuestOverlay, type RouteShape } from './overlayLayer.ts'
 import { LightingLayer } from './lightingLayer.ts'
@@ -181,6 +182,24 @@ export class MapRenderer {
     this.requestRender()
   }
 
+  /** The demo camera: `blend` 0 is close on the player, 1 shows the whole `bounds` (never below the quest floor). */
+  autoShot(player: LatLon, bounds: BBox, blend: number, closeZoom: number): void {
+    this.syncSize()
+    this.applyFloor()
+    const a = this.grid.toTileXY({ lat: bounds.south, lon: bounds.west })
+    const b = this.grid.toTileXY({ lat: bounds.north, lon: bounds.east })
+    const shot = shotAt({
+      blend,
+      player: this.grid.toTileXY(player),
+      bounds: { minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minY: Math.min(a.y, b.y), maxY: Math.max(a.y, b.y) },
+      viewport: { w: this.cssWidth, h: this.cssHeight },
+      closeZoom,
+      minZoom: this.camera.minZoom,
+    })
+    this.camera.centerOn(shot.x, shot.y, Math.max(shot.zoom, this.camera.minZoom))
+    this.requestRender()
+  }
+
   /** Fit a set of points on screen, choosing the largest zoom level that fits. */
   fit(points: LatLon[], paddingPx = 48): void {
     this.syncSize()
@@ -236,6 +255,12 @@ export class MapRenderer {
   /** Preview a time of day for the lighting only (minutes after local midnight), or undefined for real time. */
   setClockOverride(minutes: number | undefined): void {
     this.lightingLayer.setClockOverride(minutes)
+    this.requestRender()
+  }
+
+  /** Light the map as at this moment (epoch ms; the demo run's dusk), or undefined for the usual clock. */
+  setClockAt(ms: number | undefined): void {
+    this.lightingLayer.setClockAt(ms)
     this.requestRender()
   }
 

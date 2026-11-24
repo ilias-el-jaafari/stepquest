@@ -24,6 +24,7 @@ Each folder holds `requirements.md`, `design.md` and `tasks.md`. Requirement ids
 | [voice-audio](voice-audio/requirements.md) | formant speech, callouts, speech bubbles, chiptune, effects, sound settings, audio engine robustness | 7, 7d, 7e, 7f | 34 to 42, 50, 59, 62 |
 | [retro-ui](retro-ui/requirements.md) | planner and app frame, console buttons, dialogue box, hero, i18n EN/ES and plurals, engineering rules, submission | 5, 5b, 5c, 8, 15 | 1, 2, 9, 21a, 28, 29, 49, 49e, 52, 53, 55, 57, 65, 67, 69 |
 | [quest](quest/requirements.md) | GPS and filter, snapping, gems, quest state, persistence, wake lock, simulation, finish | 6, 6b, 6c, 6d | 11 to 21, 30, 49c, 64, 69, 75 |
+| [demo-mode](demo-mode/requirements.md) | self-playing `?demo=1` run for the video: auto plan and walk, camera script, dusk-to-night clock, summary | D1 to D6 | 77 |
 
 Where a requirement touches another spec (for example the speech bubble is voice behaviour drawn by the map renderer), the owning spec holds it and the others link to it.
 

@@ -25,6 +25,9 @@ import { MapBanners } from './ui/MapBanners.tsx'
 import { PlannerPanel } from './ui/PlannerPanel.tsx'
 import { SettingsContent } from './ui/SettingsSheet.tsx'
 import { UpdateBanner } from './ui/UpdateBanner.tsx'
+import { DEMO_QUEST_ID, DEMO_SETTINGS, DEMO_TICK_MS, demoTimeScale, parseDemo } from './demo/script.ts'
+import { demoAppState } from './app/appState.ts'
+import { useDemoRun } from './app/useDemoRun.ts'
 import { useOnline } from './app/useOnline.ts'
 import { useAppState } from './app/useAppState.ts'
 import { useArea, worldBox } from './app/useArea.ts'
@@ -37,8 +40,10 @@ type Reroute = (q: QuestState) => Promise<ReroutePatch | undefined>
 /** Screen layout and wiring. State lives in `app/` (reducer and hooks); the pieces on screen are in `ui/`. */
 export default function App() {
   const { t, locale } = useI18n()
+  // `?demo=1` plays a whole quest by itself (for recording); read once per visit.
+  const [demo] = useState(() => typeof location !== 'undefined' && parseDemo(location.search) !== undefined)
   const walkerArt = walkerFor(useLook()).down[0]!
-  const { state, dispatch, latest } = useAppState()
+  const { state, dispatch, latest } = useAppState(demo ? () => demoAppState(DEMO_SETTINGS) : undefined)
   const { settings } = state
   const today = useToday()
   const online = useOnline()
@@ -54,15 +59,17 @@ export default function App() {
   // the runner is created first and handed the reroute function through a ref-stable wrapper.
   const rerouteRef = useRef<Reroute>(async () => undefined)
   const reroute = useCallback<Reroute>((q) => rerouteRef.current(q), [])
-  const runner = useQuestRunner(reroute)
+  const runner = useQuestRunner(reroute, { persist: !demo })
   const questActive = !!runner.quest
   const keep = runner.quest?.route.points ?? (state.result?.ok ? state.result.route.points : undefined)
-  const { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot, onViewBox, load } = useArea({ state, latest, dispatch, beginQuest: runner.begin, questActive, keep, online })
+  const { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot, onViewBox, load } = useArea({ state, latest, dispatch, beginQuest: runner.begin, questActive, keep, online, demo })
   const planner = usePlanner({
     world,
     latest,
     dispatch,
     commitFields,
+    // The demo always plans the dusk-to-night walk, whatever the real time.
+    night: demo ? true : undefined,
     // On phones the panel sits under the map: bring the map back into view.
     onPlanned: () => {
       const map = mapWrap.current
@@ -73,8 +80,12 @@ export default function App() {
     rerouteRef.current = planner.reroute
   })
 
-  useEffect(() => saveSettings(settings), [settings])
-  useEffect(() => saveAvoid([...state.avoid]), [state.avoid])
+  useEffect(() => {
+    if (!demo) saveSettings(settings)
+  }, [settings, demo])
+  useEffect(() => {
+    if (!demo) saveAvoid([...state.avoid])
+  }, [state.avoid, demo])
 
   // Planning screen: calm music at a steady tempo, starting on the first tap (autoplay rules).
   useEffect(() => {
@@ -130,6 +141,7 @@ export default function App() {
   }
 
   const startQuest = () => {
+    const demoRun = demo && latest.current.result?.ok ? latest.current.result.route : undefined
     const s = latest.current
     if (!s.result?.ok || beginning.current) return
     beginning.current = true
@@ -139,8 +151,11 @@ export default function App() {
     runner.begin(
       createQuest(
         { mode: r.mode, points: r.points, distanceM: r.distanceM, steps: r.steps, targetSteps: r.targetSteps, checkpoints: r.checkpoints },
-        { strideM: s.settings.strideM, area, simulated: sim.simulate, now: Date.now(), sim: sim.simulate ? { timeScale: sim.speed, noiseM: sim.noise ? 5 : 0 } : undefined },
+        { strideM: s.settings.strideM, area, id: demoRun ? DEMO_QUEST_ID : undefined, simulated: demo || sim.simulate, now: Date.now(), sim: demoRun ? { timeScale: demoTimeScale(demoRun.distanceM), noiseM: 0, tickMs: DEMO_TICK_MS } : sim.simulate ? { timeScale: sim.speed, noiseM: sim.noise ? 5 : 0 } : undefined },
       ),
+      false,
+      // The demo starts without a tap: sound waits for the first one (autoplay rules).
+      !demo,
     )
   }
 
@@ -149,6 +164,8 @@ export default function App() {
     dispatch({ type: 'coordsError', on: !coords })
     if (coords) void loadLiveAround(coords)
   }
+
+  useDemoRun({ demo, world, result: state.result, plan: planner.plan, start: startQuest, questActive })
 
   if (runner.quest && world) {
     return (
@@ -165,6 +182,7 @@ export default function App() {
         walker={walkerArt}
         onEnd={endQuest}
         onUseSim={() => runner.switchToSimulation(sim.speed)}
+        demo={demo}
       />
     )
   }

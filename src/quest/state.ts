@@ -5,7 +5,7 @@ import type { QuestRoute } from './types.ts'
 
 export const QUEST_VERSION = 2
 
-export type SimSettings = { timeScale: number; noiseM: number }
+export type SimSettings = { timeScale: number; noiseM: number; /** Real ms between simulator ticks (default 250). */ tickMs?: number }
 
 /** Which map the quest was planned on, so a reload can bring the same map back. */
 export type AreaRef = { kind: 'demo' } | { kind: 'live'; bbox: BBox }

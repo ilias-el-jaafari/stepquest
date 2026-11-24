@@ -22,6 +22,9 @@ function seedFor(id: string): number {
   return (h >>> 0) % 100_000
 }
 
+/** A store that keeps nothing. */
+const NO_STORE = { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+
 export type Pickup = { n: number; point: LatLon; index: number; total: number }
 
 function sourceFor(q: QuestState): LocationSource {
@@ -30,6 +33,7 @@ function sourceFor(q: QuestState): LocationSource {
     timeScale: q.sim?.timeScale ?? 1,
     noiseM: q.sim?.noiseM ?? 0,
     glitches: (q.sim?.noiseM ?? 0) > 0,
+    tickMs: q.sim?.tickMs,
     seed: q.startedAt % 1000,
     startAlongM: q.alongM,
     startTime: q.lastFixAt !== undefined ? q.lastFixAt + 2000 : q.startedAt,
@@ -41,7 +45,9 @@ function sourceFor(q: QuestState): LocationSource {
  * and React state. The rules (filter, gems, saving, step credit, reroute tickets) live in
  * `QuestSession` and `applyFix`; nothing here decides what a fix means.
  */
-export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch | undefined>) {
+export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch | undefined>, opts: { persist?: boolean } = {}) {
+  // The self-playing demo leaves nothing behind: its quest is never saved.
+  const store = opts.persist === false ? NO_STORE : undefined
   const rerouteRef = useRef(reroute)
   useLayoutEffect(() => {
     rerouteRef.current = reroute
@@ -153,11 +159,11 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
 
   /** Start a new quest (call from a click so audio and wake lock are allowed). */
   const begin = useCallback(
-    (q: QuestState, resumed = false) => {
+    (q: QuestState, resumed = false, gesture = !resumed) => {
       const audio = audioEngine()
       // A fresh start runs inside the "Start quest" click, which unlocks audio (iOS).
-      // After a reload there is no gesture yet: sound starts on the first tap.
-      if (resumed) audio.armUnlock()
+      // After a reload (or in the self-playing demo) there is no gesture yet: sound starts on the first tap.
+      if (!gesture) audio.armUnlock()
       else audio.unlock()
       audio.stopVoice()
       sessionRef.current?.cancelReroute()
@@ -170,7 +176,7 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
         if (!resumed) speakRef.current(planner.start(q))
         warmRef.current()
       }
-      const session = new QuestSession(q)
+      const session = new QuestSession(q, { store })
       sessionRef.current = session
       session.save()
       setQuest(session.state)
@@ -178,7 +184,7 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
       setError(undefined)
       startTracking(session.state)
     },
-    [startTracking],
+    [startTracking, store],
   )
 
   /** Switch a running quest to the simulator (e.g. after permission was denied). */

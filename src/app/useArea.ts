@@ -28,6 +28,8 @@ type Args = {
   /** Route on screen (quest or plan): its cells are never evicted while streaming. */
   keep?: readonly LatLon[]
   online?: boolean
+  /** The self-playing demo: the bundled area only, no saved quest, no location, no downloads. */
+  demo?: boolean
 }
 
 /** A world built from the bundled extract, not from a live download. */
@@ -63,7 +65,7 @@ async function withRouteCells(w: World, route: readonly LatLon[], cached: (c: { 
  * quest), live downloads around a point, "use my location", and loading the area the map was
  * moved to. Every function reads the newest state from `latest`, so none of them goes stale.
  */
-export function useArea({ state, latest, dispatch, beginQuest, questActive, keep, online = true }: Args) {
+export function useArea({ state, latest, dispatch, beginQuest, questActive, keep, online = true, demo = false }: Args) {
   const [world, setWorldState] = useState<World>()
   const worldRef = useRef<World>(undefined)
   const setWorld = useCallback((w: World) => {
@@ -86,7 +88,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
   const reanchor = !!state.result?.ok || questActive
   const tiles = useMemo(() => new VectorTileClient({ cache: defaultCache() }), [])
   useEffect(() => () => tiles.dispose(), [tiles])
-  const onViewBox = useStreaming({ world, tiles, graph: client, onWorld: onStreamed, keep, online, onLoad: setLoad, reanchor })
+  const onViewBox = useStreaming({ world, tiles, graph: client, onWorld: onStreamed, keep, online, onLoad: setLoad, reanchor, enabled: demo ? false : undefined })
 
   /** Load the live OSM area around a point and make it the start. */
   const loadLiveAround = useCallback(
@@ -136,7 +138,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
   const boot = useCallback(async () => {
     dispatch({ type: 'mapStatus', status: 'loading' })
     try {
-      const saved = loadQuest(Date.now())
+      const saved = demo ? undefined : loadQuest(Date.now())
       let w: World | undefined
       if (saved?.area.kind === 'live') {
         w = await liveLoad(saved.area.bbox)
@@ -155,6 +157,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
         beginQuest(saved, true)
         return
       }
+      if (demo) return
       if (saved?.area.kind === 'live') dispatch({ type: 'resumeFailed' })
       if (saved && saved.area.kind === 'demo' && !mapFits) clearQuest()
       // No quest to resume: load the map around the walker when location is already allowed,
@@ -165,7 +168,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
     } catch {
       dispatch({ type: 'mapStatus', status: 'failed' })
     }
-  }, [dispatch, liveLoad, beginQuest, setWorld, client])
+  }, [dispatch, liveLoad, beginQuest, setWorld, client, demo])
   const booted = useRef(false)
   useEffect(() => {
     if (booted.current) return
@@ -196,7 +199,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
   const hasPlan = !!state.result?.ok || questActive
   const busy = live.status.state === 'loading' || state.locate.state === 'locating' || state.locate.state === 'loadingArea'
   useEffect(() => {
-    if (!bbox || !viewCentre) return
+    if (demo || !bbox || !viewCentre) return
     if (!shouldAutoLoad({ bbox, centre: viewCentre, busy, hasPlan, failedAt: failedAt.current })) return
     const timer = setTimeout(() => {
       void loadLiveAround(viewCentre).then((ok) => {
@@ -204,7 +207,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
       })
     }, AUTO_LOAD_SETTLE_MS)
     return () => clearTimeout(timer)
-  }, [bbox, viewCentre, busy, hasPlan, loadLiveAround])
+  }, [bbox, viewCentre, busy, hasPlan, loadLiveAround, demo])
 
   return { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot, onViewBox, load }
 }

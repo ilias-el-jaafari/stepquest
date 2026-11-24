@@ -10,6 +10,8 @@ type Props = {
   onDone: () => void
   /** Close by itself this long after the last line is fully shown (hands-free walking). */
   autoCloseMs?: number
+  /** Move on to the next line by itself this long after a line is fully shown (the self-playing demo). */
+  autoNextMs?: number
   /** Milliseconds per character for the typewriter; 0 shows text at once. */
   charMs?: number
 }
@@ -21,7 +23,7 @@ const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(pre
  * line is complete, and a tap (or Enter / Space) skips the typing or moves
  * to the next line. Keyed by the parent per message, so state starts fresh.
  */
-export function DialogueBox({ kind, lines, onDone, autoCloseMs, charMs = 28 }: Props) {
+export function DialogueBox({ kind, lines, onDone, autoCloseMs, autoNextMs, charMs = 28 }: Props) {
   const { t } = useI18n()
   const [line, setLine] = useState(0)
   const [shown, setShown] = useState(() => (charMs <= 0 || reducedMotion() ? Number.MAX_SAFE_INTEGER : 0))
@@ -40,6 +42,15 @@ export function DialogueBox({ kind, lines, onDone, autoCloseMs, charMs = 28 }: P
     const id = setTimeout(onDone, autoCloseMs)
     return () => clearTimeout(id)
   }, [typing, last, autoCloseMs, onDone])
+
+  useEffect(() => {
+    if (typing || last || !autoNextMs) return
+    const id = setTimeout(() => {
+      setLine((l) => l + 1)
+      setShown(charMs <= 0 || reducedMotion() ? Number.MAX_SAFE_INTEGER : 0)
+    }, autoNextMs)
+    return () => clearTimeout(id)
+  }, [typing, last, autoNextMs, charMs, line])
 
   const advance = () => {
     if (typing) {

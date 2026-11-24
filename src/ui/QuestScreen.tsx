@@ -11,6 +11,8 @@ import type { BBox, LatLon } from '../geo/geo.ts'
 import type { MapSource } from '../render/mapSource.ts'
 import type { MapLoad } from '../world/streamer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
+import { DEMO_FINISH_CLOSE_MS, DEMO_NEXT_LINE_MS, demoCameraBlend, demoClockAt, demoProgress } from '../demo/script.ts'
+import { prefersReducedMotion } from '../render/env.ts'
 import { useAudio } from '../audio/useAudio.ts'
 import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { DialogueBox } from './DialogueBox.tsx'
@@ -34,12 +36,28 @@ type Props = {
   walker: Sprite
   onEnd: () => void
   onUseSim: () => void
+  /** The self-playing run: day cycle and camera follow the walk, dialogues close by themselves. */
+  demo?: boolean
 }
 
 /** Words of the "end this quest?" question. */
 const END_CONFIRM = { message: 'quest.endConfirm', yes: 'quest.endYes', no: 'quest.endNo' } as const
 const EMPTY_MARKERS = {}
 const ignoreTap = () => {}
+
+function boundsOf(points: readonly LatLon[]): BBox {
+  let south = Infinity
+  let north = -Infinity
+  let west = Infinity
+  let east = -Infinity
+  for (const p of points) {
+    south = Math.min(south, p.lat)
+    north = Math.max(north, p.lat)
+    west = Math.min(west, p.lon)
+    east = Math.max(east, p.lon)
+  }
+  return { south, west, north, east }
+}
 
 /** A small stable number from the quest id (the seed of the celebration). */
 function seedOf(id: string): number {
@@ -51,7 +69,7 @@ function seedOf(id: string): number {
 /** The HUD sits 10 px above the screen edge; the stack's own bottom margin is 8 px, plus a little air. */
 const HUD_GAP = 6
 
-export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeActive, resumed, walker, onEnd, onUseSim }: Props) {
+export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeActive, resumed, walker, onEnd, onUseSim, demo = false }: Props) {
   const { t, locale } = useI18n()
   const { engine, status, settings: sound, phrase } = useAudio()
   const [now, setNow] = useState(() => Date.now())
@@ -111,6 +129,17 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
   const markers = EMPTY_MARKERS
   const stopFollowing = useCallback(() => setFollow(false), [])
   const startFollowing = useCallback(() => setFollow(true), [])
+  // Demo run: the clock and the camera follow how far along the route the walker is; a tap hands the camera back.
+  const [autoCamera, setAutoCamera] = useState(() => demo && !prefersReducedMotion())
+  // The "tap for sound" button is the one tap that keeps the camera going (the demo starts with sound waiting for a tap).
+  const stopAutoCamera = useCallback((e: { target: EventTarget | null }) => {
+    if (!(e.target instanceof Element && e.target.closest('.sound-resume'))) setAutoCamera(false)
+  }, [])
+  const routeBounds = useMemo(() => (demo ? boundsOf(quest.route.points) : undefined), [demo, quest.route.points])
+  const progress = demoProgress(quest.alongM, trackFor(quest.route).total, quest.finishedAt !== undefined)
+  const clockAt = demo ? demoClockAt(progress) : undefined
+  const blend = demoCameraBlend(progress)
+  const shot = useMemo(() => (autoCamera && routeBounds && quest.finishedAt === undefined ? { blend, bounds: routeBounds } : undefined), [autoCamera, routeBounds, blend, quest.finishedAt])
   // Frame the walker once when the quest screen opens (the parent keys this component by quest id).
   const [focus] = useState(() => (player ? [player] : []))
 
@@ -156,6 +185,7 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
       kind: 'finish',
       lines: [t('dlg.finish1'), t('dlg.finish2', { steps: formatNumber(stats.steps, locale), km: formatDistance(stats.walkedM, locale) })],
       onDone: closeFinish,
+      autoCloseMs: demo ? DEMO_FINISH_CLOSE_MS : undefined,
     }
   } else if (!finished && pickupShown) {
     const left = pickupShown.total - pickupShown.index
@@ -191,7 +221,7 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
       <div className="console">
         <div className="console-bezel">
           <span className="console-led" aria-hidden="true" />
-          <div className="console-screen" data-testid="console-screen">
+          <div className="console-screen" data-testid="console-screen" onPointerDownCapture={demo ? stopAutoCamera : undefined}>
             <div className="quest-map">
               <MapView
                 map={map}
@@ -210,6 +240,8 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
                 onUserPan={stopFollowing}
                 onLocate={startFollowing}
                 bottomReserve={hudHeight + HUD_GAP}
+                clockAt={clockAt}
+                shot={shot}
               />
             </div>
 
@@ -263,7 +295,7 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
 
             {dialogue && (
               <div className="dialog-wrap">
-                <DialogueBox key={dialogue.key} kind={dialogue.kind} lines={dialogue.lines} onDone={dialogue.onDone} autoCloseMs={dialogue.autoCloseMs} />
+                <DialogueBox key={dialogue.key} kind={dialogue.kind} lines={dialogue.lines} onDone={dialogue.onDone} autoCloseMs={dialogue.autoCloseMs} autoNextMs={demo ? DEMO_NEXT_LINE_MS : undefined} />
               </div>
             )}
 

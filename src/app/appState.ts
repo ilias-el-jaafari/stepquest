@@ -91,6 +91,11 @@ export type AppAction =
 
 export const DEFAULT_COORDS_TEXT = '39.4935, -0.3920'
 
+/** The state of a self-playing demo run: fixed settings, no intro, nothing read from the device. */
+export function demoAppState(settings: Settings): AppState {
+  return { ...initialAppState(), settings, avoid: [], intro: false }
+}
+
 export function initialAppState(): AppState {
   return {
     settings: loadSettings(),

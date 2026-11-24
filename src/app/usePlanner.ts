@@ -23,13 +23,15 @@ type Args = {
   commitFields: () => { targetSteps: number; strideM: number }
   /** Called after a route was planned and is still wanted (for example to scroll the map into view). */
   onPlanned?: () => void
+  /** Fixes the "walk at night" choice instead of reading the clock (the self-playing demo plans the same route every time). */
+  night?: boolean
 }
 
 /**
  * Planning and rerouting run in a Web Worker (or on the main thread where there is none).
  * `plan` is safe to call twice in a row: the second call finds a request already out.
  */
-export function usePlanner({ world, latest, dispatch, commitFields, onPlanned }: Args) {
+export function usePlanner({ world, latest, dispatch, commitFields, onPlanned, night: fixedNight }: Args) {
   const client = useRef<PlanClient>(undefined)
   client.current ??= new PlanClient()
   useEffect(() => {
@@ -54,7 +56,7 @@ export function usePlanner({ world, latest, dispatch, commitFields, onPlanned }:
       dispatch({ type: 'planStart', token, seed })
       // Safe routing is always on. From sunset to sunrise (at the start or by the estimated end
       // of the walk) lighting counts more, automatically.
-      const night = walkIsAtNight(s.start, Date.now(), targetSteps, strideM)
+      const night = fixedNight ?? walkIsAtNight(s.start, Date.now(), targetSteps, strideM)
       const req: RouteRequest = { mode: s.settings.mode, start: s.start, end: s.settings.mode === 'oneway' ? s.end : undefined, targetSteps, strideM, seed }
       const opts = { safe: true, night, avoid: [...s.avoid] }
       void (async () => {
@@ -74,7 +76,7 @@ export function usePlanner({ world, latest, dispatch, commitFields, onPlanned }:
         }
       })()
     },
-    [world, latest, dispatch, commitFields],
+    [world, latest, dispatch, commitFields, fixedNight],
   )
 
   const reroute = useCallback(
