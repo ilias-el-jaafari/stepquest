@@ -92,7 +92,7 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 - [x] 49c. Field test fixes B: footprints route (walked prints darker), follow mode, adaptive rerouting, map-area loading (auto-load around GPS, "Load this area", mirror race, worker, area cache, progress)
 - [x] 49d. Polish: the planner folds on phones once a route is ready (and the quest HUD starts folded); distance to the next checkpoint measured along the route; long A→B goals hit ±5 % with a side loop; strong penalty for walking a street twice; neutral fallback wording; straight kerbs on shallow diagonal streets; walked footprints kept after a reroute; Pages workflow on Node 24 actions
 - [x] 49e. Retro look: walker dressing in the Hero tab (boy/girl, five colour parts, live walking preview, saved on the device), ten-block steps meter, quest map inside a generic handheld-console screen, notched 8-bit panels and buttons, 48 px press areas, press click and Android buzz, stepwise motion with reduced-motion support
-- [ ] 50. Speech bubbles on the map
+- [x] 50. Speech bubbles on the map: the phrase on air (from the voice queue, so it always matches what is spoken) is drawn as a pixel-art bubble next to the walker in the app language and removed when the phrase ends or is cut; muted or locked audio still shows it for a time based on text length
 - [ ] 51. New tile art
 
 ## Phase 5 — Submission

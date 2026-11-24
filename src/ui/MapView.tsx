@@ -32,11 +32,13 @@ type Props = {
   locating?: boolean
   /** The map centre after the user pans or zooms (to offer loading that area). */
   onView?: (centre: LatLon) => void
+  /** The phrase being spoken, drawn as a speech bubble next to the walker. */
+  bubble?: string
 }
 
 const TAP_SLOP_PX = 8
 
-export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView }: Props) {
+export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<MapRenderer | undefined>(undefined)
@@ -160,6 +162,10 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
     r.setQuest(quest)
     if (follow && quest?.player) r.follow(quest.player)
   }, [quest, follow, grid])
+
+  useEffect(() => {
+    rendererRef.current?.setBubble(bubble)
+  }, [bubble, grid])
 
   const pickupN = pickup?.n ?? 0
   const pickupRef = useRef(pickup)

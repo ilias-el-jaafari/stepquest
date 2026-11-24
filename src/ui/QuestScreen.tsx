@@ -31,7 +31,7 @@ function fmtDistance(m: number, locale: string): string {
 
 export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, onEnd, onUseSim }: Props) {
   const { t, locale } = useI18n()
-  const { engine, status, settings: sound } = useAudio()
+  const { engine, status, settings: sound, phrase } = useAudio()
   const [now, setNow] = useState(() => Date.now())
   const [follow, setFollow] = useState(true)
   /** The stats panel starts folded so the map gets the screen. */
@@ -157,6 +157,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
                 quest={overlay}
                 follow={follow && quest.finishedAt === undefined}
                 pickup={pickup}
+                bubble={phrase?.text}
                 onUserPan={() => setFollow(false)}
                 onLocate={() => setFollow(true)}
               />

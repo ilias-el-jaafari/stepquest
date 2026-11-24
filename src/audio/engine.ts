@@ -6,6 +6,7 @@ import { SFX, type SfxName, type SfxNote } from './sfx.ts'
 import { glideTempo, MENU_BPM } from './tempo.ts'
 import { renderText } from './voice/synth.ts'
 import { VoiceQueue } from './voiceQueue.ts'
+import { bubbleDurationMs, type SpokenPhrase } from './speechBubble.ts'
 
 /**
  * Web Audio side of the sound: buses (master → music / voice / effects),
@@ -17,7 +18,7 @@ import { VoiceQueue } from './voiceQueue.ts'
 
 export type EngineStatus = 'locked' | 'running' | 'suspended' | 'interrupted' | 'closed'
 export type MusicMode = 'menu' | 'quest'
-export type EngineSnapshot = { settings: AudioSettings; status: EngineStatus; music: 'off' | 'playing' | 'paused'; musicMode: MusicMode; speaking: boolean }
+export type EngineSnapshot = { settings: AudioSettings; status: EngineStatus; music: 'off' | 'playing' | 'paused'; musicMode: MusicMode; speaking: boolean; phrase: SpokenPhrase | undefined }
 
 type Ctor = typeof AudioContext
 const VOICE_RATE = 22050
@@ -71,6 +72,10 @@ export class AudioEngine {
   // Voice.
   private queue = new VoiceQueue()
   private source: AudioBufferSourceNode | undefined
+  /** The phrase being spoken (or shown silently); the map draws it as a speech bubble. */
+  private phrase: SpokenPhrase | undefined
+  private phraseId = 0
+  private silentTimer: ReturnType<typeof setTimeout> | undefined
   private cache = new Map<string, AudioBuffer>()
   private listenersInstalled = false
   private readonly win: (Window & typeof globalThis) | undefined
@@ -78,7 +83,7 @@ export class AudioEngine {
   constructor(settings: AudioSettings = loadAudioSettings(), win: (Window & typeof globalThis) | undefined = typeof window === 'undefined' ? undefined : window) {
     this.settings = settings
     this.win = win
-    this.snapshot = { settings, status: 'locked', music: 'off', musicMode: 'quest', speaking: false }
+    this.snapshot = { settings, status: 'locked', music: 'off', musicMode: 'quest', speaking: false, phrase: undefined }
   }
 
   // ---- state for React (useSyncExternalStore) ----
@@ -92,7 +97,7 @@ export class AudioEngine {
 
   private emit() {
     const status: EngineStatus = !this.ctx ? 'locked' : (this.ctx.state as EngineStatus)
-    this.snapshot = { settings: this.settings, status, music: this.musicState, musicMode: this.mode, speaking: !!this.source }
+    this.snapshot = { settings: this.settings, status, music: this.musicState, musicMode: this.mode, speaking: !!this.source, phrase: this.phrase }
     for (const fn of this.listeners) fn()
   }
 
@@ -115,7 +120,10 @@ export class AudioEngine {
     this.settings = { ...this.settings, ...patch }
     saveAudioSettings(this.settings)
     this.applyGains()
-    if (this.settings.muted) this.stopVoice()
+    if (this.settings.muted) {
+      this.phrase = undefined
+      this.stopVoice()
+    }
     this.emit()
   }
 
@@ -263,15 +271,43 @@ export class AudioEngine {
 
   // ---- voice ----
 
-  /** Speak a phrase (already translated). Higher priority phrases cut in on lower ones. */
+  /**
+   * Speak a phrase (already translated). Higher priority phrases cut in on lower ones.
+   * Without a running, audible voice the phrase still goes through the same queue
+   * and is only shown (as a bubble) for a time based on its length.
+   */
   say(text: string, locale: Locale, priority = 1): void {
-    if (!this.ctx || !this.buses || this.settings.muted || busGains(this.settings).voice <= 0) return
     this.locale = locale
     const action = this.queue.push({ text, priority, at: Date.now() })
     if (action === 'interrupt') {
       this.stopSource()
-      this.playPhrase(text, locale)
-    } else if (action === 'play') this.playPhrase(text, locale)
+      this.play(text, locale)
+    } else if (action === 'play') this.play(text, locale)
+  }
+
+  private canSpeak(): boolean {
+    return !!this.ctx && !!this.buses && this.ctx.state === 'running' && !this.settings.muted && busGains(this.settings).voice > 0
+  }
+
+  private play(text: string, locale: Locale) {
+    this.phrase = { id: ++this.phraseId, text }
+    if (this.canSpeak()) this.playPhrase(text, locale)
+    else {
+      this.silentTimer = setTimeout(() => this.advance(), bubbleDurationMs(text))
+      this.emit()
+    }
+  }
+
+  /** The current phrase ended (spoken or shown): start the next one, or clear the bubble. */
+  private advance() {
+    this.silentTimer = undefined
+    const next = this.queue.next(Date.now())
+    if (next) this.play(next.text, this.locale)
+    else {
+      this.phrase = undefined
+      this.duck(false)
+    }
+    this.emit()
   }
 
   private locale: Locale = 'en'
@@ -301,10 +337,7 @@ export class AudioEngine {
     src.onended = () => {
       if (this.source !== src) return
       this.source = undefined
-      const next = this.queue.next(Date.now())
-      if (next) this.playPhrase(next.text, this.locale)
-      else this.duck(false)
-      this.emit()
+      this.advance()
     }
     this.source = src
     this.duck(true)
@@ -315,6 +348,8 @@ export class AudioEngine {
   private stopSource() {
     const s = this.source
     this.source = undefined
+    clearTimeout(this.silentTimer)
+    this.silentTimer = undefined
     if (s) {
       s.onended = null
       try {
@@ -328,7 +363,10 @@ export class AudioEngine {
   stopVoice(): void {
     this.stopSource()
     this.queue.clear()
+    const had = this.phrase !== undefined
+    this.phrase = undefined
     this.duck(false)
+    if (had) this.emit()
   }
 
   private duck(on: boolean) {

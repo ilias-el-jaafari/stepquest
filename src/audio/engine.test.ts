@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AudioEngine, lfsrNoise, pulseCoefficients } from './engine.ts'
+import { bubbleDurationMs } from './speechBubble.ts'
 import { AUDIO_STORAGE_KEY, DEFAULT_AUDIO } from './settings.ts'
 
 /** Just enough of the Web Audio API to watch what the engine does. */
@@ -180,6 +181,64 @@ describe('audio engine', () => {
     const n = ctx.sources.length
     engine.say('Something else.', 'en', 3)
     expect(ctx.sources.length).toBe(n)
+  })
+
+  it('exposes the phrase on air for the speech bubble and clears it when the voice ends', () => {
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    const before = ctx.sources.length
+    expect(engine.getSnapshot().phrase).toBeUndefined()
+    engine.say('Back on route.', 'en', 2)
+    expect(engine.getSnapshot().phrase?.text).toBe('Back on route.')
+    engine.say('Well done!', 'en', 1)
+    expect(engine.getSnapshot().phrase?.text).toBe('Back on route.')
+    ctx.sources[before]!.onended?.()
+    expect(engine.getSnapshot().phrase?.text).toBe('Well done!')
+    ctx.sources[ctx.sources.length - 1]!.onended?.()
+    expect(engine.getSnapshot().phrase).toBeUndefined()
+  })
+
+  it('lets an urgent phrase replace the bubble text', () => {
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    engine.say('Keep going.', 'es', 1)
+    engine.say('You made it!', 'es', 5)
+    expect(engine.getSnapshot().phrase?.text).toBe('You made it!')
+  })
+
+  it('still shows the bubble, for a time based on text length, when muted or locked', () => {
+    vi.useFakeTimers()
+    const engine = new AudioEngine({ ...DEFAULT_AUDIO, muted: true }, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    const n = ctx.sources.length
+    const short = 'Turn left.'
+    const long = 'Checkpoint three of ten reached. Next one in four hundred metres, to the north east.'
+    engine.say(short, 'en', 2)
+    engine.say(long, 'en', 1)
+    expect(ctx.sources.length).toBe(n)
+    expect(engine.getSnapshot().phrase?.text).toBe(short)
+    vi.advanceTimersByTime(bubbleDurationMs(short) - 1)
+    expect(engine.getSnapshot().phrase?.text).toBe(short)
+    vi.advanceTimersByTime(2)
+    expect(engine.getSnapshot().phrase?.text).toBe(long)
+    vi.advanceTimersByTime(bubbleDurationMs(long) + 1)
+    expect(engine.getSnapshot().phrase).toBeUndefined()
+    // Before any unlock there is no AudioContext at all, and the bubble still works.
+    const locked = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    locked.say(short, 'en')
+    expect(locked.getSnapshot().phrase?.text).toBe(short)
+    locked.stopVoice()
+    expect(locked.getSnapshot().phrase).toBeUndefined()
+  })
+
+  it('removes the bubble at once when sound is muted mid-phrase', () => {
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    engine.say('Halfway there.', 'en')
+    engine.updateSettings({ muted: true })
+    expect(engine.getSnapshot().phrase).toBeUndefined()
   })
 
   it('plays music only while walking, following the tempo, and pauses when stopped', () => {

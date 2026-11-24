@@ -85,3 +85,35 @@ describe('map buttons during a quest', () => {
     expect(onView.mock.calls[0]![0]).toHaveProperty('lat')
   })
 })
+
+describe('speech bubble', () => {
+  it('hands the spoken text to the renderer and clears it when the phrase ends', async () => {
+    const setBubble = vi.spyOn(MapRenderer.prototype, 'setBubble')
+    const view = (bubble?: string) => (
+      <I18nProvider>
+        <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="b" onTap={() => {}} home={start} quest={{ player: walker, accuracyM: 5, collected: 0, alongM: 0 }} bubble={bubble} />
+      </I18nProvider>
+    )
+    await act(async () => root.render(view('Turn left.')))
+    expect(setBubble).toHaveBeenLastCalledWith('Turn left.')
+    await act(async () => root.render(view(undefined)))
+    expect(setBubble).toHaveBeenLastCalledWith(undefined)
+  })
+})
+
+
+describe('speech bubble drawing', () => {
+  it('draws every wrapped line of the text, kept inside the canvas', () => {
+    const texts: string[] = []
+    const rects: number[][] = []
+    const ctx = new Proxy({ fillText: (t: string) => texts.push(t), fillRect: (...a: number[]) => rects.push(a) } as Record<string, unknown>, {
+      get: (o, k) => (k in o ? o[k as string] : () => {}),
+      set: () => true,
+    })
+    const r = new MapRenderer(document.createElement('canvas'), grid)
+    const draw = (r as unknown as { drawBubble(c: unknown, t: string, at: object, dpr: number, w: number, h: number): void }).drawBubble.bind(r)
+    draw(ctx, 'Checkpoint 3 of 10. Next one in 400 metres.', { x: 290, y: 200, size: 48 }, 1, 300, 400)
+    expect(texts.join(' ')).toBe('Checkpoint 3 of 10. Next one in 400 metres.')
+    for (const [x, , w] of rects) expect(x! >= 0 && x! + w! <= 300 + 2).toBe(true)
+  })
+})
