@@ -39,8 +39,8 @@ describe('InfoMenu', () => {
     const panel = await open('en')
     expect(panel.querySelectorAll('dt')).toHaveLength(5)
     expect(panel.textContent).toContain('Are the routes safe?')
-    expect(panel.textContent).toContain('From sunset to sunrise')
-    expect(panel.textContent).toContain('not crime data')
+    expect(panel.textContent).toContain('After sunset and until sunrise')
+    expect(panel.textContent).toContain('Keep an eye on the real street')
     expect(panel.textContent).toMatch(/sunrise \d{2}:\d{2}.*sunset \d{2}:\d{2}/)
   })
   it('speaks Spanish and closes with the button or Escape', async () => {

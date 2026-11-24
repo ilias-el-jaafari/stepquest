@@ -2,6 +2,13 @@
 
 Part of the StepQuest specs; see [../README.md](../README.md). See also: [quest](../quest/requirements.md) (HUD content), [voice-audio](../voice-audio/requirements.md) (sound menu).
 
+## Product voice (task 74, requirement 19)
+
+- Copy reads as a finished game: it pitches the benefit and explains only what is needed to use a feature. Decisions, fixed settings and build details are not told to the player. Example: safety is described as "Your routes always favour safer, better-lit streets, especially after dark", with no mention of a switch.
+- Rules, do/don't examples in English and Spanish and the banned-phrase list are in `.kiro/steering/copy-voice.md` (loaded for `src/i18n/**`).
+- `src/i18n/voice.test.ts` scans every string of both languages against the banned list, allows "OpenStreetMap" only in `map.attribution`, and rejects "usted/vosotros" in Spanish. Placeholders, plural forms and button lengths are unchanged, so the parity, property and fit tests apply as before.
+- The Settings footer (`app.contestLine`, `app.phase`) now shows the product name with a short play line instead of contest details. Onboarding screen 3 is titled "Walk with confidence" / "Camina con confianza".
+
 ## Dialogue and plurals (Phase 3)
 
 - Dialogue: `DialogueBox` (typewriter at 28 ms per character, skip / next on tap, Enter or Space, auto-close for pickups and the start). Priority: finish, then pickup, then start.

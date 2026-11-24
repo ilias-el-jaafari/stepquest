@@ -57,7 +57,7 @@ Related: [quest](../quest/requirements.md) (HUD content, resume after reload), [
 
 #### Acceptance Criteria
 
-1. WHEN the app opens and the onboarding has never been completed or skipped on this device, THE SYSTEM SHALL show an onboarding dialog of exactly three screens: choose your distance (step goal or stride, loop or A→B on real streets within ±5 %), follow the gems (numbered gems in order, voice and speech bubbles, rerouting when leaving the route) and safe by default (lit, lively streets with sidewalks, lighting counting more from sunset, always on, streets to avoid still available).
+1. WHEN the app opens and the onboarding has never been completed or skipped on this device, THE SYSTEM SHALL show an onboarding dialog of exactly three screens: choose your distance (step goal or stride, loop or A→B on real streets within ±5 %), follow the gems (numbered gems in order, voice and speech bubbles, rerouting when leaving the route) and walk with confidence (safer, better-lit streets, especially after dark, and streets to avoid).
 2. THE SYSTEM SHALL show every onboarding screen in the active language (English or Spanish), with a small original pixel illustration drawn in code, a step indicator, a Skip button on every screen, a Back button from screen 2, and a Next button that becomes "Start" on screen 3.
 3. WHEN the user presses Skip, presses Escape, or presses Start, THE SYSTEM SHALL close the onboarding and store a flag in `localStorage` under `stepquest.onboarded`, and SHALL NOT show the onboarding again on later visits.
 4. THE SYSTEM SHALL offer a "Show intro" button in the Settings tab that reopens the onboarding at screen 1 at any time.
@@ -130,3 +130,15 @@ Related: [quest](../quest/requirements.md) (HUD content, resume after reload), [
 5. WHEN the size is unknown (not measured yet), THE SYSTEM SHALL show every button in one column.
 6. THE SYSTEM SHALL re-plan when the map viewport changes size (rotation, panel growth) and, in a quest, when the bottom HUD changes height.
 7. THE SYSTEM SHALL work from 320×568 to 430×932, portrait and landscape, in English and Spanish.
+
+### Requirement 19 (task 74): Product voice
+
+**User Story:** As a player, I want every word in the game to read like a finished game, so that I only learn what I need to play and never see how the app was built.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL write all user-facing copy (onboarding, Info and FAQ, settings, bag, errors, notices, banners, speech phrases and dialogues) as a short, friendly, benefit-focused pitch in a light retro-game tone, explaining only what the player needs to use a feature.
+2. THE SYSTEM SHALL NOT mention decisions, settings that cannot be turned off, toggles that do not exist, contests, judges, development, specs, caches, workers, map servers' names or technical terms (such as graph, tiles or chunks) in any user-facing string.
+3. THE SYSTEM SHALL name OpenStreetMap only in the map attribution "© OpenStreetMap contributors" and its Spanish twin, and SHALL keep that attribution on screen.
+4. THE SYSTEM SHALL write Spanish as natural Spain Spanish, consistently in the "tú" form, with the same keys, placeholders and plural forms as English, and SHALL NOT lengthen any button or tab label.
+5. WHEN a user-facing string matches a banned dev-speak phrase, THE BUILD SHALL fail (`src/i18n/voice.test.ts`); the voice rules live in `.kiro/steering/copy-voice.md`.

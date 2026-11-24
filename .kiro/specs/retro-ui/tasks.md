@@ -110,3 +110,12 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 
 - [x] 73.1 `planStack` (one column, two columns, "More"), `MapView` measures and renders it, quest HUD reserve, `map.more` in EN/ES; tests
   - _Requirements: 18.1 to 18.7_
+
+## Product voice (requirement 19)
+
+- [x] 74.1 Rewrite the user-facing copy in `en.ts` and `es.ts` without dev-speak (onboarding, Info/FAQ, notices, errors, Settings footer)
+  - _Requirements: 19.1, 19.2, 19.3, 19.4_
+- [x] 74.2 Steering file `copy-voice.md` and test `voice.test.ts` for banned phrases
+  - _Requirements: 19.5_
+- [x] 74.3 Spec sync: requirement 19, design note, onboarding copy in requirement 9 wording
+  - _Requirements: 19.1_
