@@ -115,7 +115,7 @@ describe('console buttons in the UI', () => {
     await act(async () =>
       root.render(
         <I18nProvider>
-          <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="k" onTap={() => {}} home={start} onLocate={() => {}} />
+          <MapView map={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="k" onTap={() => {}} home={start} onLocate={() => {}} />
         </I18nProvider>,
       ),
     )

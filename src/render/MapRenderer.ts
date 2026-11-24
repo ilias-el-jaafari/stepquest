@@ -1,6 +1,8 @@
-import type { LatLon } from '../geo/geo.ts'
+import type { BBox, LatLon } from '../geo/geo.ts'
 import type { TileGrid } from '../tiles/grid.ts'
-import { Camera, DETAIL_ZOOM, ZOOM_LEVELS, type Pt } from './camera.ts'
+import { Camera, DETAIL_ZOOM, FAR_ZOOM, ZOOM_LEVELS, type Pt } from './camera.ts'
+import { drawLoading } from './loading.ts'
+import { isMapSource, staticSource, type MapSource } from './mapSource.ts'
 import { ChunkLayer } from './chunkLayer.ts'
 import type { Lighting } from './daylight.ts'
 import { OverlayLayer, type Markers, type QuestOverlay, type RouteShape } from './overlayLayer.ts'
@@ -12,7 +14,7 @@ import { drawRails } from './streetMarks.ts'
 import { backingSize, watchPixelRatio } from './viewport.ts'
 import type { View } from './view.ts'
 
-export { DETAIL_ZOOM, ZOOM_LEVELS }
+export { DETAIL_ZOOM, FAR_ZOOM, ZOOM_LEVELS }
 export { CHUNK_BUDGET_MS, PREFETCH_MARGIN, WATER_FRAME_MS, WATER_FRAMES, waterFrame } from './chunkLayer.ts'
 export type { Markers, QuestOverlay, RouteShape }
 
@@ -21,9 +23,12 @@ export type { Markers, QuestOverlay, RouteShape }
  * ground, terrain chunks (or the far-zoom town map), water, tracks, sky tint and night light, then
  * the overlay (tape, route, gems, walker, bubble). Each layer lives in its own module (see design.md,
  * "Architecture review"); this class only converts coordinates, sizes the canvas and schedules frames.
+ * The map is a tile grid (a single extract) or a `MapSource` that grows (a streamed world): its
+ * changes repaint only the tiles they touch, and cells still loading get a quiet stipple.
  */
 export class MapRenderer {
   readonly grid: TileGrid
+  readonly source: MapSource
   private readonly canvas: HTMLCanvasElement
   private readonly camera: Camera
   private readonly scheduler = new FrameScheduler(() => this.render())
@@ -31,16 +36,23 @@ export class MapRenderer {
   private readonly lightingLayer: LightingLayer
   private readonly overlay: OverlayLayer
   private readonly stopPixelRatio: () => void
+  private readonly stopSource: () => void
+  private viewListener: ((box: BBox, centre: LatLon) => void) | undefined
+  private lastViewKey = ''
   /** Last CSS size of the canvas that had a layout (kept while the canvas is hidden). */
   private lastCss: { w: number; h: number } | undefined
   private readonly view: View = { w: 0, h: 0, dpr: 1, zoom: 16, cssW: 0, cssH: 0, scale: 16, originX: 0, originY: 0, camX: 0, camY: 0, detail: true }
 
-  constructor(canvas: HTMLCanvasElement, grid: TileGrid) {
+  constructor(canvas: HTMLCanvasElement, map: TileGrid | MapSource) {
+    const source = isMapSource(map) ? map : staticSource(map)
+    const grid = source.grid
     this.canvas = canvas
+    this.source = source
     this.grid = grid
     this.camera = new Camera(grid.cols, grid.rows)
     const tick = () => this.requestRender()
-    this.chunks = new ChunkLayer(grid, tick)
+    this.chunks = new ChunkLayer(source, tick)
+    this.stopSource = source.subscribe(tick)
     this.lightingLayer = new LightingLayer(grid, this.chunks, tick)
     this.overlay = new OverlayLayer(grid, this.lightingLayer)
     this.stopPixelRatio = watchPixelRatio(tick)
@@ -183,6 +195,20 @@ export class MapRenderer {
     return this.grid.tileToLatLon(t.x, t.y)
   }
 
+  /** The part of the world on screen. */
+  viewBBox(): BBox {
+    const a = this.screenToLatLon(0, 0)
+    const b = this.screenToLatLon(this.cssWidth, this.cssHeight)
+    return { south: Math.min(a.lat, b.lat), west: Math.min(a.lon, b.lon), north: Math.max(a.lat, b.lat), east: Math.max(a.lon, b.lon) }
+  }
+
+  /** Hear where the view is after every frame that moved it (pan, zoom, follow, fit, resize). */
+  onViewChange(fn: ((box: BBox, centre: LatLon) => void) | undefined): void {
+    this.viewListener = fn
+    this.lastViewKey = ''
+    this.requestRender()
+  }
+
   /** Preview a time of day for the lighting only (minutes after local midnight), or undefined for real time. */
   setClockOverride(minutes: number | undefined): void {
     this.lightingLayer.setClockOverride(minutes)
@@ -192,6 +218,11 @@ export class MapRenderer {
   /** Current lighting from the real (or overridden) clock and the map's location; recomputed at most once per 30 s. */
   get lighting(): Lighting {
     return this.lightingLayer.lighting
+  }
+
+  /** How often the overviews were built whole (tests: a new cell repaints only its rectangle). */
+  get overviewBuilds(): { town: number; far: number } {
+    return this.chunks.overviewBuilds
   }
 
   /** Chunks painted so far (tests and diagnostics). */
@@ -207,6 +238,8 @@ export class MapRenderer {
   dispose(): void {
     this.scheduler.cancel()
     this.stopPixelRatio()
+    this.stopSource()
+    this.viewListener = undefined
     this.lightingLayer.dispose()
     this.chunks.dispose()
     this.overlay.dispose()
@@ -243,11 +276,14 @@ export class MapRenderer {
     v.camY = cam.y
     v.detail = cam.zoom >= DETAIL_ZOOM
 
-    // Ground colour (never black) where nothing is loaded; the loaded area is a shade lighter.
+    // Ground colour (never black) where nothing is loaded; the loaded area is a shade lighter. In a
+    // streamed world the tiles without data are left clear by the layers, so this shows through there.
     ctx.fillStyle = P.groundB
     ctx.fillRect(0, 0, w, h)
-    ctx.fillStyle = P.groundA
-    ctx.fillRect(v.originX, v.originY, Math.round(this.grid.cols * scale), Math.round(this.grid.rows * scale))
+    if (!this.grid.covered) {
+      ctx.fillStyle = P.groundA
+      ctx.fillRect(v.originX, v.originY, Math.round(this.grid.cols * scale), Math.round(this.grid.rows * scale))
+    }
 
     let frame: ReturnType<ChunkLayer['draw']> | undefined
     if (v.detail) {
@@ -255,8 +291,11 @@ export class MapRenderer {
       if (frame.pending) this.requestRender()
       this.chunks.drawWater(ctx, v, frame.plan)
     } else {
-      this.chunks.drawOverview(ctx, v)
+      // Far out: the simplified map (streets, water, parks; no houses), quick for a whole world on screen.
+      this.chunks.drawOverview(ctx, v, cam.zoom <= FAR_ZOOM)
     }
+    const loading = this.source.loading()
+    if (loading.length) drawLoading(ctx, v, loading)
 
     // Tram, metro and train tracks above ground.
     if (this.grid.rails.length) drawRails(ctx, v, this.grid.rails, this.grid.cols, this.grid.rows)
@@ -270,5 +309,15 @@ export class MapRenderer {
     }
 
     if (this.overlay.draw(ctx, v, light)) this.requestRender()
+    this.reportView(v)
+  }
+
+  private reportView(v: View): void {
+    const fn = this.viewListener
+    if (!fn || v.cssW <= 0 || v.cssH <= 0) return
+    const key = `${v.camX},${v.camY},${v.zoom},${v.cssW},${v.cssH}`
+    if (key === this.lastViewKey) return
+    this.lastViewKey = key
+    fn(this.viewBBox(), this.grid.tileToLatLon(v.camX, v.camY))
   }
 }

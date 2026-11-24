@@ -142,3 +142,8 @@ Scope: `src/geo/geo.ts` (the coordinate helpers live here; there is no `coords.t
 Checked and correct: haversine is clamped before `asin`; projection round trip is within 1 mm; distance error is under 0.5 % up to 4 km at latitudes up to 60° (property tests). Not changed: the projection is equirectangular, so error grows with latitude and with distance from the origin; a walk area of a few kilometres at the latitudes of the product is far inside the bound.
 
 Tests: `geo/review.test.ts`.
+
+
+## Streamed world (map-rendering requirement 19)
+
+The walking graph can grow: `GraphAccumulator` (in `graph.ts`) holds the node map and the edge list, and `new WalkGraph(data)` is `add(data)` plus the CSR build. A streamed world adds the ways of new cells only and retries the edges that were outside the loaded cells before; "inside" is `OsmData.coverage` (the loaded cells) when present, else the bbox. Node and edge ids already issued never change while cells are only added, and a `WalkGraph` built from an accumulator mark is the graph as it was at that mark. The planners are unchanged; a reroute uses the graph of the newest snapshot. See [map-rendering design](../map-rendering/design.md#streaming-multi-area-world-requirement-19-task-70).

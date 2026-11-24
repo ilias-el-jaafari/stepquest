@@ -1,9 +1,10 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import type { LatLon } from '../geo/geo.ts'
+import type { BBox, LatLon } from '../geo/geo.ts'
 import { useI18n } from '../i18n/index.ts'
 import { PixelIcon } from './PixelIcons.tsx'
 import { parseTimeParam } from '../render/daylight.ts'
 import { MapRenderer, type Markers, type QuestOverlay, type RouteShape } from '../render/MapRenderer.ts'
+import type { MapSource } from '../render/mapSource.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 import { walkerFor } from '../hero/look.ts'
 import { useLook } from '../hero/useLook.ts'
@@ -11,7 +12,8 @@ import { attachMapInput } from './mapInput.ts'
 import { planStack, type StackId } from './mapStack.ts'
 
 type Props = {
-  grid: TileGrid
+  /** The map: one extract's grid, or a streamed world that grows (it is never replaced while it grows). */
+  map: TileGrid | MapSource
   route: RouteShape | undefined
   markers: Markers
   /** Points to frame when they change (route or markers). */
@@ -39,13 +41,15 @@ type Props = {
   bubble?: string
   /** Height an overlaying HUD takes at the bottom of the map (px), so the buttons stay clear of it. */
   bottomReserve?: number
+  /** Where the view is after every move (pan, zoom, follow), for streaming the cells around it. */
+  onViewBox?: (box: BBox, centre: LatLon) => void
 }
 
 /**
  * Memoised on purpose: the screen around it re-renders on every keystroke and every clock tick,
  * and the map only needs to follow its own props (callers pass stable callbacks and objects).
  */
-export const MapView = memo(function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve }: Props) {
+export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve, onViewBox }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<HTMLDivElement>(null)
@@ -56,19 +60,22 @@ export const MapView = memo(function MapView({ grid, route, markers, focus, focu
   const focusRef = useRef(focus)
   const onUserPanRef = useRef(onUserPan)
   const onViewRef = useRef(onView)
+  const onViewBoxRef = useRef(onViewBox)
 
   useEffect(() => {
     onTapRef.current = onTap
     focusRef.current = focus
     onUserPanRef.current = onUserPan
     onViewRef.current = onView
+    onViewBoxRef.current = onViewBox
   })
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const renderer = new MapRenderer(canvas, grid)
+    const renderer = new MapRenderer(canvas, map)
     rendererRef.current = renderer
+    renderer.onViewChange((box, centre) => onViewBoxRef.current?.(box, centre))
     // `?time=19:45` previews the lighting at that local time (screenshots, demo video).
     if (typeof location !== 'undefined') renderer.setClockOverride(parseTimeParam(location.search))
     renderer.requestRender()
@@ -86,35 +93,35 @@ export const MapView = memo(function MapView({ grid, route, markers, focus, focu
       renderer.dispose()
       rendererRef.current = undefined
     }
-  }, [grid])
+  }, [map])
 
   useEffect(() => {
     rendererRef.current?.setRoute(route)
-  }, [route, grid])
+  }, [route, map])
 
   const look = useLook()
   useEffect(() => {
     rendererRef.current?.setWalker(walkerFor(look))
-  }, [look, grid])
+  }, [look, map])
 
   useEffect(() => {
     rendererRef.current?.setMarkers(markers)
-  }, [markers, grid])
+  }, [markers, map])
 
   useEffect(() => {
     rendererRef.current?.setAvoided(avoided ?? [])
-  }, [avoided, grid])
+  }, [avoided, map])
 
   useEffect(() => {
     const r = rendererRef.current
     if (!r) return
     r.setQuest(quest)
     if (follow && quest?.player) r.follow(quest.player)
-  }, [quest, follow, grid])
+  }, [quest, follow, map])
 
   useEffect(() => {
     rendererRef.current?.setBubble(bubble)
-  }, [bubble, grid])
+  }, [bubble, map])
 
   const pickupN = pickup?.n ?? 0
   const pickupRef = useRef(pickup)
@@ -132,7 +139,7 @@ export const MapView = memo(function MapView({ grid, route, markers, focus, focu
     if (!renderer || points.length === 0) return
     if (points.length === 1) renderer.centerOn(points[0]!, 24)
     else renderer.fit(points)
-  }, [focusKey, grid])
+  }, [focusKey, map])
 
   const zoom = (dir: 1 | -1) => rendererRef.current?.zoomStep(dir)
   const goHome = () => {

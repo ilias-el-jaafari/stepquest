@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
-import { bboxContains, type LatLon } from '../geo/geo.ts'
+import { bboxContains, type BBox, type LatLon } from '../geo/geo.ts'
 import { formatCoordPair } from '../geo/coords.ts'
 import { stepsToMetres } from '../geo/steps.ts'
 import { areaForWalk } from '../osm/overpass.ts'
@@ -9,7 +9,10 @@ import type { QuestState } from '../quest/quest.ts'
 import { clearQuest, loadQuest } from '../quest/storage.ts'
 import { AUTO_LOAD_SETTLE_MS, shouldAutoLoad } from '../ui/autoLoad.ts'
 import { loadDemoWorld, useLiveLoader, type World } from '../ui/useMapData.ts'
+import { cellKey, cellOf } from '../world/cells.ts'
+import type { CellRecord } from '../world/slice.ts'
 import type { AppAction, AppState } from './appState.ts'
+import { useStreaming } from './useStreaming.ts'
 
 type Args = {
   state: AppState
@@ -19,17 +22,45 @@ type Args = {
   beginQuest: (q: QuestState, resumed?: boolean) => void
   /** A quest is on screen: the map must not be replaced under it. */
   questActive: boolean
+  /** Route on screen (quest or plan): its cells are never evicted while streaming. */
+  keep?: readonly LatLon[]
+  online?: boolean
 }
 
 /** A world built from the bundled extract, not from a live download. */
 const isDemoWorld = (w: World) => w.data.source === 'fixture'
 
 /**
+ * The box the map can show without replacing the world: the frame of a streamed world (cells in it
+ * load as the view moves), or the box of a single extract.
+ */
+export const worldBox = (w: World): BBox => (w.live ? w.grid.bbox : w.data.bbox)
+
+/**
+ * Bring the cached cells under a saved route into a streamed world before deciding whether the quest
+ * fits it (a route can reach beyond the bundled demo into cells streamed earlier). Cache only.
+ */
+async function withRouteCells(w: World, route: readonly LatLon[], cached: (c: { i: number; j: number }) => Promise<CellRecord | undefined>): Promise<World> {
+  const live = w.live
+  if (!live) return w
+  const seen = new Set<string>()
+  const records: CellRecord[] = []
+  for (const p of route) {
+    const c = cellOf(p)
+    if (seen.has(cellKey(c)) || !live.needs(c)) continue
+    seen.add(cellKey(c))
+    const r = await cached(c).catch(() => undefined)
+    if (r) records.push(r)
+  }
+  return live.add(records).length ? live.world() : w
+}
+
+/**
  * Which map is loaded and how it changes: the demo area at start-up (or the area of a saved
  * quest), live downloads around a point, "use my location", and loading the area the map was
  * moved to. Every function reads the newest state from `latest`, so none of them goes stale.
  */
-export function useArea({ state, latest, dispatch, beginQuest, questActive }: Args) {
+export function useArea({ state, latest, dispatch, beginQuest, questActive, keep, online = true }: Args) {
   const [world, setWorldState] = useState<World>()
   const worldRef = useRef<World>(undefined)
   const setWorld = useCallback((w: World) => {
@@ -38,6 +69,15 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive }: Ar
   }, [])
   const live = useLiveLoader()
   const liveLoad = live.load
+  const client = live.client
+  // Cells arriving give a new snapshot of the same streamed world; one that was replaced meanwhile is ignored.
+  const onStreamed = useCallback(
+    (w: World) => {
+      if (worldRef.current?.live === w.live) setWorld(w)
+    },
+    [setWorld],
+  )
+  const onViewBox = useStreaming({ world, client, onWorld: onStreamed, keep, online })
 
   /** Load the live OSM area around a point and make it the start. */
   const loadLiveAround = useCallback(
@@ -65,7 +105,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive }: Ar
       }
       const p = { lat: res.fix.lat, lon: res.fix.lon }
       dispatch({ type: 'coords', text: formatCoordPair(p) })
-      if (current && bboxContains(current.data.bbox, p)) {
+      if (current && bboxContains(worldBox(current), p)) {
         dispatch({ type: 'located', p })
       } else {
         dispatch({ type: 'locate', status: { state: 'loadingArea' } })
@@ -94,6 +134,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive }: Ar
         if (w) dispatch({ type: 'liveRestored', box: saved.area.bbox })
       }
       w ??= await loadDemoWorld()
+      if (saved) w = await withRouteCells(w, saved.route.points, (c) => client.cachedCell(c))
       setWorld(w)
       dispatch({ type: 'mapStatus', status: 'ready' })
       // Resume only on a map that holds the route (a quest saved on another map, or on a demo
@@ -115,7 +156,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive }: Ar
     } catch {
       dispatch({ type: 'mapStatus', status: 'failed' })
     }
-  }, [dispatch, liveLoad, beginQuest, setWorld])
+  }, [dispatch, liveLoad, beginQuest, setWorld, client])
   const booted = useRef(false)
   useEffect(() => {
     if (booted.current) return
@@ -141,7 +182,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive }: Ar
   // time, after the map has settled; a failed spot is not retried until the view moves away (the
   // Overpass client also waits at least 10 s between requests).
   const failedAt = useRef<LatLon>(undefined)
-  const bbox = world?.data.bbox
+  const bbox = world ? worldBox(world) : undefined
   const { viewCentre } = state
   const hasPlan = !!state.result?.ok || questActive
   const busy = live.status.state === 'loading' || state.locate.state === 'locating' || state.locate.state === 'loadingArea'
@@ -156,5 +197,5 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive }: Ar
     return () => clearTimeout(timer)
   }, [bbox, viewCentre, busy, hasPlan, loadLiveAround])
 
-  return { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot }
+  return { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot, onViewBox }
 }

@@ -122,3 +122,8 @@ Scope: `src/geo/steps.ts`, `ui/settings.ts`, `ui/numberInput.ts`. Requirement 6c
 - Not changed: `stepsToMetres` and `metresToSteps` still clamp their stride argument silently, so a caller that skips `roundStride` gets the clamped value. The app's entry points all go through `clampSteps`, `commitStride` or `sanitizeSettings`.
 
 Tests: `geo/review.test.ts`, `ui/settings.test.ts`.
+
+
+## Streamed world (map-rendering requirement 19)
+
+New map cells may arrive during a quest. They only add drawing and graph edges: the quest state, its route, gems and progress are never changed by an arrival, the renderer keeps its grid object, and cells within one cell of the route are never evicted. A reroute started after an arrival uses the bigger graph. On resume, the cached cells under the saved route are added before the "route fits the map" check. Tested in `world/liveWorld.test.ts`. See [map-rendering design](../map-rendering/design.md#streaming-multi-area-world-requirement-19-task-70).

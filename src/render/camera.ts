@@ -7,6 +7,8 @@
 /** Screen pixels per tile. ≥ DETAIL_ZOOM draws real 16×16 tiles; below it, a 1-px-per-tile town map. */
 export const ZOOM_LEVELS = [0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 16, 24, 32, 48] as const
 export const DETAIL_ZOOM = 8
+/** At or below this zoom the far overview is drawn: streets, water and parks only (requirement 19.13). */
+export const FAR_ZOOM = 1.5
 
 export type Pt = { x: number; y: number }
 

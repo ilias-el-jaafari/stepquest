@@ -27,7 +27,7 @@ import { SettingsContent } from './ui/SettingsSheet.tsx'
 import { UpdateBanner } from './ui/UpdateBanner.tsx'
 import { useOnline } from './app/useOnline.ts'
 import { useAppState } from './app/useAppState.ts'
-import { useArea } from './app/useArea.ts'
+import { useArea, worldBox } from './app/useArea.ts'
 import { useNumberFields } from './app/useNumberFields.ts'
 import { usePlanner } from './app/usePlanner.ts'
 import { useToday } from './app/useToday.ts'
@@ -56,7 +56,8 @@ export default function App() {
   const reroute = useCallback<Reroute>((q) => rerouteRef.current(q), [])
   const runner = useQuestRunner(reroute)
   const questActive = !!runner.quest
-  const { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot } = useArea({ state, latest, dispatch, beginQuest: runner.begin, questActive })
+  const keep = runner.quest?.route.points ?? (state.result?.ok ? state.result.route.points : undefined)
+  const { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot, onViewBox } = useArea({ state, latest, dispatch, beginQuest: runner.begin, questActive, keep, online })
   const planner = usePlanner({
     world,
     latest,
@@ -116,7 +117,7 @@ export default function App() {
   }, [shown, start, end, settings.mode])
   const focusKey = shown ? `route:${shown.nodes.length}:${shown.distanceM}` : `pts:${settings.mode}:${end ? 'e' : ''}:${world ? 'w' : ''}`
 
-  const outsideView = !!world && !!state.viewCentre && !bboxContains(world.data.bbox, state.viewCentre)
+  const outsideView = !!world && !!state.viewCentre && !bboxContains(worldBox(world), state.viewCentre)
   const loadingMb = live.status.state === 'loading' ? formatDecimal(live.status.bytes / 1e6, locale, 1) : undefined
   const locating = state.locate.state === 'locating' || state.locate.state === 'loadingArea'
 
@@ -153,7 +154,8 @@ export default function App() {
     return (
       <QuestScreen
         key={runner.quest.id}
-        grid={world.grid}
+        map={world.live ?? world.grid}
+        onViewBox={onViewBox}
         quest={runner.quest}
         pickup={runner.pickup}
         error={runner.error}
@@ -183,7 +185,8 @@ export default function App() {
           <section className="map-wrap" ref={mapWrap}>
             {world ? (
               <MapView
-                grid={world.grid}
+                map={world.live ?? world.grid}
+                onViewBox={onViewBox}
                 route={shown}
                 markers={markers}
                 focus={focus}

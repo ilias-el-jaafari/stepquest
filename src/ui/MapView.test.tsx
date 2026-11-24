@@ -37,7 +37,7 @@ describe('map buttons during a quest', () => {
     await act(async () =>
       root.render(
         <I18nProvider>
-          <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="q" onTap={() => {}} home={start} quest={{ player: walker, accuracyM: 5, collected: 0, alongM: 0 }} follow={false} onLocate={onLocate} />
+          <MapView map={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="q" onTap={() => {}} home={start} quest={{ player: walker, accuracyM: 5, collected: 0, alongM: 0 }} follow={false} onLocate={onLocate} />
         </I18nProvider>,
       ),
     )
@@ -57,7 +57,7 @@ describe('map buttons during a quest', () => {
     await act(async () =>
       root.render(
         <I18nProvider>
-          <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="p" onTap={() => {}} home={start} onLocate={() => {}} />
+          <MapView map={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="p" onTap={() => {}} home={start} onLocate={() => {}} />
         </I18nProvider>,
       ),
     )
@@ -71,7 +71,7 @@ describe('map buttons during a quest', () => {
     await act(async () =>
       root.render(
         <I18nProvider>
-          <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="v" onTap={() => {}} home={start} onView={onView} />
+          <MapView map={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="v" onTap={() => {}} home={start} onView={onView} />
         </I18nProvider>,
       ),
     )
@@ -92,7 +92,7 @@ describe('credit and button stack', () => {
     await act(async () =>
       root.render(
         <I18nProvider>
-          <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="a" onTap={() => {}} home={start} />
+          <MapView map={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="a" onTap={() => {}} home={start} />
         </I18nProvider>,
       ),
     )
@@ -108,7 +108,7 @@ describe('credit and button stack', () => {
     await act(async () =>
       root.render(
         <I18nProvider>
-          <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="m" onTap={() => {}} home={start} onLocate={() => {}} />
+          <MapView map={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="m" onTap={() => {}} home={start} onLocate={() => {}} />
         </I18nProvider>,
       ),
     )
@@ -127,7 +127,7 @@ describe('speech bubble', () => {
     const setBubble = vi.spyOn(MapRenderer.prototype, 'setBubble')
     const view = (bubble?: string) => (
       <I18nProvider>
-        <MapView grid={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="b" onTap={() => {}} home={start} quest={{ player: walker, accuracyM: 5, collected: 0, alongM: 0 }} bubble={bubble} />
+        <MapView map={grid} route={undefined} markers={{ start }} focus={[start]} focusKey="b" onTap={() => {}} home={start} quest={{ player: walker, accuracyM: 5, collected: 0, alongM: 0 }} bubble={bubble} />
       </I18nProvider>
     )
     await act(async () => root.render(view('Turn left.')))

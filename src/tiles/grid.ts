@@ -45,6 +45,9 @@ export const BUILDING_STYLES = ['block', 'house', 'industrial'] as const
 export const BARRIERS = ['', 'fence', 'hedge', 'wall'] as const
 export type TerrainId = (typeof Terrain)[keyof typeof Terrain]
 
+/** A rectangle of tiles. */
+export type TileRect = { x: number; y: number; w: number; h: number }
+
 export class TileGrid {
   readonly cols: number
   readonly rows: number
@@ -65,15 +68,41 @@ export class TileGrid {
   pois: Poi[] = []
   /** Above-ground tram, metro and train tracks as tile-coordinate polylines. */
   rails: { x: number; y: number }[][] = []
+  /**
+   * Tiles that hold loaded map data (1) in a streamed world; tiles at 0 are drawn as "no data yet".
+   * Undefined for a single extract, where every tile is loaded.
+   */
+  covered: Uint8Array | undefined
+  /** Tile offset of this grid inside the frame it was cut from (0 for a stand-alone grid). */
+  readonly offsetX: number
+  readonly offsetY: number
 
-  constructor(bbox: BBox, metresPerTile = DEFAULT_METRES_PER_TILE) {
-    this.bbox = bbox
-    this.metresPerTile = metresPerTile
-    // Origin at the north-west corner so tile (0,0) is top-left.
-    this.projection = new LocalProjection({ lat: bbox.north, lon: bbox.west })
-    const se = this.projection.toXY({ lat: bbox.south, lon: bbox.east })
-    this.cols = Math.max(1, Math.ceil(se.x / metresPerTile))
-    this.rows = Math.max(1, Math.ceil(se.y / metresPerTile))
+  /**
+   * A grid over `bbox`, or (with `window`) a small grid that shares the projection of a larger
+   * `frame` and starts at tile (x0, y0) of it: its tile (0, 0) is the frame's tile (x0, y0), so a
+   * cell rasterized into a window lines up exactly with its neighbours when copied into the frame.
+   */
+  constructor(bbox: BBox, metresPerTile = DEFAULT_METRES_PER_TILE, window?: { frame: TileGrid; x0: number; y0: number; cols: number; rows: number }) {
+    this.metresPerTile = window ? window.frame.metresPerTile : metresPerTile
+    if (window) {
+      this.projection = window.frame.projection
+      this.offsetX = window.frame.offsetX + window.x0
+      this.offsetY = window.frame.offsetY + window.y0
+      this.cols = Math.max(1, window.cols)
+      this.rows = Math.max(1, window.rows)
+      const nw = this.tileToLatLon(0, 0)
+      const se = this.tileToLatLon(this.cols, this.rows)
+      this.bbox = { south: se.lat, west: nw.lon, north: nw.lat, east: se.lon }
+    } else {
+      this.bbox = bbox
+      this.offsetX = 0
+      this.offsetY = 0
+      // Origin at the north-west corner so tile (0,0) is top-left.
+      this.projection = new LocalProjection({ lat: bbox.north, lon: bbox.west })
+      const se = this.projection.toXY({ lat: bbox.south, lon: bbox.east })
+      this.cols = Math.max(1, Math.ceil(se.x / metresPerTile))
+      this.rows = Math.max(1, Math.ceil(se.y / metresPerTile))
+    }
     this.layers = new Uint8Array(this.cols * this.rows)
     this.terrain = new Uint8Array(this.cols * this.rows)
     this.style = new Uint8Array(this.cols * this.rows)
@@ -96,11 +125,53 @@ export class TileGrid {
   /** Continuous tile coordinates (tile units, 0.5 = centre of tile 0). */
   toTileXY(p: LatLon): { x: number; y: number } {
     const { x, y } = this.projection.toXY(p)
-    return { x: x / this.metresPerTile, y: y / this.metresPerTile }
+    return { x: x / this.metresPerTile - this.offsetX, y: y / this.metresPerTile - this.offsetY }
   }
 
   tileToLatLon(tx: number, ty: number): LatLon {
-    return this.projection.toLatLon(tx * this.metresPerTile, ty * this.metresPerTile)
+    return this.projection.toLatLon((tx + this.offsetX) * this.metresPerTile, (ty + this.offsetY) * this.metresPerTile)
+  }
+
+  /** A window of this grid (see the constructor): same projection, tile (0, 0) at this grid's (x0, y0). */
+  window(x0: number, y0: number, cols: number, rows: number): TileGrid {
+    return new TileGrid(this.bbox, this.metresPerTile, { frame: this, x0, y0, cols, rows })
+  }
+
+  /**
+   * Copy the tiles of `rect` (in this grid's tiles) from a window of this grid, and mark them covered.
+   * Tiles of the rectangle outside either grid are skipped.
+   */
+  copyFrom(win: TileGrid, rect: TileRect): void {
+    const dx = win.offsetX - this.offsetX
+    const dy = win.offsetY - this.offsetY
+    const x0 = Math.max(rect.x, dx, 0)
+    const x1 = Math.min(rect.x + rect.w, dx + win.cols, this.cols)
+    if (x1 <= x0) return
+    this.covered ??= new Uint8Array(this.cols * this.rows)
+    for (let y = Math.max(rect.y, dy, 0); y < Math.min(rect.y + rect.h, dy + win.rows, this.rows); y++) {
+      const from = win.index(x0 - dx, y - dy)
+      const to = this.index(x0, y)
+      const n = x1 - x0
+      for (const k of ['layers', 'terrain', 'style', 'barrier', 'bridge'] as const) this[k].set(win[k].subarray(from, from + n), to)
+      this.covered.fill(1, to, to + n)
+    }
+  }
+
+  /** Empty the tiles of `rect` (a cell that was dropped) and mark them not covered. */
+  clearRect(rect: TileRect): void {
+    const x0 = Math.max(0, rect.x)
+    const x1 = Math.min(this.cols, rect.x + rect.w)
+    if (x1 <= x0) return
+    this.covered ??= new Uint8Array(this.cols * this.rows)
+    for (let y = Math.max(0, rect.y); y < Math.min(this.rows, rect.y + rect.h); y++) {
+      const from = this.index(x0, y)
+      for (const k of ['layers', 'terrain', 'style', 'barrier', 'bridge', 'covered'] as const) this[k]!.fill(0, from, from + x1 - x0)
+    }
+  }
+
+  /** Whether a tile holds loaded data (always, for a single extract). */
+  coveredAt(tx: number, ty: number): boolean {
+    return this.inBounds(tx, ty) && (!this.covered || this.covered[this.index(tx, ty)] === 1)
   }
 
   add(tx: number, ty: number, bits: number): void {

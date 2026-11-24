@@ -1,9 +1,11 @@
-import { Terrain, TILE_PX, type TileGrid } from '../tiles/grid.ts'
-import { townFor, type TownLayout } from '../town/layout.ts'
+import { Terrain, TILE_PX, type TileGrid, type TileRect } from '../tiles/grid.ts'
+import type { Structures, TownLookup } from '../town/lookup.ts'
 import { TileAtlas, type AtlasSlot } from './atlas.ts'
-import { chunkKey, chunkLimit, LruCache, planChunks, type ChunkPlan, type ChunkRef } from './chunkPlan.ts'
+import { CHUNK_KEY_STRIDE, chunkKey, chunkLimit, LruCache, planChunks, type ChunkPlan, type ChunkRef } from './chunkPlan.ts'
 import { nowMs, prefersReducedMotion, releaseCanvas } from './env.ts'
-import { buildOverview } from './overview.ts'
+import { FAR_STEP, OverviewCanvas, paintFarOverview, paintOverview } from './overview.ts'
+import type { MapSource } from './mapSource.ts'
+import { forgetLamps } from './lamps.ts'
 import { paintFrontFence, paintGardenPath, paintGardenTree, paintHouse, paintLandmark } from './structures.ts'
 import { paintTile, tileHash, tileKey, type TileSpec } from './tileset.ts'
 import { tileSpecAt } from './tileSpecs.ts'
@@ -28,7 +30,7 @@ export function waterFrame(now: number, reduced: boolean): number {
 /** Water tiles of one painted chunk, redrawn per frame; atlas slots are looked up once per ripple frame. */
 type ChunkWater = { tiles: { tx: number; ty: number; spec: TileSpec }[]; slots: (AtlasSlot[] | undefined)[] }
 
-export type Structures = { houses: number[]; landmarks: number[] }
+export type { Structures }
 
 export type ChunkFrame = {
   plan: ChunkPlan
@@ -45,8 +47,7 @@ export type ChunkFrame = {
  * in the frame budget, and animates water ripples.
  */
 export class ChunkLayer {
-  readonly town: TownLayout
-  private readonly structures = new Map<number, Structures>()
+  readonly town: TownLookup
   private readonly atlas = new TileAtlas()
   private readonly water = new Map<number, ChunkWater>()
   private readonly chunks = new LruCache<HTMLCanvasElement, number>(MAX_CHUNKS, (key, canvas) => {
@@ -55,45 +56,50 @@ export class ChunkLayer {
   })
   private onScreen = new Set<number>()
   private painted = new Set<number>()
-  private overview: HTMLCanvasElement | undefined
+  private readonly overview: OverviewCanvas
+  private readonly far: OverviewCanvas
+  private readonly unsubscribe: () => void
   private waterTimer: ReturnType<typeof setTimeout> | undefined
   private lastPlan: { camX: number; camY: number; zoom: number; cssW: number; cssH: number; plan: ChunkPlan } | undefined
 
   readonly grid: TileGrid
   private readonly onWaterTick: () => void
 
-  constructor(grid: TileGrid, onWaterTick: () => void) {
+  constructor(source: MapSource, onWaterTick: () => void) {
+    const grid = source.grid
     this.grid = grid
     this.onWaterTick = onWaterTick
-    this.town = townFor(grid)
-    this.indexStructures()
+    this.town = source.town
+    this.overview = new OverviewCanvas(grid, (c, r) => paintOverview(c, grid, this.town, r))
+    this.far = new OverviewCanvas(grid, (c, r) => paintFarOverview(c, grid, r), FAR_STEP)
+    this.unsubscribe = source.subscribe((rect) => {
+      if (rect) this.invalidate(rect)
+    })
+  }
+
+  /** Tiles in `rect` changed: drop the chunks that show them and repaint the overviews there. */
+  invalidate(rect: TileRect): void {
+    const cx0 = Math.floor(rect.x / CHUNK)
+    const cx1 = Math.floor((rect.x + rect.w - 1) / CHUNK)
+    const cy0 = Math.floor(rect.y / CHUNK)
+    const cy1 = Math.floor((rect.y + rect.h - 1) / CHUNK)
+    for (const key of [...this.chunks.keys()]) {
+      const cx = key % CHUNK_KEY_STRIDE
+      const cy = (key - cx) / CHUNK_KEY_STRIDE
+      if (cx >= cx0 && cx <= cx1 && cy >= cy0 && cy <= cy1) this.chunks.delete(key)
+    }
+    this.overview.update(rect)
+    this.far.update(rect)
+    forgetLamps(this.grid)
   }
 
   get chunkCount(): number {
     return this.chunks.size
   }
 
-  /** Houses and landmarks (indices into the town layout) touching a chunk. */
+  /** Houses and landmarks touching a chunk. */
   structuresIn(cx: number, cy: number): Structures | undefined {
-    return this.structures.get(chunkKey(cx, cy))
-  }
-
-  private indexStructures(): void {
-    const add = (x: number, y: number, w: number, h: number, kind: 'houses' | 'landmarks', index: number) => {
-      for (let cy = Math.floor(y / CHUNK); cy <= Math.floor((y + h - 1) / CHUNK); cy++) {
-        for (let cx = Math.floor(x / CHUNK); cx <= Math.floor((x + w - 1) / CHUNK); cx++) {
-          const key = chunkKey(cx, cy)
-          let entry = this.structures.get(key)
-          if (!entry) {
-            entry = { houses: [], landmarks: [] }
-            this.structures.set(key, entry)
-          }
-          entry[kind].push(index)
-        }
-      }
-    }
-    this.town.houses.forEach((h, i) => add(h.x, h.y, h.w, h.h, 'houses', i))
-    this.town.landmarks.forEach((l, i) => add(l.x, l.y, l.w, l.h, 'landmarks', i))
+    return this.town.structuresIn(cx, cy, CHUNK)
   }
 
   /** Visible and prefetch chunks for a view; reused while the camera, zoom and screen size stay the same. */
@@ -127,7 +133,8 @@ export class ChunkLayer {
       for (let tx = 0; tx < CHUNK; tx++) {
         const gx = cx * CHUNK + tx
         const gy = cy * CHUNK + ty
-        if (!this.grid.inBounds(gx, gy)) continue
+        // No data yet (a streamed world): leave it clear, the "no data" ground shows through.
+        if (!this.grid.coveredAt(gx, gy)) continue
         const spec = tileSpecAt(this.grid, gx, gy)
         if (spec.terrain === Terrain.water) water.tiles.push({ tx, ty, spec })
         const slot = this.atlas.slot(tileKey(spec), (actx, x, y) => paintTile(actx, x, y, spec))
@@ -151,25 +158,35 @@ export class ChunkLayer {
         const gy = y0 + ty
         if (!this.grid.inBounds(gx, gy)) continue
         const i = this.grid.index(gx, gy)
-        if (town.gates.has(i)) paintGardenPath(ctx, tx * TILE_PX, ty * TILE_PX)
-        else if (town.fences.has(i)) paintFrontFence(ctx, tx * TILE_PX, ty * TILE_PX, tileHash(gx >> 3, gy) % 3 === 0)
-        if (town.trees.has(i)) paintGardenTree(ctx, tx * TILE_PX, ty * TILE_PX, tileHash(gx, gy))
+        if (town.hasGate(i)) paintGardenPath(ctx, tx * TILE_PX, ty * TILE_PX)
+        else if (town.hasFence(i)) paintFrontFence(ctx, tx * TILE_PX, ty * TILE_PX, tileHash(gx >> 3, gy) % 3 === 0)
+        if (town.hasTree(i)) paintGardenTree(ctx, tx * TILE_PX, ty * TILE_PX, tileHash(gx, gy))
       }
     }
-    const entry = this.structures.get(chunkKey(cx, cy))
+    const entry = this.structuresIn(cx, cy)
     if (!entry) return
-    const houses = entry.houses.map((k) => town.houses[k]!).sort((a, b) => a.y - b.y)
+    const houses = [...entry.houses].sort((a, b) => a.y - b.y)
     for (const h of houses) paintHouse(ctx, (h.x - x0) * TILE_PX, (h.y - y0) * TILE_PX, h)
-    const landmarks = entry.landmarks.map((k) => town.landmarks[k]!).sort((a, b) => a.y - b.y)
+    const landmarks = [...entry.landmarks].sort((a, b) => a.y - b.y)
     for (const l of landmarks) paintLandmark(ctx, (l.x - x0) * TILE_PX, (l.y - y0) * TILE_PX, l)
   }
 
   overviewCanvas(): HTMLCanvasElement {
-    return (this.overview ??= buildOverview(this.grid, this.town))
+    return this.overview.get()
   }
 
-  /** The far-zoom town map over the loaded area. */
-  drawOverview(ctx: CanvasRenderingContext2D, view: View): void {
+  /** How often each overview was built from scratch (a cell arrival repaints only its rectangle). */
+  get overviewBuilds(): { town: number; far: number } {
+    return { town: this.overview.builds, far: this.far.builds }
+  }
+
+  /** The town map (1 px per tile) over the loaded area, or with `far` the simplified one (1 px per 2 × 2 tiles). */
+  drawOverview(ctx: CanvasRenderingContext2D, view: View, far = false): void {
+    if (far) {
+      const c = this.far.get()
+      ctx.drawImage(c, view.originX, view.originY, c.width * FAR_STEP * view.scale, c.height * FAR_STEP * view.scale)
+      return
+    }
     ctx.drawImage(this.overviewCanvas(), view.originX, view.originY, this.grid.cols * view.scale, this.grid.rows * view.scale)
   }
 
@@ -282,7 +299,8 @@ export class ChunkLayer {
     this.chunks.clear()
     this.water.clear()
     this.atlas.release()
-    if (this.overview) releaseCanvas(this.overview)
-    this.overview = undefined
+    this.overview.release()
+    this.far.release()
+    this.unsubscribe()
   }
 }

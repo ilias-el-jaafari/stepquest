@@ -389,3 +389,135 @@ Field bug (iPhone): the credit floated mid-map because five rules (`.quest`, `.l
 Design: one rule, `.map-attribution { position: absolute; left: 0; bottom: 0; z-index: 4; height: var(--attr-h) }`, inside `.map` (the map viewport; on the planner the panel is a sibling below it, in a quest the HUD is an overlay). The other rules are deleted. In a quest the bottom HUD (`.hud-bottom`) and the map banners move up by `--attr-h` (16 px) so nothing covers the strip. The text is the short form with a link; the long "Map data ... (ODbL)" wording is not needed because the link leads to the licence page, which ODbL attribution allows.
 
 Trade-off: 16 px of the quest screen go to the credit. Tests: `src/ui/attribution.test.ts` (placement rules in the CSS, font and contrast) and `MapView.test.tsx` (link and text in both languages).
+
+## Streaming multi-area world (requirement 19, task 70)
+
+Field report (iPhone, active quest, zoomed out): the map ends at a hard edge, nothing beyond is ever loaded. Cause: `World` was one bounding box. `OsmData` (one node table, one bbox), `TileGrid` (origin and size from that bbox), `townFor(grid)` (one layout for the whole grid) and `WalkGraph` (built once from the data, clipped to its bbox) were all built for one box, and `useArea` replaced all four when a different area was loaded, which is not allowed during a quest.
+
+### Architecture
+
+```
+src/world/
+  cells.ts        cell maths: CellId, cellOf, cellBBox, cellsInBBox, nearest-first order, batch planning
+  slice.ts        cut an OsmData into per-cell records (coverage, node remap)
+  worldData.ts    WorldData: append-only merge of records (dedupe by id, stitch, unify nodes)
+  coverage.ts     which points lie inside loaded cells (graph clipping)
+  tileWorld.ts    frame grid, per-cell rasterization, per-cell town units, change events
+  liveWorld.ts    LiveWorld: records, WorldData, graph accumulator, TileWorld, LRU, `World` snapshots
+  streamer.ts     view -> wanted cells -> batches; debounce, cancel, rate cap, back-off, one in flight
+src/osm/overpass.ts   OverpassClient.loadCells (cache per cell, one request, slicing)
+src/routing/graph.ts  GraphAccumulator (shared by `new WalkGraph(data)` and the incremental path)
+src/render/*          TownLookup, chunk invalidation, loading stipple, incremental overview, far overview
+```
+
+### Data flow
+
+```
+view settles ──> Streamer.plan(view box) ──> wanted cells (missing, in frame, not cooling down), nearest first
+   └─> planBatch -> rectangle of <= 4 cells ─> OverpassClient.loadCells
+          cache hit per cell (IndexedDB)  ─┐
+          else ONE request (bbox of the missing cells, mirrors raced, 10 s gap, one in flight)
+          └─> normalize -> slice per cell -> encode + cache per cell
+   └─> LiveWorld.addRecords(records)
+          WorldData.addRecord   (stitch, dedupe, unify nodes; append-only, ids stay)
+          GraphAccumulator.add  (new ways only; retry edges that were outside the old coverage)
+          TileWorld.paintCell   (window raster -> blit owned rect; town unit; rails)  -> change event {rect}
+          snapshot -> World {data, grid (same object), graph, safety} -> React state
+ChunkLayer / overview listen to the change event and repaint only the touched rect.
+```
+
+The `grid` object of a world never changes after the first area, so the renderer, the camera and the quest overlay are not rebuilt. The `data`, `graph` and `safety` objects are new immutable snapshots; anything holding an old snapshot (a plan in the worker, a reroute in flight) keeps a consistent map.
+
+### Cell size
+
+`CELL_DEG = 0.01`. Reasons:
+
+- Overpass answer size grows with area, not with how many calls: a dense city is about 1 to 3 MB of JSON per km². One cell (about 0.95 km² at 39.5° N) is one polite, small request, and a batch of 4 stays near 4 km², a neighbourhood and a ninth of the 36 km² cap. A 36 km² request (the old `areaForWalk` box) took 20 to 40 s on a phone.
+- Rasterized, a cell is about 220 × 180 tiles (40 k tiles): small enough to paint, blit and lay out in a few milliseconds, and to evict alone.
+- 0.01° is a decimal grid that lines up with the existing 0.001° cache grid, so cell edges are exact in float arithmetic (`i / 100`), and a cell key needs no projection.
+- It shrinks east-west with latitude (0.86 km at València, 0.55 km at 60°). That keeps the maths exact and the request count a little higher in the north; accepted over a latitude-banded grid, whose neighbours would not share edges.
+- Slippy-map tiles (zoom 14 is about 2.4 km) were considered. They are Mercator, so the area per tile varies as well, and a zoom-14 tile is 4 to 6 times a cell, too big for one request on a phone.
+
+### Frame and tile grid
+
+All cells of a session share one `TileGrid` (the frame): the cell-aligned box of 9 × 9 cells (`MAX_RADIUS_CELLS = 4`) around the first cell, about 10 × 7.7 km, 2000 × 1560 tiles at València. One projection means tiles of neighbouring cells line up exactly (a per-cell grid would have its own origin and cos(lat), and a seam). The arrays are 5 bytes per tile (15 MB for the largest frame), zero-filled lazily by the browser, so a session that stays in the demo area touches a fraction.
+
+A cell owns the tile columns `[round(x(west)), round(x(east)))` and rows likewise, so the cells partition the frame. `TileGrid.window` makes a small grid with the frame's projection and an integer tile offset; the cell is rasterized into it from its own data (a one-tile apron comes from the same data), and only the owned rectangle is copied into the frame. Result: a cell's tiles do not depend on its neighbours or on the order of arrival. At render time the tile painter reads neighbours across the border from the frame, and a change event redraws the border tiles when a neighbour arrives or leaves.
+
+### Stitching
+
+Overpass `out geom` returns whole ways (all nodes, also outside the box), so a way crossing a border is in both cells with the same id and the same points. Merge rules (`WorldData.addRecord`, per `kind:id`):
+
+1. nodes are unified by exact coordinate, across and inside records, so the merged data does not depend on the order cells arrive in;
+2. a way whose node run is a contiguous part of an existing run of the same id (either direction) is dropped; an existing run that is part of the new one is retired;
+3. a line that meets an existing run of the same id at an end point is joined with it into one run (the old runs are retired). This covers extracts that are cut at the box, for example the bundled fixture, whose ways are clipped at its border;
+4. area ways (buildings, parks, water) are only deduplicated, by subset, never joined;
+5. points of interest go through `dedupePois`, activity points through an exact-coordinate set.
+
+A retired way keeps its index (indices never move, so graph edges and route nodes stay valid) and is skipped by `liveWays()`. Merging all records in sorted order into a fresh `WorldData` (`compact`) gives the same set of live ways whatever the arrival order.
+
+Known limit: two different OSM nodes at exactly the same coordinates become one node. In the bundled extract this joins a handful of ways that stacked duplicate nodes left unconnected; the edge count of the demo graph stays within 1 % of the single-extract graph (tested).
+
+### Town per cell
+
+The town is laid out per cell on its window grid with every tile outside the cell's owned rectangle `reserved` (the existing mechanism that keeps houses off landmarks), so blocks are cut at the cell border, houses and landmarks lie wholly inside the cell, and the layout depends only on the cell's data. The cost is a visible cut of a building block at a cell border (a lot may be a few tiles smaller there). The bundled demo gets the same treatment, so its houses differ from the single-grid layout only along the cell lines; the golden frames use the single grid path (`townFor`) and are unchanged. Lookups go through `TownLookup` (`houseIndexAt`, `landmarkIndexAt`, `hasTree`...) so the renderer works with either layout; the world keeps small arrays per cell rectangle instead of two `Int32Array`s of frame size, and a frame-wide column-to-cell and row-to-cell table makes a lookup two array reads.
+
+### Walking graph
+
+`GraphAccumulator` holds the node map (data node index to graph node), the edge list and the dedupe set. `add(data, fromWay)` processes the ways from `fromWay` on and retries the edges that were skipped because an end lay outside the loaded cells. `new WalkGraph(data)` is `add(data, 0)` plus the CSR build, so there is one code path; the incremental path calls `add` for the new ways only and rebuilds the CSR arrays (linear, no geometry or island work for old ways). "Inside" is the union of the loaded cells' coverage (`OsmData.coverage`), not the bounding box, so a route never leaves the drawn part of the map. Node and edge ids already issued never change while cells are only added. Dropping a cell rebuilds the accumulator from the remaining records (ids change then), which is why a cell near the active route is never dropped.
+
+### Etiquette
+
+All of `osm-etiquette.md` holds; what is new:
+
+- Cells are fetched by the same `OverpassClient` instance, so the single in-flight flag and the 10 s gap are shared with area downloads.
+- Cache first, per cell; a batch whose cells are all cached sends nothing.
+- At most 4 cells per request, 12 cells per rolling minute, a back-off after any failure, and nothing is sent while a pan or zoom is still moving or while `navigator.onLine` is false.
+- A request is for cells in view only (nearest first), never a look-ahead ring.
+- The same query text, mirrors, timeouts and 429/504 mapping as before.
+
+### Memory budget
+
+| Item | Size |
+| --- | --- |
+| Frame arrays (layers, terrain, style, barrier, bridge), largest frame | 5 B × 3.1 M tiles = 15.6 MB |
+| Town lookups per cell (house and landmark index Int32, flags Uint8, over the cell's own tiles) | 9 B per tile, about 360 KB per cell |
+| Town overview canvas (1 px per tile) | 12 MB at the largest frame, created when first zoomed out, repainted per cell rectangle |
+| Far overview canvas (1 px per 2 × 2 tiles) | 3 MB at the largest frame |
+| Coverage mask (`TileGrid.covered`, 1 B per tile) | 3.1 MB |
+| Resident cell records (`MAX_RESIDENT_CELLS = 49`) | 0.3 to 1.5 MB of JS objects each |
+| Chunk canvases (`MAX_CHUNKS`, unchanged) | 96 × 1 MB |
+
+Eviction: LRU by last time the cell touched the view; the farthest from the view centre goes first; never a cell on the active route (one cell of margin) or in the view.
+
+### Failure modes
+
+| Failure | Behaviour |
+| --- | --- |
+| 429 / 504 / timeout / network error | cells stay "loading" (stipple), back-off 30 s doubling to 5 min, no retry loop, no banner during a quest |
+| Answer without `elements`, or unreadable | not cached, same back-off |
+| Answer covers a cell only partly (extract cut at its box) | the cell is loaded with its covered part and fetched again as a whole when in view |
+| IndexedDB unavailable or full | the cell is used in memory and not cached |
+| Offline | cached cells still load; nothing is requested |
+| Out of frame | no request; the "load this area" offer (not in a quest) re-anchors |
+| A live area wider than the frame (far north, where cells are narrow) | the cells outside the frame are not kept; the area's middle is complete |
+| Way cut at a border with no shared point and a whole-way answer not given | a gap in that street at the border (graph and drawing); stays until the neighbour is fetched whole |
+
+### Testing
+
+Cell maths (properties: cellOf/cellBBox round trip, partition, neighbours share edges, batch is a rectangle of wanted cells); stitching (split way, duplicate way, no duplicate nodes or edges, order independence); incremental graph equals the one-go graph by coordinates; client rate limits with fake timers (one in flight, 10 s gap, per-minute cap, back-off, per-cell cache and expiry); streamer (debounce, cancel stale, nearest first); tile world (seam, order independence, no overlap of structures); quest not disturbed; far-zoom frame cost on a 9 × 9 cell world (bench).
+
+### Results (task 70)
+
+- Merging the 20 cells of the bundled demo gives the same walking graph whatever the order or batch size (property P-G4 compares nodes, edges and lengths by coordinates); its edge count is within 1 % of the single-extract graph.
+- The demo cut into cells and painted into the frame keeps the road, building, park, water and path tile counts within 3 % of the single grid; the differences are the rounding of the cell borders and blocks cut at a cell border.
+- One cell costs about 6 to 10 ms to rasterize and lay out, and about 27 ms in total including the merge and the graph edges (Node, one machine). The graph and safety weights of a snapshot are built only when the main thread plans; with the worker they are built there from `data`.
+- Far zoom on a full 9 × 9 cell world (`farZoom.bench.test.ts`, 390 × 844 at 3×): one `drawImage` and two `fillRect` per frame at every zoom below `DETAIL_ZOOM`; first frame 22 ms with the far overview (zoom ≤ 1.5) against 110 to 150 ms with the town overview; later frames under 0.1 ms of JavaScript.
+- Golden frames: the scene "far zoom town map" at zoom 0.5 now uses the far overview (no roofs), so its second hash changed from `059187d3` to `f62d580d`. Confirmed by setting `FAR_ZOOM` below 0.5: the old hash returns. The other frames keep their hashes.
+
+### Behaviour changes (deliberate)
+
+- The app always runs a streamed world: the bundled demo is its first 20 cells. Its tiles are drawn on the frame grid (origin at a cell corner), so tile coordinates differ from the single-extract grid, and houses next to a cell border are cut by it.
+- Tiles without data inside the frame are not drawn as grass: the darker no-data ground shows through, as it did outside a single extract.
+- The "load this area" offer only appears when the view rests outside the frame; inside it, cells load by themselves.
+- A saved quest is resumed with the cached cells under its route, so a walk planned on streamed cells survives a reload.

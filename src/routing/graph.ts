@@ -1,8 +1,114 @@
-import { haversine, LocalProjection, type LatLon } from '../geo/geo.ts'
+import { haversine, LocalProjection, type BBox, type LatLon } from '../geo/geo.ts'
 import type { OsmData } from '../osm/types.ts'
 import { crossesIsland, findRoundabouts } from '../osm/roundabout.ts'
+import { makeInside } from '../world/coverage.ts'
 import { MinHeap } from './heap.ts'
 import { plazaChords } from './plazaChords.ts'
+
+
+/** A size of a growing graph (see `GraphAccumulator.mark`). */
+export type GraphMark = { nodes: number; edges: number; bbox: BBox }
+
+type PendingEdge = { a: number; b: number; way: number; checkIsland: boolean }
+
+/**
+ * The growing edge list of a walking graph. `add(data, fromWay)` takes the ways from `fromWay` on
+ * (all of them for a single extract) and appends their edges; an edge whose end lies outside the
+ * loaded area is remembered and added when a later `add` has the area covered (cells arriving). Node
+ * ids (first appearance) and edge ids never change once issued, so a route built on an earlier graph
+ * stays valid. Inside means inside `data.coverage` (the loaded cells), else inside `data.bbox`.
+ */
+export class GraphAccumulator {
+  /** Data node index to graph node id. */
+  readonly map = new Map<number, number>()
+  readonly pairs: [number, number][] = []
+  readonly pairWay: number[] = []
+  readonly pairLength: number[] = []
+  bbox: BBox = { south: 0, west: 0, north: 0, east: 0 }
+  /** Ways before this index have been taken. */
+  processed = 0
+  /** Coordinates per graph node id. */
+  readonly lats: number[] = []
+  readonly lons: number[] = []
+  private readonly seen = new Set<string>()
+  private pending: PendingEdge[] = []
+  private pendingRings: number[] = []
+
+  get nodeCount(): number {
+    return this.lats.length
+  }
+
+  /** How far the graph has grown (a `WalkGraph` built later with this limit is the graph of now). */
+  mark(): GraphMark {
+    return { nodes: this.lats.length, edges: this.pairs.length, bbox: this.bbox }
+  }
+
+  add(data: OsmData, fromWay = this.processed): this {
+    this.bbox = data.bbox
+    const inside0 = makeInside(data)
+    const inside = (n: number) => inside0(data.lat[n] ?? 0, data.lon[n] ?? 0)
+    // Roundabout islands are never walked across: an edge that runs through
+    // one (a path mapped over the island, a chord between two ring nodes) is dropped.
+    const islands = findRoundabouts(data)
+    const ringWays = new Set(islands.flatMap((r) => r.ways))
+    const { south, west, north, east } = data.bbox
+    const islandProjection = new LocalProjection({ lat: (south + north) / 2, lon: (east + west) / 2 })
+    const xyOf = (n: number) => islandProjection.toXY({ lat: data.lat[n] ?? 0, lon: data.lon[n] ?? 0 })
+    const addEdge = (a: number, b: number, wayIndex: number, checkIsland: boolean) => {
+      if (a === b) return
+      // Only route inside the loaded area: ways that leave it are clipped, so the walk
+      // always stays on the part of the map we actually draw.
+      if (!inside(a) || !inside(b)) {
+        this.pending.push({ a, b, way: wayIndex, checkIsland })
+        return
+      }
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`
+      if (this.seen.has(key)) return
+      if (checkIsland && islands.length && crossesIsland(xyOf(a), xyOf(b), islands)) return
+      this.seen.add(key)
+      for (const n of [a, b]) {
+        if (!this.map.has(n)) {
+          this.map.set(n, this.map.size)
+          this.lats.push(data.lat[n] ?? 0)
+          this.lons.push(data.lon[n] ?? 0)
+        }
+      }
+      const ga = this.map.get(a)!
+      const gb = this.map.get(b)!
+      this.pairs.push([ga, gb])
+      this.pairWay.push(wayIndex)
+      this.pairLength.push(haversine({ lat: this.lats[ga]!, lon: this.lons[ga]! }, { lat: this.lats[gb]!, lon: this.lons[gb]! }))
+    }
+    const retry = this.pending
+    this.pending = []
+    for (let wayIndex = fromWay; wayIndex < data.ways.length; wayIndex++) {
+      const way = data.ways[wayIndex]!
+      if (!way.walkable) continue
+      for (let i = 1; i < way.nodes.length; i++) addEdge(way.nodes[i - 1]!, way.nodes[i]!, wayIndex, !ringWays.has(wayIndex))
+    }
+    // Edges that were outside the area at an earlier `add`: the area may have grown over them.
+    for (const p of retry) addEdge(p.a, p.b, p.way, p.checkIsland)
+    // A pedestrian plaza (a closed footway/pedestrian area) is open ground: add walkable
+    // chords across it, after the ring edges so a ring edge always wins a duplicate.
+    const rings = this.pendingRings
+    this.pendingRings = []
+    const plaza = (wayIndex: number) => {
+      const way = data.ways[wayIndex]!
+      if (!way.walkable || !way.area || way.kind !== 'path' || way.nodes.length < 5 || way.nodes[0] !== way.nodes[way.nodes.length - 1]) return
+      const ring = way.nodes.slice(0, -1)
+      if (!ring.every(inside)) {
+        // Clipped by the loaded area: the outline is not the real shape (yet).
+        this.pendingRings.push(wayIndex)
+        return
+      }
+      for (const [i, j] of plazaChords(ring.map(xyOf))) addEdge(ring[i]!, ring[j]!, wayIndex, true)
+    }
+    for (const w of rings) plaza(w)
+    for (let wayIndex = fromWay; wayIndex < data.ways.length; wayIndex++) plaza(wayIndex)
+    this.processed = data.ways.length
+    return this
+  }
+}
 
 /**
  * Undirected pedestrian graph in compressed sparse row form. Nodes are the OSM
@@ -36,54 +142,21 @@ export class WalkGraph {
   private readonly heap = new MinHeap()
   private generation = 0
 
-  constructor(data: OsmData) {
-    const map = new Map<number, number>()
-    const pairs: [number, number][] = []
-    const pairWay: number[] = []
-    const seen = new Set<string>()
-    // Only route inside the loaded box: ways that leave it are clipped, so the
-    // walk always stays on the part of the map we actually draw.
-    const { south, west, north, east } = data.bbox
-    const inside = (n: number) => {
-      const la = data.lat[n] ?? 0
-      const lo = data.lon[n] ?? 0
-      return la >= south && la <= north && lo >= west && lo <= east
-    }
-    // Roundabout islands are never walked across: an edge that runs through
-    // one (a path mapped over the island, a chord between two ring nodes) is dropped.
-    const islands = findRoundabouts(data)
-    const ringWays = new Set(islands.flatMap((r) => r.ways))
-    const islandProjection = new LocalProjection({ lat: (south + north) / 2, lon: (east + west) / 2 })
-    const xyOf = (n: number) => islandProjection.toXY({ lat: data.lat[n] ?? 0, lon: data.lon[n] ?? 0 })
-    const addEdge = (a: number, b: number, wayIndex: number, checkIsland: boolean) => {
-      if (a === b || !inside(a) || !inside(b)) return
-      const key = a < b ? `${a}:${b}` : `${b}:${a}`
-      if (seen.has(key)) return
-      if (checkIsland && islands.length && crossesIsland(xyOf(a), xyOf(b), islands)) return
-      seen.add(key)
-      for (const n of [a, b]) if (!map.has(n)) map.set(n, map.size)
-      pairs.push([map.get(a)!, map.get(b)!])
-      pairWay.push(wayIndex)
-    }
-    data.ways.forEach((way, wayIndex) => {
-      if (!way.walkable) return
-      for (let i = 1; i < way.nodes.length; i++) addEdge(way.nodes[i - 1]!, way.nodes[i]!, wayIndex, !ringWays.has(wayIndex))
-    })
-    // A pedestrian plaza (a closed footway/pedestrian area) is open ground: add walkable
-    // chords across it, after the ring edges so a ring edge always wins a duplicate.
-    data.ways.forEach((way, wayIndex) => {
-      if (!way.walkable || !way.area || way.kind !== 'path' || way.nodes.length < 5 || way.nodes[0] !== way.nodes[way.nodes.length - 1]) return
-      const ring = way.nodes.slice(0, -1)
-      if (!ring.every(inside)) return // clipped by the loaded box: the outline is not the real shape
-      for (const [i, j] of plazaChords(ring.map(xyOf))) addEdge(ring[i]!, ring[j]!, wayIndex, true)
-    })
-    this.size = map.size
-    this.lat = new Float64Array(this.size)
-    this.lon = new Float64Array(this.size)
-    for (const [osm, id] of map) {
-      this.lat[id] = data.lat[osm] ?? 0
-      this.lon[id] = data.lon[osm] ?? 0
-    }
+  /**
+   * Build from one extract, or from an accumulator that has been fed cell by cell
+   * (`new WalkGraph(data)` is exactly `GraphAccumulator.add(data)` plus the build below).
+   */
+  constructor(source: OsmData | GraphAccumulator, upTo?: GraphMark) {
+    const acc = source instanceof GraphAccumulator ? source : new GraphAccumulator().add(source)
+    // The accumulator only appends, so its first `upTo` nodes and edges are exactly the graph at that time.
+    const nodeCount = upTo?.nodes ?? acc.nodeCount
+    const edgeCount = upTo?.edges ?? acc.pairs.length
+    const pairs = edgeCount === acc.pairs.length ? acc.pairs : acc.pairs.slice(0, edgeCount)
+    const pairLength = acc.pairLength
+    const data = { bbox: upTo?.bbox ?? acc.bbox }
+    this.size = nodeCount
+    this.lat = Float64Array.from(acc.lats.slice(0, nodeCount))
+    this.lon = Float64Array.from(acc.lons.slice(0, nodeCount))
     const degree = new Uint32Array(this.size + 1)
     for (const [a, b] of pairs) {
       degree[a]!++
@@ -96,9 +169,9 @@ export class WalkGraph {
     this.lengths = new Float64Array(pairs.length * 2)
     this.edgeIds = new Uint32Array(pairs.length * 2)
     this.edgeCount = pairs.length
-    this.edgeWay = Int32Array.from(pairWay)
+    this.edgeWay = Int32Array.from(acc.pairWay.slice(0, edgeCount))
     pairs.forEach(([a, b], e) => {
-      const len = haversine(this.point(a), this.point(b))
+      const len = pairLength[e]!
       const ia = fill[a]!++
       this.targets[ia] = b
       this.lengths[ia] = len

@@ -1,0 +1,156 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cellBBox } from '../world/cells.ts'
+import { MemoryCache, CACHE_TTL_MS, type CacheEntry } from './cache.ts'
+import { encodeOsm } from './codec.ts'
+import { normalizeOverpass, type OverpassResponse } from './normalize.ts'
+import { cellCacheKey, MAX_CELL_ENTRIES, MIN_REQUEST_GAP_MS, OverpassClient, OverpassError, type Downloader } from './overpass.ts'
+import type { BBox } from '../geo/geo.ts'
+
+const A = { i: 3949, j: -40 }
+const B = { i: 3949, j: -39 }
+const g = (lat: number, lon: number) => ({ lat, lon })
+
+/** An answer with one street that crosses the border between A and B (whole, like `out geom`). */
+function answer(): OverpassResponse {
+  return {
+    osm3s: { timestamp_osm_base: '2026-11-22T00:00:00Z' },
+    elements: [
+      { type: 'way', id: 1, tags: { highway: 'residential' }, nodes: [1, 2, 3], geometry: [g(39.495, -0.395), g(39.495, -0.39), g(39.495, -0.385)] },
+      { type: 'way', id: 2, tags: { highway: 'footway' }, nodes: [4, 5], geometry: [g(39.492, -0.398), g(39.493, -0.397)] },
+    ],
+  }
+}
+
+function fakeDownloader() {
+  const calls: BBox[] = []
+  const download: Downloader = async (bbox) => {
+    calls.push(bbox)
+    return encodeOsm(normalizeOverpass(answer(), bbox))
+  }
+  return { calls, download }
+}
+
+beforeEach(() => {
+  localStorage.clear()
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-11-25T12:00:00Z'))
+})
+afterEach(() => vi.useRealTimers())
+
+describe('OverpassClient.loadCells (19.3, 19.6, 19.7)', () => {
+  it('fetches missing cells in one request for their box and cuts the answer per cell', async () => {
+    const { calls, download } = fakeDownloader()
+    const client = new OverpassClient({ cache: new MemoryCache(), download })
+    const res = await client.loadCells([A, B])
+    expect(calls).toEqual([{ south: 39.49, west: -0.4, north: 39.5, east: -0.38 }])
+    expect(res.downloaded).toEqual([A, B])
+    expect(res.records.map((r) => r.data.ways.map((w) => w.id))).toEqual([[1, 2], [1]])
+    expect(res.records[0]!.coverage).toEqual(cellBBox(A))
+  })
+
+  it('serves cached cells without a request, and asks only for the rest', async () => {
+    const { calls, download } = fakeDownloader()
+    const cache = new MemoryCache()
+    const client = new OverpassClient({ cache, download })
+    await client.loadCells([A])
+    vi.advanceTimersByTime(MIN_REQUEST_GAP_MS)
+    const res = await client.loadCells([A, B])
+    expect(res.cached).toEqual([A])
+    expect(res.downloaded).toEqual([B])
+    expect(calls).toHaveLength(2)
+    expect(calls[1]).toEqual(cellBBox(B))
+    vi.advanceTimersByTime(MIN_REQUEST_GAP_MS)
+    const again = await client.loadCells([A, B])
+    expect(again.downloaded).toEqual([])
+    expect(calls).toHaveLength(2)
+    expect(await cache.get(cellCacheKey(A))).toBeDefined()
+  })
+
+  it('refuses a second request while one runs, and one inside the 10 s gap', async () => {
+    let release: () => void = () => {}
+    const download: Downloader = (bbox) =>
+      new Promise((resolve) => {
+        release = () => resolve(encodeOsm(normalizeOverpass(answer(), bbox)))
+      })
+    const client = new OverpassClient({ cache: new MemoryCache(), download })
+    const first = client.loadCells([A])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(client.busy).toBe(true)
+    await expect(client.loadCells([B])).rejects.toMatchObject({ code: 'busy' })
+    release()
+    await first
+    await expect(client.loadCells([B])).rejects.toMatchObject({ code: 'rateLimited' })
+    expect(client.waitMs()).toBe(MIN_REQUEST_GAP_MS)
+    vi.advanceTimersByTime(MIN_REQUEST_GAP_MS - 1)
+    await expect(client.loadCells([B])).rejects.toBeInstanceOf(OverpassError)
+    vi.advanceTimersByTime(1)
+    expect(client.waitMs()).toBe(0)
+    const p = client.loadCells([B])
+    await vi.advanceTimersByTimeAsync(0)
+    release()
+    await expect(p).resolves.toMatchObject({ downloaded: [B] })
+  })
+
+  it('passes 429 through as rateLimited and caches nothing', async () => {
+    const cache = new MemoryCache()
+    const client = new OverpassClient({ cache, fetch: async () => new Response('', { status: 429 }), endpoints: ['https://a.test/'] })
+    await expect(client.loadCells([A])).rejects.toMatchObject({ code: 'rateLimited' })
+    expect(await cache.keys()).toEqual([])
+  })
+
+  it('does not cache an answer it cannot read', async () => {
+    const cache = new MemoryCache()
+    const client = new OverpassClient({ cache, download: async () => ({ v: 99 }) as never })
+    await expect(client.loadCells([A])).rejects.toMatchObject({ code: 'badResponse' })
+    expect(await cache.keys()).toEqual([])
+  })
+
+  it('treats an expired or damaged cell as a miss and deletes the damaged one', async () => {
+    const { calls, download } = fakeDownloader()
+    const cache = new MemoryCache()
+    const client = new OverpassClient({ cache, download })
+    await client.loadCells([A])
+    vi.advanceTimersByTime(CACHE_TTL_MS)
+    expect(await client.cachedCell(A)).toBeUndefined()
+    await client.loadCells([A])
+    expect(calls).toHaveLength(2)
+    await cache.set(cellCacheKey(B), { savedAt: Date.now(), data: { v: 4, broken: true } } as unknown as CacheEntry)
+    expect(await client.cachedCell(B)).toBeUndefined()
+    expect(await cache.get(cellCacheKey(B))).toBeUndefined()
+    // An entry for another box under this key is damage too.
+    await cache.set(cellCacheKey(B), (await cache.get(cellCacheKey(A)))!)
+    expect(await client.cachedCell(B)).toBeUndefined()
+  })
+
+  it('rejects invalid cells before any cache or network access', async () => {
+    const { calls, download } = fakeDownloader()
+    const client = new OverpassClient({ cache: new MemoryCache(), download })
+    await expect(client.loadCells([{ i: 0.5, j: 0 }])).rejects.toMatchObject({ code: 'badArea' })
+    await expect(client.loadCells([])).rejects.toMatchObject({ code: 'badArea' })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('keeps at most MAX_CELL_ENTRIES cells, dropping the oldest saved', async () => {
+    const cache = new MemoryCache()
+    const old = Date.now() - 1000
+    const index = Array.from({ length: MAX_CELL_ENTRIES }, (_, k) => ({ key: cellCacheKey({ i: 100, j: k }), savedAt: old + k }))
+    for (const e of index) await cache.set(e.key, { savedAt: e.savedAt, data: {} as never })
+    localStorage.setItem('stepquest.cellIndex', JSON.stringify(index))
+    const { download } = fakeDownloader()
+    await new OverpassClient({ cache, download }).loadCells([A])
+    const kept = JSON.parse(localStorage.getItem('stepquest.cellIndex')!) as { key: string }[]
+    expect(kept).toHaveLength(MAX_CELL_ENTRIES)
+    expect(kept.at(-1)!.key).toBe(cellCacheKey(A))
+    expect(await cache.get(cellCacheKey({ i: 100, j: 0 }))).toBeUndefined()
+    expect(await cache.get(cellCacheKey({ i: 100, j: 1 }))).toBeDefined()
+  })
+
+  it('still returns the cells when the cache cannot write', async () => {
+    const cache = new MemoryCache()
+    cache.set = () => Promise.reject(new Error('quota'))
+    const { download } = fakeDownloader()
+    const res = await new OverpassClient({ cache, download }).loadCells([A])
+    expect(res.records).toHaveLength(1)
+    expect(localStorage.getItem('stepquest.cellIndex')).toBeNull()
+  })
+})

@@ -102,6 +102,18 @@ export class LruCache<V, K = string> {
     }
   }
 
+  /** Remove one entry (its value goes to `onEvict`). */
+  delete(key: K): void {
+    const v = this.map.get(key)
+    if (v === undefined) return
+    this.map.delete(key)
+    this.onEvict?.(key, v)
+  }
+
+  keys(): IterableIterator<K> {
+    return this.map.keys()
+  }
+
   clear(): void {
     const all = [...this.map]
     this.map.clear()

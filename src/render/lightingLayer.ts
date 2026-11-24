@@ -25,8 +25,8 @@ export class LightingLayer {
   private visibility: (() => void) | undefined
   private readonly glows = new WeakMap<readonly number[], HTMLCanvasElement>()
   private stamp = 0
-  private houseSeen: Int32Array
-  private landmarkSeen: Int32Array
+  /** Frame stamp per structure, so one that spans several chunks is lit once. */
+  private readonly seen = new WeakMap<object, number>()
 
   private readonly grid: TileGrid
   private readonly chunks: ChunkLayer
@@ -36,8 +36,6 @@ export class LightingLayer {
     this.grid = grid
     this.chunks = chunks
     this.onTick = onTick
-    this.houseSeen = new Int32Array(chunks.town.houses.length)
-    this.landmarkSeen = new Int32Array(chunks.town.landmarks.length)
   }
 
   /** Preview a time of day for the lighting only (minutes after local midnight), or undefined for real time. */
@@ -112,7 +110,6 @@ export class LightingLayer {
   drawNightLights(ctx: CanvasRenderingContext2D, view: View, plan: ChunkPlan, painted: ReadonlySet<number>, light: Lighting): void {
     const { originX, originY, scale } = view
     const px = scale / TILE_PX // device px per art pixel
-    const town = this.chunks.town
     const isPainted = (x: number, y: number) => painted.has(chunkKey(Math.floor(x / CHUNK), Math.floor(y / CHUNK)))
     if (light.windows > 0.02) {
       const stamp = ++this.stamp
@@ -122,20 +119,18 @@ export class LightingLayer {
         if (!painted.has(chunkKey(c.cx, c.cy))) continue
         const entry = this.chunks.structuresIn(c.cx, c.cy)
         if (!entry) continue
-        for (const k of entry.houses) {
-          if (this.houseSeen[k] === stamp) continue
-          this.houseSeen[k] = stamp
-          const h = town.houses[k]!
+        for (const h of entry.houses) {
+          if (this.seen.get(h) === stamp) continue
+          this.seen.set(h, stamp)
           const bx = originX + h.x * scale
           const by = originY + h.y * scale
           for (const r of litHouseWindows(h)) {
             if (isPainted(h.x + r.x / TILE_PX, h.y + r.y / TILE_PX)) ctx.fillRect(Math.round(bx + r.x * px), Math.round(by + r.y * px), Math.max(1, Math.round(r.w * px)), Math.max(1, Math.round(r.h * px)))
           }
         }
-        for (const k of entry.landmarks) {
-          if (this.landmarkSeen[k] === stamp) continue
-          this.landmarkSeen[k] = stamp
-          const l = town.landmarks[k]!
+        for (const l of entry.landmarks) {
+          if (this.seen.get(l) === stamp) continue
+          this.seen.set(l, stamp)
           const bx = originX + l.x * scale
           const by = originY + l.y * scale
           for (const r of litLandmarkWindows(l)) {

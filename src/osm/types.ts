@@ -70,6 +70,11 @@ export type OsmData = {
   industrial?: number[][]
   /** Shops, cafés and other places that keep a street lively, as [lat, lon, lat, lon, …]. */
   activity?: number[]
+  /**
+   * The parts of `bbox` that are actually loaded (one box per cell of a streamed world). Absent for a
+   * single extract, where the whole `bbox` is loaded. The walking graph only uses points inside it.
+   */
+  coverage?: BBox[]
   source: 'fixture' | 'overpass'
   /** OSM base timestamp (ISO) reported by Overpass. */
   timestamp: string

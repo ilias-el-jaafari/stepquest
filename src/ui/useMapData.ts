@@ -5,20 +5,27 @@ import { defaultCache } from '../osm/cache.ts'
 import { OverpassClient, OverpassError, type OverpassErrorCode } from '../osm/overpass.ts'
 import type { OsmData } from '../osm/types.ts'
 import { WalkGraph } from '../routing/graph.ts'
-import { safetyContext, type SafetyContext } from '../routing/safety.ts'
+import { safetyContext } from '../routing/safety.ts'
 import { buildTileGrid } from '../tiles/rasterize.ts'
-import type { TileGrid } from '../tiles/grid.ts'
+import { LiveWorld, type World } from '../world/liveWorld.ts'
 
-export type World = { data: OsmData; grid: TileGrid; graph: WalkGraph; safety: SafetyContext }
+export type { World }
 
+/** A world of one extract, not streamed (tests and scripts). */
 export function buildWorld(data: OsmData): World {
   const graph = new WalkGraph(data)
   return { data, grid: buildTileGrid(data), graph, safety: safetyContext(graph, data) }
 }
 
+/** A streamed world seeded with an extract: it grows by cells as the map moves (requirement 19). */
+export function streamedWorld(data: OsmData): World {
+  return LiveWorld.fromData(data).world()
+}
+
+/** The bundled Benicalap demo, as the first cells of a streamed world (works offline). */
 export async function loadDemoWorld(): Promise<World> {
   const fixture = (await import('../data/benicalap.osm.json')).default as unknown as CompactOsm
-  return buildWorld(decodeOsm(fixture))
+  return streamedWorld(decodeOsm(fixture))
 }
 
 export type LiveStatus =
@@ -41,7 +48,7 @@ export function useLiveLoader() {
       try {
         const { data, fromCache } = await client.loadArea(bbox, (bytes) => setStatus({ state: 'loading', bytes }))
         setStatus({ state: 'done', fromCache })
-        return buildWorld(data)
+        return streamedWorld(data)
       } catch (error) {
         setStatus({ state: 'error', code: error instanceof OverpassError ? error.code : 'network' })
         return undefined
@@ -52,5 +59,5 @@ export function useLiveLoader() {
     [client],
   )
 
-  return { status, load }
+  return { status, load, client }
 }

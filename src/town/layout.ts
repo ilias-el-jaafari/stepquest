@@ -22,10 +22,14 @@ import { LOT, ROOF_COLOURS, WALL_COLOURS, type House, type HouseKind, type Landm
 export { analyseBlocks, components, findParkGates, hash2, houseKind, largestRect, LANDMARK_RADIUS, LANDMARK_SIZES, landmarkSites, LOT, placeHouses, placeLandmarks, rng, ROOF_COLOURS, subdivide, WALL_COLOURS }
 export type { House, HouseKind, Landmark, Rect, StructureKind, TownLayout }
 
-export function layoutTown(grid: TileGrid): TownLayout {
+/**
+ * `keepOut` marks tiles nothing may be built on (a streamed cell keeps out of the apron around it,
+ * so its structures stay on its own tiles); it is copied, not changed.
+ */
+export function layoutTown(grid: TileGrid, keepOut?: Uint8Array): TownLayout {
   const n = grid.cols * grid.rows
   // Tiles taken by landmarks and gates; houses are only placed on the rest.
-  const reserved = new Uint8Array(n)
+  const reserved = keepOut ? Uint8Array.from(keepOut) : new Uint8Array(n)
   const special = placeLandmarks(grid, reserved)
   const gates = findParkGates(grid, reserved)
   const landmarks = [...special, ...gates]

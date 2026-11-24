@@ -20,6 +20,12 @@ const lampsByGrid = new WeakMap<TileGrid, Lamp[]>()
 const cache = new WeakMap<TileGrid, Map<number, Map<number, Lamp[]>>>()
 const NONE: Lamp[] = []
 
+/** Forget the lamps of a grid whose tiles changed (a streamed cell arrived or left). */
+export function forgetLamps(grid: TileGrid): void {
+  lampsByGrid.delete(grid)
+  cache.delete(grid)
+}
+
 /** Lamps of one chunk (chunk of `size` tiles). Allocation-free after the first call for a grid and size. */
 export function lampsInChunk(grid: TileGrid, cx: number, cy: number, size: number): Lamp[] {
   let sizes = cache.get(grid)

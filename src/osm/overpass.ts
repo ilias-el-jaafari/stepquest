@@ -1,5 +1,7 @@
 import { bboxAreaSphereKm2, bboxAround, haversine, isValidBBox, type BBox, type LatLon } from '../geo/geo.ts'
-import { CODEC_VERSION, CorruptDataError, decodeOsm, type CompactOsm } from './codec.ts'
+import { cellBBox, cellKey, cellsBBox, isValidCell, type CellId } from '../world/cells.ts'
+import { sliceToCells, type CellRecord } from '../world/slice.ts'
+import { CODEC_VERSION, CorruptDataError, decodeOsm, encodeOsm, type CompactOsm } from './codec.ts'
 import { isFresh, type AreaCache } from './cache.ts'
 import { DownloadError, downloadArea, type FetchLike } from './download.ts'
 import type { WorkerMessage, WorkerRequest } from './download.worker.ts'
@@ -74,6 +76,36 @@ export function areaForWalk(start: LatLon, targetM: number, end?: LatLon): BBox 
 }
 
 const MAX_WALK_RADIUS_M = 2850
+
+/** Cache key of one data cell (requirement 19.6). */
+export function cellCacheKey(c: CellId): string {
+  return `v${CODEC_VERSION}:cell:${cellKey(c)}`
+}
+
+/** At most this many cells are kept in IndexedDB; the oldest saved go first (local deletes only). */
+export const MAX_CELL_ENTRIES = 300
+const CELL_INDEX_KEY = 'stepquest.cellIndex'
+type CellIndexEntry = { key: string; savedAt: number }
+
+function readCellIndex(): CellIndexEntry[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CELL_INDEX_KEY) ?? '[]') as unknown
+    return Array.isArray(raw) ? raw.filter((e): e is CellIndexEntry => !!e && typeof e === 'object' && typeof (e as CellIndexEntry).key === 'string' && typeof (e as CellIndexEntry).savedAt === 'number') : []
+  } catch {
+    return []
+  }
+}
+
+function writeCellIndex(entries: CellIndexEntry[]): void {
+  try {
+    localStorage.setItem(CELL_INDEX_KEY, JSON.stringify(entries))
+  } catch {
+    // Storage full or blocked: the cells are still cached, only pruning waits.
+  }
+}
+
+/** What `loadCells` gives back: one record per cell asked for, and where each came from. */
+export type CellsResult = { records: CellRecord[]; cached: CellId[]; downloaded: CellId[] }
 
 export type Downloader = (bbox: BBox, onProgress?: (bytes: number) => void) => Promise<CompactOsm>
 
@@ -221,29 +253,114 @@ export class OverpassClient {
     const bbox = snapBBox(request)
     if (!isValidBBox(bbox)) throw new OverpassError('badArea', 'Invalid area')
     if (bboxAreaKm2(bbox) > MAX_AREA_KM2) throw new OverpassError('tooLarge', 'Area too large')
-    if (this.inFlight) throw new OverpassError('busy', 'A map download is already running')
-    const wait = this.lastRequestAt + MIN_REQUEST_GAP_MS - this.now()
-    if (wait > 0) throw new OverpassError('rateLimited', `Wait ${Math.ceil(wait / 1000)} s`)
+    const { compact, data } = await this.fetchOnce(bbox, onProgress)
+    const key = cacheKey(bbox)
+    const savedAt = this.now()
+    const saved = await this.cache.set(key, { savedAt, data: compact }).then(
+      () => true,
+      () => false,
+    )
+    if (saved) writeIndex(await this.prune([...readIndex().filter((e) => e.key !== key), { key, bbox: [bbox.south, bbox.west, bbox.north, bbox.east], savedAt }]))
+    return { data, fromCache: false }
+  }
 
+  /** Whether a download is running (the streamer does not even ask then). */
+  get busy(): boolean {
+    return this.inFlight
+  }
+
+  /** Time (ms) until the spacing rule allows the next download; 0 when one may start now. */
+  waitMs(): number {
+    return Math.max(0, this.lastRequestAt + MIN_REQUEST_GAP_MS - this.now())
+  }
+
+  /**
+   * The one place a request is sent: refuses while another runs (`busy`) or before the gap is over
+   * (`rateLimited`), then downloads and decodes. An answer that cannot be decoded is `badResponse`
+   * and is never cached by the callers.
+   */
+  private async fetchOnce(bbox: BBox, onProgress?: (bytes: number) => void): Promise<{ compact: CompactOsm; data: OsmData }> {
+    if (this.inFlight) throw new OverpassError('busy', 'A map download is already running')
+    const wait = this.waitMs()
+    if (wait > 0) throw new OverpassError('rateLimited', `Wait ${Math.ceil(wait / 1000)} s`)
     this.inFlight = true
     this.lastRequestAt = this.now()
     try {
       const compact = await this.download(bbox, onProgress)
       // Decode first: an answer we cannot read is never cached.
-      const data = decodeOsm(compact)
-      const key = cacheKey(bbox)
-      const savedAt = this.now()
-      const saved = await this.cache.set(key, { savedAt, data: compact }).then(
-        () => true,
-        () => false,
-      )
-      if (saved) writeIndex(await this.prune([...readIndex().filter((e) => e.key !== key), { key, bbox: [bbox.south, bbox.west, bbox.north, bbox.east], savedAt }]))
-      return { data, fromCache: false }
+      return { compact, data: decodeOsm(compact) }
     } catch (error) {
+      if (error instanceof OverpassError) throw error
       if (error instanceof DownloadError) throw new OverpassError(error.code, error.message)
       throw new OverpassError(error instanceof CorruptDataError ? 'badResponse' : 'network', error instanceof Error ? error.message : String(error))
     } finally {
       this.inFlight = false
     }
+  }
+
+  /** A cached cell, or undefined (missing, expired, damaged: a damaged entry is deleted). */
+  async cachedCell(cell: CellId): Promise<CellRecord | undefined> {
+    const key = cellCacheKey(cell)
+    const entry = await this.cache.get(key).catch(() => undefined)
+    if (!entry || !isFresh(entry.savedAt, this.now())) return undefined
+    try {
+      const data = decodeOsm(entry.data)
+      const want = cellBBox(cell)
+      // An entry must be for this cell (a foreign or shifted box is damage).
+      if (Math.abs(data.bbox.south - want.south) > 1e-6 || Math.abs(data.bbox.west - want.west) > 1e-6 || Math.abs(data.bbox.north - want.north) > 1e-6 || Math.abs(data.bbox.east - want.east) > 1e-6) throw new CorruptDataError('cell box')
+      return { cell, coverage: want, data: { ...data, bbox: want }, savedAt: entry.savedAt }
+    } catch {
+      await this.cache.delete?.(key).catch(() => undefined)
+      return undefined
+    }
+  }
+
+  /**
+   * Load data cells (requirement 19): every cell is looked up in the cache first; the cells still
+   * missing are fetched in ONE request for the box around them (the caller passes a small rectangle,
+   * at most `MAX_BATCH_CELLS`), then the answer is cut into the cells and each is cached under its
+   * own key. Same refusals as `loadArea` (`badArea`, `tooLarge`, `busy`, `rateLimited`, ...).
+   */
+  async loadCells(cells: readonly CellId[], onProgress?: (bytes: number) => void): Promise<CellsResult> {
+    if (!cells.length || !cells.every(isValidCell)) throw new OverpassError('badArea', 'Invalid area')
+    const records: CellRecord[] = []
+    const cached: CellId[] = []
+    const missing: CellId[] = []
+    for (const c of cells) {
+      const hit = await this.cachedCell(c)
+      if (hit) {
+        records.push(hit)
+        cached.push(c)
+      } else missing.push(c)
+    }
+    if (!missing.length) return { records, cached, downloaded: [] }
+    const bbox = cellsBBox(missing)
+    if (!isValidBBox(bbox)) throw new OverpassError('badArea', 'Invalid area')
+    if (bboxAreaKm2(bbox) > MAX_AREA_KM2) throw new OverpassError('tooLarge', 'Area too large')
+    const { data } = await this.fetchOnce(bbox, onProgress)
+    const savedAt = this.now()
+    const fresh = sliceToCells(data, missing, bbox, savedAt)
+    const index = readCellIndex()
+    const written: CellIndexEntry[] = []
+    for (const rec of fresh) {
+      const key = cellCacheKey(rec.cell)
+      const ok = await this.cache.set(key, { savedAt, data: encodeOsm(rec.data) }).then(
+        () => true,
+        () => false,
+      )
+      if (ok) written.push({ key, savedAt })
+    }
+    if (written.length) await this.pruneCells([...index.filter((e) => !written.some((w) => w.key === e.key)), ...written])
+    return { records: [...records, ...fresh], cached, downloaded: fresh.map((r) => r.cell) }
+  }
+
+  /** Keep the newest `MAX_CELL_ENTRIES` fresh cells in the index and delete the data of the rest (no request). */
+  private async pruneCells(index: CellIndexEntry[]): Promise<void> {
+    const live = index.filter((e) => isFresh(e.savedAt, this.now()) && e.key.startsWith(`v${CODEC_VERSION}:`))
+    live.sort((a, b) => a.savedAt - b.savedAt)
+    const kept = live.slice(-MAX_CELL_ENTRIES)
+    const keptKeys = new Set(kept.map((e) => e.key))
+    if (this.cache.delete) for (const e of index) if (!keptKeys.has(e.key)) await this.cache.delete(e.key).catch(() => undefined)
+    writeCellIndex(kept)
   }
 }

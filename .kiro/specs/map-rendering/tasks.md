@@ -108,3 +108,28 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 
 - [x] 72.1 One fixed bottom-left credit with link on the planner and quest maps; stray placement rules removed; HUD and banners clear of it; `attribution.test.ts`, `MapView.test.tsx`
   - _Requirements: 18.1 to 18.4_
+
+## Streaming multi-area world (requirement 19)
+
+- [x] 70.1 Spec: requirement 19, design section (architecture, data flow, cell size, etiquette, memory budget, failure modes), tasks
+  - _Requirements: 19.1 to 19.18_
+- [x] 70.2 `world/cells.ts`: cell ids, bounds, cells in a box, nearest-first order, batch planning; example and property tests
+  - _Requirements: 19.1, 19.2_
+- [x] 70.3 `world/slice.ts`, `world/worldData.ts`, `world/coverage.ts`: per-cell records, append-only merge with stitching and dedupe; tests (split way, duplicates, order independence)
+  - _Requirements: 19.7, 19.8_
+- [x] 70.4 `routing/graph.ts`: `GraphAccumulator`; incremental graph equals the one-go graph; existing routing tests unchanged
+  - _Requirements: 19.11_
+- [x] 70.5 `osm/overpass.ts`: `loadCells` (per-cell cache, one request, slicing, cell index and pruning); fake-timer tests for in flight, spacing, expiry, damaged entries
+  - _Requirements: 19.3, 19.6, 19.7_
+- [x] 70.6 `tiles/grid.ts` windows and blit, `town/layout.ts` owned-rect layout, `world/tileWorld.ts`: per-cell raster, town units, rails, events; seam and order tests
+  - _Requirements: 19.9, 19.10, 19.14_
+- [x] 70.7 `world/liveWorld.ts`: records, snapshots, LRU eviction with route protection; quest-not-disturbed invariant tests
+  - _Requirements: 19.12, 19.15, 19.16, 19.17_
+- [x] 70.8 `world/streamer.ts`: view to batches, debounce, cancel stale, per-minute cap, back-off, online check; fake-timer tests
+  - _Requirements: 19.2 to 19.5_
+- [x] 70.9 Renderer: `TownLookup`, chunk invalidation, loading stipple, incremental overview, far overview, view notifications; golden frames unchanged; far-zoom bench
+  - _Requirements: 19.13, 19.14_
+- [x] 70.10 App wiring (`useMapData`, `useArea`, `App`, `QuestScreen`, `MapView`): the world is a `LiveWorld`, streaming runs in the planner and in a quest, off under Vitest
+  - _Requirements: 19.12, 19.16, 19.18_
+- [x] 70.11 Docs: `osm-etiquette.md`, specs README, other specs' cross references; final `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
+  - _Requirements: 19.1 to 19.18_
