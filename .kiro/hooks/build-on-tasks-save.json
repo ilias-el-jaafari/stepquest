@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Typecheck and build when tasks.md is saved",
+      "description": "Run the type check and the production build whenever a spec's tasks.md is saved, so a task is never ticked with a broken build.",
+      "trigger": "PostFileSave",
+      "matcher": "\\.kiro/specs/.*/tasks\\.md$",
+      "timeout": 300,
+      "action": {
+        "type": "command",
+        "command": "npx tsc -b && npm run build"
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Spec sync",
+      "description": "Run on demand: bring requirements.md, design.md and tasks.md up to date with code changes the spec does not describe yet.",
+      "trigger": "Manual",
+      "action": {
+        "type": "agent",
+        "prompt": "Sync the spec in .kiro/specs/step-quest with the code. Look at `git status` and `git diff` (and recent commits if the tree is clean), list behaviour or structure that changed but is not in requirements.md, design.md or tasks.md, and update those three files: add or adjust acceptance criteria in requirements.md, update the design and module notes in design.md, and add or tick tasks in tasks.md with `_Requirements:_` references. Only tick a task when its code exists and `npm test`, `npx tsc -b`, `npm run lint` and `npm run build` pass. Do not change source code. Finish with a short list of what you changed in the spec."
+      }
+    }
+  ]
+}
