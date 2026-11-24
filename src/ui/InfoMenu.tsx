@@ -3,6 +3,7 @@ import type { LatLon } from '../geo/geo.ts'
 import { sunTimes } from '../geo/sun.ts'
 import { useI18n } from '../i18n/index.ts'
 import type { MessageKey } from '../i18n/en.ts'
+import { PixelIcon } from './PixelIcons.tsx'
 
 const FAQ: readonly (readonly [MessageKey, MessageKey])[] = [
   ['info.q.route', 'info.a.route'],
@@ -68,7 +69,7 @@ export function InfoMenu({ place, now }: Props) {
     <div className="sound-menu info-menu down" ref={root}>
       <button
         type="button"
-        className="pix-btn small-text sound-toggle"
+        className="pix-btn sound-toggle"
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={t('info.title')}
@@ -82,8 +83,8 @@ export function InfoMenu({ place, now }: Props) {
         <div className="sound-panel info-panel" id={panelId} role="dialog" aria-label={t('info.title')} data-testid="info-panel">
           <div className="info-head">
             <h2 className="box-title">{t('info.title')}</h2>
-            <button type="button" className="chip-x" aria-label={t('info.close')} onClick={() => setOpen(false)}>
-              ✕
+            <button type="button" className="pix-btn round" aria-label={t('info.close')} title={t('info.close')} onClick={() => setOpen(false)}>
+              <PixelIcon name="close" />
             </button>
           </div>
           <dl className="faq">

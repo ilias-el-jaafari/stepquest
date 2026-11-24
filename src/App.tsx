@@ -585,7 +585,7 @@ export default function App() {
               <FieldNote id="steps-note" note={stepsNote} outOfRange={stepsOutOfRange} invalid={stepsTyped.kind === 'invalid'} prefix="target" range={stepRange} format={(v) => v.toLocaleString(locale)} />
               <div className="presets">
                 {STEP_PRESETS.map((s) => (
-                  <button key={s} type="button" className={`chip ${settings.targetSteps === s ? 'on' : ''}`} onClick={() => setSteps(s)}>
+                  <button key={s} type="button" className={`pix-btn preset ${settings.targetSteps === s ? 'on' : ''}`} onClick={() => setSteps(s)}>
                     {s / 1000}k
                   </button>
                 ))}

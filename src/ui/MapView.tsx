@@ -208,33 +208,33 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
     <div className="map">
       <canvas ref={canvasRef} className="map-canvas" data-testid="map-canvas" />
       <div className="map-buttons">
-        <button type="button" className="pix-btn small" onClick={() => zoom(1)} aria-label={t('map.zoomIn')}>
-          +
+        <button type="button" className="pix-btn round" onClick={() => zoom(1)} aria-label={t('map.zoomIn')} title={t('map.zoomIn')}>
+          <PixelIcon name="plus" />
         </button>
-        <button type="button" className="pix-btn small" onClick={() => zoom(-1)} aria-label={t('map.zoomOut')}>
-          −
+        <button type="button" className="pix-btn round" onClick={() => zoom(-1)} aria-label={t('map.zoomOut')} title={t('map.zoomOut')}>
+          <PixelIcon name="minus" />
         </button>
         {!inQuest && (
           <>
-            <button type="button" className="pix-btn small" onClick={fit} aria-label={t('map.fit')} title={t('map.fit')}>
-              ◎
+            <button type="button" className="pix-btn round" onClick={fit} aria-label={t('map.fit')} title={t('map.fit')}>
+              <PixelIcon name="fit" />
             </button>
-            <button type="button" className="pix-btn small" onClick={goHome} aria-label={t('map.home')} title={t('map.home')}>
-              ⌂
+            <button type="button" className="pix-btn round" onClick={goHome} aria-label={t('map.home')} title={t('map.home')}>
+              <PixelIcon name="home" />
             </button>
           </>
         )}
         {(onLocate || inQuest) && (
           <button
             type="button"
-            className="pix-btn small"
+            className="pix-btn round"
             onClick={locate}
             disabled={locating}
             aria-label={inQuest ? t('map.me') : t('loc.use')}
             title={inQuest ? t('map.me') : t('loc.use')}
             data-testid="map-locate"
           >
-            <PixelIcon name="locate" size={18} />
+            <PixelIcon name="locate" />
           </button>
         )}
       </div>

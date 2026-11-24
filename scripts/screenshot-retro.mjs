@@ -1,7 +1,9 @@
 // Retro UX checks on a phone (390×844) and a desktop window: every control
 // offers a press area of at least 48 px (its own box or its invisible ::after
 // area), the quest map sits in the console screen and stays large, panels have
-// no rounded corners, and the Hero tab dresses the walker. Screenshots go to
+// no rounded corners (panels use notched box-shadow corners; the pill and round
+// buttons are the intended exception and get stepped corners from a clip-path
+// polygon, never border-radius), and the Hero tab dresses the walker. Screenshots go to
 // screenshots/retro-ux/.
 // Usage: npm run build && npx vite preview --host 127.0.0.1 --port 4190 &
 //        RETRO_URL=http://127.0.0.1:4190/stepquest/ node scripts/screenshot-retro.mjs
@@ -36,11 +38,19 @@ async function pressAreas(page) {
 }
 
 async function roundCorners(page) {
-  return page.evaluate(() =>
-    [...document.querySelectorAll('.box, .hud, .dialog, .pix-btn, .swatch, .avatar, .steps-pill, .complete-box, .console, .console-bezel')]
+  return page.evaluate(() => {
+    const radius = [...document.querySelectorAll('.box, .hud, .dialog, .pix-btn, .swatch, .avatar, .steps-pill, .complete-box, .console, .console-bezel')]
       .filter((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius) > 0)
-      .map((el) => el.className),
-  )
+      .map((el) => el.className)
+    // Pill and round buttons: stepped corners (clip-path on the outline and the fill), square box for the press area.
+    const flat = [...document.querySelectorAll('.pix-btn')]
+      .filter((el) => getComputedStyle(el, '::before').clipPath === 'none' || getComputedStyle(el, '::after').clipPath === 'none')
+      .map((el) => `${el.className} (no stepped corners)`)
+    const round = [...document.querySelectorAll('.pix-btn.round')]
+      .filter((el) => Math.abs(el.getBoundingClientRect().width - el.getBoundingClientRect().height) > 0.5)
+      .map((el) => `${el.className} (not square)`)
+    return [...radius, ...flat, ...round]
+  })
 }
 
 const browser = await chromium.launch({ channel: 'chrome', args: ['--headless=new', '--no-sandbox', '--disable-gpu'] })

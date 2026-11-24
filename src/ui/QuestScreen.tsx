@@ -247,7 +247,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
                 )}
                 <button
                   type="button"
-                  className="pix-btn small-text hud-fold"
+                  className="pix-btn round hud-fold"
                   aria-expanded={statsOpen}
                   aria-label={t(statsOpen ? 'hud.less' : 'hud.more')}
                   title={t(statsOpen ? 'hud.less' : 'hud.more')}

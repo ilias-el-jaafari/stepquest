@@ -18,5 +18,7 @@ export default defineConfig({
     environment: 'happy-dom',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     testTimeout: 30_000,
+    // Lets tests read src/index.css as text (?raw); other CSS stays stubbed.
+    css: { include: [/index\.css\?raw/] },
   },
 })

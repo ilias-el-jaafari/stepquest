@@ -3,39 +3,9 @@ import { VOLUME_CHANNELS, type VolumeChannel } from '../audio/settings.ts'
 import { useAudio } from '../audio/useAudio.ts'
 import { useI18n } from '../i18n/index.ts'
 import type { MessageKey } from '../i18n/en.ts'
+import { PixelIcon } from './PixelIcons.tsx'
 
 const LABELS: Record<VolumeChannel, MessageKey> = { master: 'sound.master', music: 'sound.music', voice: 'sound.voice', sfx: 'sound.sfx' }
-
-/** Pixel speaker icon (original, drawn with rectangles). Waves hidden when muted. */
-function SpeakerIcon({ muted }: { muted: boolean }) {
-  return (
-    <svg className="speaker" viewBox="0 0 12 10" width="18" height="15" aria-hidden="true" shapeRendering="crispEdges">
-      <rect x="0" y="3" width="3" height="4" fill="currentColor" />
-      <rect x="3" y="2" width="1" height="6" fill="currentColor" />
-      <rect x="4" y="1" width="1" height="8" fill="currentColor" />
-      <rect x="5" y="0" width="1" height="10" fill="currentColor" />
-      {muted ? (
-        <>
-          <rect x="7" y="3" width="1" height="1" fill="currentColor" />
-          <rect x="8" y="4" width="1" height="1" fill="currentColor" />
-          <rect x="9" y="5" width="1" height="1" fill="currentColor" />
-          <rect x="10" y="6" width="1" height="1" fill="currentColor" />
-          <rect x="10" y="3" width="1" height="1" fill="currentColor" />
-          <rect x="9" y="4" width="1" height="1" fill="currentColor" />
-          <rect x="8" y="5" width="1" height="1" fill="currentColor" />
-          <rect x="7" y="6" width="1" height="1" fill="currentColor" />
-        </>
-      ) : (
-        <>
-          <rect x="7" y="4" width="1" height="2" fill="currentColor" />
-          <rect x="8" y="2" width="1" height="1" fill="currentColor" />
-          <rect x="9" y="3" width="1" height="4" fill="currentColor" />
-          <rect x="8" y="7" width="1" height="1" fill="currentColor" />
-        </>
-      )}
-    </svg>
-  )
-}
 
 type Props = {
   /** Open the panel above the button (bottom bars) or below it (top bars). */
@@ -77,7 +47,7 @@ export function SoundMenu({ placement = 'down', showLabel = true }: Props) {
     <div className={`sound-menu ${placement}`} ref={root}>
       <button
         type="button"
-        className={`pix-btn small-text sound-toggle ${off ? 'is-off' : ''}`}
+        className={`pix-btn sound-toggle ${showLabel ? '' : 'round'} ${off ? 'is-off' : ''}`}
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={off ? `${t('sound.button')}: ${t('sound.off')}` : t('sound.button')}
@@ -87,7 +57,7 @@ export function SoundMenu({ placement = 'down', showLabel = true }: Props) {
           setOpen((o) => !o)
         }}
       >
-        <SpeakerIcon muted={off} />
+        <PixelIcon name={off ? 'soundOff' : 'soundOn'} />
         {showLabel && <span>{t('sound.button')}</span>}
       </button>
       {open && (
@@ -140,7 +110,7 @@ export function SoundControls({ onClose }: { onClose?: () => void }) {
       <div className="sound-actions">
         <button
           type="button"
-          className="pix-btn small-text"
+          className="pix-btn"
           disabled={settings.muted}
           onClick={() => {
             engine.unlock()
@@ -151,7 +121,7 @@ export function SoundControls({ onClose }: { onClose?: () => void }) {
           {t('sound.test')}
         </button>
         {onClose && (
-          <button type="button" className="pix-btn small-text" onClick={onClose}>
+          <button type="button" className="pix-btn" onClick={onClose}>
             {t('sound.close')}
           </button>
         )}

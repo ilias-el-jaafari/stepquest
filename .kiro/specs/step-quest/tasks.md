@@ -97,6 +97,7 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 - [ ] 51. New tile art
 - [x] 51b. Field fix: routes go around roundabouts (ring detection incl. split arcs and untagged loops, island edges removed from the walking graph, ways split at out-of-box nodes instead of chords); tests on synthetic plazas and the Benicalap fixture
 - [x] 54. Fast rerouting (requirement 7c): timing test on the Benicalap map; planning and rerouting in a Web Worker with a typed protocol, latest-wins and an inline fallback; local reconnect to the planned route within the step budget before a full replan; edge-cost cache; off-route decision after 20 m instead of 30 m; tests for the protocol, stale requests, reconnect (budget, gem order, stale patch) and the debounce
+- [x] 55. Console buttons (requirement 5b): pill and round pixel buttons with stepped corners, bevels and sinking press; original pixel icons for zoom, fit, home, recenter, sound, play, pause and menu; one family on every screen; AA label contrast test; Playwright rule updated
 
 ## Phase 5 — Submission
 

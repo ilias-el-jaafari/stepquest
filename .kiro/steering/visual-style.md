@@ -21,16 +21,24 @@ A handheld-RPG overworld, in the spirit of Game Boy Color / Game Boy Advance era
 - Dark ink background with a subtle dot grid; panels are RPG dialog boxes: black outline with notched 8-bit corners (drawn with offset box-shadows, never border-radius), blue inner rule, warm paper fill, stepped hard drop shadow.
 - During a quest the map is the screen of a plain handheld console: plastic body, dark bezel with a power light and two thin stripes. No brand, no logo, no extra console buttons; the existing buttons keep the 8-bit style.
 - Press Start 2P for all text, small sizes (7–12 px), no smoothing.
-- Chunky bevelled buttons; the primary action is coral red.
+- Buttons are chunky handheld-console buttons, one family on every screen (planner, map controls, quest HUD, Bag/Hero/Settings, dialogs, sound and info menus):
+  - **Pill** buttons carry text actions; **round** buttons (48×48) carry icon actions (zoom +/−, fit, home, recenter, sound on/off, info/menu, HUD fold; play/pause art is ready for when a pause control exists).
+  - A 3 px near-black outline with stepped pixel corners (a `clip-path` staircase on two pseudo-elements, never `border-radius`), a bright saturated fill, a light bevel on the top and left edges and a dark bevel on the bottom and right edges.
+  - Pressed: the bevel inverts and the label or icon moves down 2 px; the button itself does not move. `:focus-visible` keeps a 3 px dashed gold outline offset 5 px.
+  - Colours: sky blue (default), gold (selected), coral (primary action), mint (primary action in the planner), orange (danger, sound off), grey (disabled). Labels are always ink `#1b1a2e`, never white, so every label passes WCAG AA (4.5:1) on its fill.
+  - Icons are original pixel art (12×12 grids in `src/ui/pixelArt.ts`, drawn as crisp SVG rectangles). No icon fonts, no external images.
+  - The press area is at least 48 px on both axes in its own box. Panels keep notched corners; pill and round buttons are the only shapes with larger stepped corners.
 - Map data attribution is always visible on the map.
 
 ## Palette (see `src/render/palette.ts`)
 
 Ink `#1b1a2e`, paper `#fbf7ec`, frame blue `#5d93c9`, coral `#ff4f6d`, gold `#ffd84a`, grass `#74c45a`, water `#4a8ff0`, asphalt `#8d8ca0`, path `#ecc98f`.
 
+Button colours (CSS variables in `src/index.css`, each as fill / light bevel / dark bevel): sky `#5fc1ff` / `#c4ecff` / `#2a7fc4`, gold `#ffd84a` / `#fff3a8` / `#c99a10`, coral `#ff4f6d` / `#ffb0bd` / `#a8304a`, mint `#4be0b8` / `#b8fff0` / `#12997f`, orange `#ff9a3d` / `#ffd3a0` / `#b34a10`, grey `#c9c6d8` / `#eceaf5` / `#8a879f`. They are mirrored in `src/ui/buttonStyle.ts`, which a test uses to check label contrast.
+
 ## Accessibility
 
 - Every control offers at least 48 px to press (its own box, or an invisible `::after` press area for compact buttons). Text remains readable on a 390 px wide phone.
-- Presses sink by 2 px, click quietly on the effects channel (volume and mute apply) and buzz for 8 ms on Android only.
+- Presses move the label 2 px down and invert the bevel, click quietly on the effects channel (volume and mute apply) and buzz for 8 ms on Android only.
 - Motion is retro and short: 150–250 ms with `steps()` (sheets slide in in steps, the selected tab has a blinking ▶, dialogue boxes a bouncing ▼, the steps meter fills block by block).
 - `prefers-reduced-motion` turns all of it off, as well as the walk cycles.
