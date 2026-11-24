@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import type { LatLon } from '../geo/geo.ts'
 import { stepsToMetres } from '../geo/steps.ts'
-import { isDark } from '../geo/sun.ts'
+import { isNightWalk } from '../geo/sun.ts'
 import { PlanClient } from '../routing/planClient.ts'
 import { planWithSafety } from '../routing/safePlanner.ts'
 import type { RouteRequest } from '../routing/planner.ts'
@@ -12,7 +12,7 @@ import type { AppAction, AppState } from './appState.ts'
 /** Whether the walk starts or ends after sunset (from the start point's sun), so lighting counts more. */
 export function walkIsAtNight(start: LatLon, now: number, steps: number, strideM: number): boolean {
   const walkMs = (stepsToMetres(steps, strideM) / 1000 / WALK_KMH) * 3_600_000
-  return isDark(now, start) || isDark(now + walkMs, start)
+  return isNightWalk(now, walkMs, start)
 }
 
 type Args = {

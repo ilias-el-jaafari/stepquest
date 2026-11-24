@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { haversine } from '../geo/geo.ts'
 import { metresToSteps } from '../geo/steps.ts'
@@ -250,5 +251,146 @@ describe('dark parallel side street vs lit main avenue', () => {
       expect(on(r.nodes, 'Avinguda Gran'), night ? 'night' : 'day').toBeGreaterThan(0.9)
       expect(on(r.nodes, 'Carrer Fosc')).toBeLessThan(0.1)
     }
+  })
+})
+
+// Safety-night review (tasks 68.x): properties and regressions.
+describe('safety review: names', () => {
+  it('treats typographic and straight apostrophes alike (Valencian names such as l\u2019Albereda)', () => {
+    expect(normalizeName('Carrer de l\u2019Albereda')).toBe(normalizeName("carrer de l'albereda"))
+    expect(searchStreets(['Carrer de l\u2019Albereda'], "l'alb")).toEqual(['Carrer de l\u2019Albereda'])
+  })
+  it('does not merge different street types: "Calle Mayor" and "Mayor" stay different names (decision S6)', () => {
+    expect(normalizeName('Calle Mayor')).not.toBe(normalizeName('Mayor'))
+    expect(normalizeName('C/ Mayor')).not.toBe(normalizeName('Calle Mayor'))
+  })
+  it('lists a street once however its name is spelled, and keeps the first spelling', () => {
+    const data = town()
+    data.ways.push({ ...data.ways[1]!, id: 9, name: 'CALLE  MAYOR' })
+    expect(streetNames(data).filter((n) => normalizeName(n) === 'calle mayor')).toEqual(['Calle Mayor'])
+  })
+})
+
+describe('safety review: cost model properties', () => {
+  const HIGHWAYS = ['pedestrian', 'living_street', 'residential', 'primary', 'secondary', 'tertiary', 'primary_link', 'footway', 'unclassified', 'road', 'service', 'steps', 'path', 'bridleway', 'track', 'cycleway', 'weird', undefined]
+  const info = fc.record({
+    highway: fc.constantFrom(...HIGHWAYS),
+    flags: fc.integer({ min: 0, max: 31 }),
+    tunnel: fc.boolean(),
+    industrial: fc.boolean(),
+    park: fc.boolean(),
+    lively: fc.integer({ min: 0, max: 1000 }),
+  })
+  it('the multiplier is finite and within [MIN_FACTOR, MAX_FACTOR] (so never below 0.6, never NaN)', () => {
+    fc.assert(
+      fc.property(info, fc.boolean(), (e, night) => {
+        const f = safetyFactor(e, night)
+        expect(Number.isFinite(f)).toBe(true)
+        expect(f).toBeGreaterThanOrEqual(MIN_FACTOR)
+        expect(f).toBeLessThanOrEqual(MAX_FACTOR)
+      }),
+    )
+  })
+  it('MIN_FACTOR keeps A* admissible: the smallest cost is never above any factor', () => {
+    expect(MIN_FACTOR).toBeLessThanOrEqual(1)
+    expect(MIN_FACTOR).toBeGreaterThan(0)
+  })
+  it('at night a lit street is never costlier than the same street unlit or untagged', () => {
+    fc.assert(
+      fc.property(info, (e) => {
+        const base = e.flags & ~(SAFETY_LIT | SAFETY_UNLIT)
+        const lit = safetyFactor({ ...e, flags: base | SAFETY_LIT }, true)
+        expect(lit).toBeLessThanOrEqual(safetyFactor({ ...e, flags: base }, true) + 1e-9)
+        expect(lit).toBeLessThanOrEqual(safetyFactor({ ...e, flags: base | SAFETY_UNLIT }, true) + 1e-9)
+      }),
+    )
+  })
+  it('a tagged-unlit street is never cheaper than an untagged one (except presumed-lit avenues)', () => {
+    fc.assert(
+      fc.property(info, fc.boolean(), (e, night) => {
+        const base = e.flags & ~(SAFETY_LIT | SAFETY_UNLIT)
+        fc.pre(!isAvenue(e.highway))
+        expect(safetyFactor({ ...e, flags: base | SAFETY_UNLIT }, night)).toBeGreaterThanOrEqual(safetyFactor({ ...e, flags: base }, night) - 1e-9)
+      }),
+    )
+  })
+  it('edgeCosts: every cost is 1-bounded by min, finite or Infinity only for avoided streets, and min <= 1', () => {
+    const data = town()
+    const graph = new WalkGraph(data)
+    const ctx = safetyContext(graph, data)
+    for (const night of [false, true]) {
+      for (const avoid of [[], ['calle mayor'], ["Callejón  OSCURO"]]) {
+        const c = edgeCosts(ctx, { safe: true, night, avoid })!
+        expect(c.min).toBeLessThanOrEqual(1)
+        let inf = 0
+        for (const v of c.cost) {
+          if (v === Infinity) inf++
+          else {
+            expect(Number.isFinite(v)).toBe(true)
+            expect(v).toBeGreaterThanOrEqual(c.min - 1e-6)
+          }
+        }
+        expect(inf).toBe(c.closed)
+      }
+    }
+  })
+  it('costs are cached per option set and differ between day and night', () => {
+    const data = town()
+    const ctx = safetyContext(new WalkGraph(data), data)
+    const day = edgeCosts(ctx, { safe: true, night: false, avoid: [] })!
+    expect(edgeCosts(ctx, { safe: true, night: false, avoid: [] })).toBe(day)
+    const night = edgeCosts(ctx, { safe: true, night: true, avoid: [] })!
+    expect(night).not.toBe(day)
+    expect([...night.cost]).not.toEqual([...day.cost])
+  })
+})
+
+describe('safety review: weights never change real length', () => {
+  const data = town()
+  const graph = new WalkGraph(data)
+  const ctx = safetyContext(graph, data)
+  const start = { lat: LAT, lon: LON }
+  const end = { lat: LAT, lon: LON + 0.006 }
+  const alleyM = haversine(start, end)
+  const req = (metres: number) => ({ mode: 'oneway' as const, start, end, targetSteps: Math.round(metresToSteps(metres, 0.75)), strideM: 0.75, seed: 1 })
+  const walked = (nodes: readonly number[]) => {
+    let m = 0
+    for (let i = 1; i < nodes.length; i++) m += haversine({ lat: graph.lat[nodes[i - 1]!]!, lon: graph.lon[nodes[i - 1]!]! }, { lat: graph.lat[nodes[i]!]!, lon: graph.lon[nodes[i]!]! })
+    return m
+  }
+  it('distance and steps are in real metres whatever the weights, day or night', () => {
+    for (const night of [false, true]) {
+      for (const safe of [false, true]) {
+        const sp = planWithSafety(graph, ctx, req(alleyM * 1.6), data.bbox, { safe, night, avoid: [] })
+        expect(sp.result.ok).toBe(true)
+        if (!sp.result.ok) continue
+        expect(Math.abs(sp.result.route.distanceM - walked(sp.result.route.nodes))).toBeLessThan(1)
+        expect(Math.abs(sp.result.route.steps - metresToSteps(sp.result.route.distanceM, 0.75))).toBeLessThanOrEqual(1)
+        expect(Math.abs(sp.result.route.distanceM - alleyM * 1.6)).toBeLessThanOrEqual(alleyM * 1.6 * 0.05 + 1)
+      }
+    }
+  })
+})
+
+describe('safety review: fallback keeps working when the avoid list is what blocks the goal', () => {
+  const data = town()
+  const graph = new WalkGraph(data)
+  const ctx = safetyContext(graph, data)
+  const start = { lat: LAT, lon: LON }
+  const end = { lat: LAT, lon: LON + 0.006 }
+  const alleyM = haversine(start, end)
+  const req = { mode: 'oneway' as const, start, end, targetSteps: Math.round(metresToSteps(alleyM, 0.75)), strideM: 0.75, seed: 1 }
+  it('offers a normal route that uses the avoided street, and names it', () => {
+    // Safe routing cannot fit the goal (see the test above) and the only street that fits is on the avoid list.
+    const sp = planWithSafety(graph, ctx, req, data.bbox, { safe: true, night: true, avoid: ['Callejón Oscuro'] })
+    expect(sp.result.ok).toBe(false)
+    expect(sp.notice).toBe('safeInfeasible')
+    expect(sp.normal?.ok).toBe(true)
+    expect(sp.normalAvoidedUsed).toEqual(['Callejón Oscuro'])
+  })
+  it('a normal route that honours the avoid list reports nothing', () => {
+    const sp = planWithSafety(graph, ctx, req, data.bbox, { safe: true, night: true, avoid: [] })
+    expect(sp.normal?.ok).toBe(true)
+    expect(sp.normalAvoidedUsed).toBeUndefined()
   })
 })

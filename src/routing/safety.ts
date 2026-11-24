@@ -115,11 +115,12 @@ export function safetyFactor(e: EdgeInfo, night: boolean): number {
   return Math.min(MAX_FACTOR, Math.max(MIN_FACTOR, f))
 }
 
-/** Names compared loosely: case, accents and extra spaces do not matter. */
+/** Names compared loosely: case, accents, typographic apostrophes and extra spaces do not matter. */
 export function normalizeName(name: string): string {
   return name
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2018\u2019\u02bc\u00b4`]/g, "'")
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim()

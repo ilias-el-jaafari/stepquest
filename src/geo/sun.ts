@@ -47,18 +47,31 @@ export function isDark(ms: number, p: LatLon): boolean {
 }
 
 /**
- * Sunrise and sunset (epoch ms) of the UTC day containing `ms`, or undefined
- * for polar day/night.
+ * Sunrise and sunset (epoch ms) of the local solar day containing `ms` (the day
+ * that starts at local mean solar midnight, so it follows the place, not UTC),
+ * or undefined for polar day/night.
  */
 export function sunTimes(ms: number, p: LatLon): { sunrise: number; sunset: number } | undefined {
-  const day = Math.floor(ms / 86_400_000) * 86_400_000
+  if (!Number.isFinite(ms) || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return undefined
+  const lonMs = 4 * p.lon * 60_000
+  // Start of the local solar day, in UTC ms (UTC midnight would pick the wrong day far from Greenwich).
+  const day = Math.floor((ms + lonMs) / 86_400_000) * 86_400_000 - lonMs
   // Two passes: the second uses the sun's position at the first estimate of solar noon.
-  let noon = day + (720 - 4 * p.lon) * 60_000
-  for (let i = 0; i < 2; i++) noon = day + (720 - 4 * p.lon - solar(noon).eqTime) * 60_000
+  let noon = day + 720 * 60_000
+  for (let i = 0; i < 2; i++) noon = day + (720 - solar(noon).eqTime) * 60_000
   const { decl } = solar(noon)
   const lat = p.lat * RAD
   const cosH = (Math.sin(HORIZON * RAD) - Math.sin(lat) * Math.sin(decl)) / (Math.cos(lat) * Math.cos(decl))
   if (cosH < -1 || cosH > 1) return undefined
   const h = Math.acos(cosH) / RAD // degrees
   return { sunrise: noon - h * 4 * 60_000, sunset: noon + h * 4 * 60_000 }
+}
+
+/**
+ * Whether a walk counts as a night walk: it starts in the dark or is expected to
+ * end in the dark (a walk that crosses sunset is planned as night from the
+ * start). Sampled at the two ends only; walks are far shorter than a day.
+ */
+export function isNightWalk(startMs: number, walkMs: number, p: LatLon): boolean {
+  return isDark(startMs, p) || isDark(startMs + Math.max(0, walkMs), p)
 }

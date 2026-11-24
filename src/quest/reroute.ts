@@ -1,6 +1,6 @@
 import { haversine, type BBox, type LatLon } from '../geo/geo.ts'
 import { metresToSteps, TARGET_TOLERANCE } from '../geo/steps.ts'
-import { isDark } from '../geo/sun.ts'
+import { isNightWalk } from '../geo/sun.ts'
 import type { OsmData } from '../osm/types.ts'
 import type { WalkGraph } from '../routing/graph.ts'
 import { MAX_SNAP_M } from '../routing/planner.ts'
@@ -48,7 +48,7 @@ function safetyOptions(state: QuestState, world: RerouteWorld, opts: { avoid: re
   const leftStreet = state.offStart ? nearestStreet(world.data, state.offStart.from) : undefined
   const avoid = leftStreet && !opts.avoid.includes(leftStreet) ? [...opts.avoid, leftStreet] : [...opts.avoid]
   const walkMs = (remaining * state.strideM) / 1.3 * 1000
-  const night = isDark(opts.now, here) || isDark(opts.now + walkMs, here)
+  const night = isNightWalk(opts.now, walkMs, here)
   return { safe: true, night, avoid }
 }
 
