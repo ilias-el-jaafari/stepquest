@@ -34,6 +34,7 @@ import { questStats } from './quest/quest.ts'
 import { useQuestRunner } from './ui/useQuestRunner.ts'
 import { commitSteps, commitStride, formatStride, liveSteps, liveStride, parseStepsText, parseStrideText, SLIDER_MAX, SLIDER_MIN, SLIDER_STEP, sliderValue, type Committed } from './ui/numberInput.ts'
 import { clampSteps, loadSettings, parseCoords, saveSettings, type Settings } from './ui/settings.ts'
+import { AUTO_LOAD_SETTLE_MS, shouldAutoLoad } from './ui/autoLoad.ts'
 import { loadDemoWorld, useLiveLoader, type World } from './ui/useMapData.ts'
 
 const STEP_PRESETS = [5000, 8000, 10_000, 12_000]
@@ -336,6 +337,26 @@ export default function App() {
   }
   const plannerFolded = !!result?.ok && !plannerOpen
   const outsideView = !!world && !!viewCentre && !bboxContains(world.data.bbox, viewCentre)
+  // Resting the map outside the loaded area loads it, when no route would be lost. One request at a
+  // time, after the map has settled; a failed spot is not retried until the view moves away (the
+  // Overpass client also waits at least 10 s between requests).
+  const failedAt = useRef<LatLon>(undefined)
+  const hasPlan = !!result?.ok || !!runner.quest
+  const bbox = world?.data.bbox
+  const busy = live.status.state === 'loading' || locate.state === 'locating' || locate.state === 'loadingArea'
+  useEffect(() => {
+    if (!bbox || !viewCentre) return
+    if (!shouldAutoLoad({ bbox, centre: viewCentre, busy, hasPlan, failedAt: failedAt.current })) return
+    const timer = setTimeout(() => {
+      void loadLiveAround(viewCentre).then((ok) => {
+        if (ok) setViewCentre(undefined)
+        else failedAt.current = viewCentre
+      })
+    }, AUTO_LOAD_SETTLE_MS)
+    return () => clearTimeout(timer)
+    // loadLiveAround is recreated every render; the inputs that matter are listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bbox, viewCentre, busy, hasPlan])
   const loadingMb = live.status.state === 'loading' ? (live.status.bytes / 1e6).toFixed(1) : undefined
 
   // Leaving a quest: real (not simulated) steps add to today's total.

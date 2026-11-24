@@ -11,6 +11,7 @@ import { CHECKPOINT, facingFrom, FINISH_FLAG, paintSprite, START_MAT, walkFrame,
 import { paintFrontFence, paintGardenPath, paintGardenTree, paintHouse, paintLandmark } from './structures.ts'
 import { paintTile, tileHash, tileKey } from './tileset.ts'
 import { tileSpecAt } from './tileSpecs.ts'
+import { chunkLimit, LruCache, planChunks, type ChunkPlan, type ChunkRef } from './chunkPlan.ts'
 import { wrapBubbleText } from '../audio/speechBubble.ts'
 
 /** Screen pixels per tile. ≥ DETAIL_ZOOM draws real 16×16 tiles; below it, a 1-px-per-tile town map. */
@@ -18,6 +19,10 @@ export const ZOOM_LEVELS = [0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 16, 24, 32, 48] as
 export const DETAIL_ZOOM = 8
 const CHUNK = 32
 const MAX_CHUNKS = 96
+/** Time spent painting new chunks in one frame; the rest waits for the next frame so panning stays smooth. */
+export const CHUNK_BUDGET_MS = 6
+/** Chunks beyond the screen that are painted ahead while the map is idle. */
+export const PREFETCH_MARGIN = 1
 const ATLAS_TILES = 64
 
 export type Markers = { start?: LatLon; end?: LatLon }
@@ -86,7 +91,10 @@ export class MapRenderer {
   /** Structures (houses, landmarks) touching each chunk, by chunk key. */
   private readonly chunkStructures = new Map<string, { houses: number[]; landmarks: number[] }>()
   private readonly atlas = new TileAtlas()
-  private readonly chunks = new Map<string, HTMLCanvasElement>()
+  private readonly chunks = new LruCache<HTMLCanvasElement>(MAX_CHUNKS)
+  /** Keys of the chunks on screen, which the cache must not evict. */
+  private onScreen = new Set<string>()
+  private chunkLimit = MAX_CHUNKS
   private overview: HTMLCanvasElement | undefined
   private readonly spriteCache = new Map<Sprite, HTMLCanvasElement>()
   private route: RouteShape | undefined
@@ -340,15 +348,15 @@ export class MapRenderer {
     this.chunks.clear()
   }
 
+  /** Chunks painted so far (tests and diagnostics). */
+  get chunkCount(): number {
+    return this.chunks.size
+  }
+
   private chunk(cx: number, cy: number): HTMLCanvasElement {
     const key = `${cx},${cy}`
     const found = this.chunks.get(key)
-    if (found) {
-      // Refresh LRU position.
-      this.chunks.delete(key)
-      this.chunks.set(key, found)
-      return found
-    }
+    if (found) return found
     const canvas = makeCanvas(CHUNK * TILE_PX, CHUNK * TILE_PX)
     const ctx = canvas.getContext('2d')!
     for (let ty = 0; ty < CHUNK; ty++) {
@@ -362,12 +370,52 @@ export class MapRenderer {
       }
     }
     this.paintStructures(ctx, cx, cy)
-    this.chunks.set(key, canvas)
-    if (this.chunks.size > MAX_CHUNKS) {
-      const oldest = this.chunks.keys().next().value
-      if (oldest !== undefined) this.chunks.delete(oldest)
-    }
+    this.chunks.set(key, canvas, this.onScreen)
     return canvas
+  }
+
+  /** Paint the visible chunks nearest the centre first within the frame budget; stand-ins fill the rest. */
+  private drawChunks(ctx: CanvasRenderingContext2D, plan: ChunkPlan, originX: number, originY: number, scale: number): boolean {
+    this.onScreen = new Set(plan.visible.map((c) => `${c.cx},${c.cy}`))
+    this.chunkLimit = chunkLimit(MAX_CHUNKS, plan)
+    this.chunks.setLimit(this.chunkLimit)
+    const now = () => (typeof performance === 'undefined' ? 0 : performance.now())
+    const t0 = now()
+    let pending = false
+    let built = 0
+    let overview: HTMLCanvasElement | undefined
+    const rect = (c: ChunkRef) => {
+      const x0 = Math.round(originX + c.cx * CHUNK * scale)
+      const y0 = Math.round(originY + c.cy * CHUNK * scale)
+      return { x0, y0, x1: Math.round(originX + (c.cx + 1) * CHUNK * scale), y1: Math.round(originY + (c.cy + 1) * CHUNK * scale) }
+    }
+    for (const c of plan.visible) {
+      const key = `${c.cx},${c.cy}`
+      const r = rect(c)
+      // Always paint one chunk per frame (progress is guaranteed), more while the budget lasts.
+      if (this.chunks.has(key) || built === 0 || now() - t0 < CHUNK_BUDGET_MS) {
+        if (!this.chunks.has(key)) built++
+        ctx.drawImage(this.chunk(c.cx, c.cy), r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0)
+      } else {
+        // Stand-in: the town map, scaled up, instead of a hole.
+        pending = true
+        overview ??= this.overviewCanvas()
+        const sx = c.cx * CHUNK
+        const sy = c.cy * CHUNK
+        const sw = Math.min(CHUNK, this.grid.cols - sx)
+        const sh = Math.min(CHUNK, this.grid.rows - sy)
+        ctx.drawImage(overview, sx, sy, sw, sh, r.x0, r.y0, Math.round(sw * scale), Math.round(sh * scale))
+      }
+    }
+    // Idle: paint the ring around the screen, one chunk per frame, so the next pan finds it ready.
+    if (!pending && plan.visible.length + plan.ring.length <= this.chunkLimit) {
+      const next = plan.ring.find((c) => !this.chunks.has(`${c.cx},${c.cy}`))
+      if (next) {
+        this.chunk(next.cx, next.cy)
+        pending = true
+      }
+    }
+    return pending
   }
 
   /** Garden details, houses and landmark buildings over a chunk's tiles (drawn north to south). */
@@ -457,7 +505,8 @@ export class MapRenderer {
     if (!ctx) return
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.imageSmoothingEnabled = false
-    ctx.fillStyle = P.ink
+    // Ground colour (never black) where nothing is loaded; the loaded area is a shade lighter.
+    ctx.fillStyle = P.groundB
     ctx.fillRect(0, 0, w, h)
 
     const scale = this.zoom * dpr // device px per tile
@@ -466,20 +515,13 @@ export class MapRenderer {
     const toScreen = (tx: number, ty: number) => ({ x: originX + tx * scale, y: originY + ty * scale })
 
     if (this.zoom >= DETAIL_ZOOM) {
-      const firstX = Math.max(0, Math.floor(-originX / scale / CHUNK))
-      const firstY = Math.max(0, Math.floor(-originY / scale / CHUNK))
-      const lastX = Math.min(Math.ceil(this.grid.cols / CHUNK) - 1, Math.floor((w - originX) / scale / CHUNK))
-      const lastY = Math.min(Math.ceil(this.grid.rows / CHUNK) - 1, Math.floor((h - originY) / scale / CHUNK))
-      for (let cy = firstY; cy <= lastY; cy++) {
-        for (let cx = firstX; cx <= lastX; cx++) {
-          const x0 = Math.round(originX + cx * CHUNK * scale)
-          const y0 = Math.round(originY + cy * CHUNK * scale)
-          const x1 = Math.round(originX + (cx + 1) * CHUNK * scale)
-          const y1 = Math.round(originY + (cy + 1) * CHUNK * scale)
-          ctx.drawImage(this.chunk(cx, cy), x0, y0, x1 - x0, y1 - y0)
-        }
-      }
+      ctx.fillStyle = P.groundA
+      ctx.fillRect(originX, originY, Math.round(this.grid.cols * scale), Math.round(this.grid.rows * scale))
+      const plan = planChunks({ camX: this.camX, camY: this.camY, zoom: this.zoom, cssW, cssH, cols: this.grid.cols, rows: this.grid.rows, chunk: CHUNK, margin: PREFETCH_MARGIN })
+      if (this.drawChunks(ctx, plan, originX, originY, scale)) this.requestRender()
     } else {
+      ctx.fillStyle = P.groundA
+      ctx.fillRect(originX, originY, Math.round(this.grid.cols * scale), Math.round(this.grid.rows * scale))
       ctx.drawImage(this.overviewCanvas(), originX, originY, this.grid.cols * scale, this.grid.rows * scale)
     }
 

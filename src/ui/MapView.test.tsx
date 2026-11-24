@@ -117,3 +117,68 @@ describe('speech bubble drawing', () => {
     for (const [x, , w] of rects) expect(x! >= 0 && x! + w! <= 300 + 2).toBe(true)
   })
 })
+
+describe('map drawing without holes', () => {
+  const big = new TileGrid({ south: 39.45, west: -0.45, north: 39.5, east: -0.38 })
+  const fills: string[] = []
+  const images: number[][] = []
+  let clock = 0
+
+  beforeEach(() => {
+    fills.length = 0
+    images.length = 0
+    clock = 0
+    const ctx = new Proxy(
+      { fillRect: () => {}, drawImage: (...a: number[]) => images.push(a), createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }) } as Record<string, unknown>,
+      {
+        get: (o, k) => (k in o ? o[k as string] : () => {}),
+        set: (_o, k, v) => {
+          if (k === 'fillStyle') fills.push(String(v))
+          return true
+        },
+      },
+    )
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ctx as never)
+    // Every clock read costs 10 ms, so the 6 ms frame budget allows a single new chunk per frame.
+    vi.spyOn(performance, 'now').mockImplementation(() => (clock += 10))
+  })
+
+  it('clears to the ground colour, never ink black', () => {
+    const r = new MapRenderer(document.createElement('canvas'), big)
+    r.zoom = 0.5
+    r.render()
+    expect(fills[0]).toBe('#c9df8f')
+    expect(fills).not.toContain('#1b1a2e')
+  })
+
+  it('paints one chunk per frame under load, stands in with the town map for the rest, and finishes over frames', () => {
+    const canvas = document.createElement('canvas')
+    Object.defineProperty(canvas, 'clientWidth', { value: 1200 })
+    Object.defineProperty(canvas, 'clientHeight', { value: 900 })
+    const r = new MapRenderer(canvas, big)
+    r.zoom = 8
+    r.camX = big.cols / 2
+    r.camY = big.rows / 2
+    r.render()
+    expect(r.chunkCount).toBe(1)
+    const standIns = images.filter((a) => a.length === 9).length
+    expect(standIns).toBeGreaterThan(5)
+    for (let i = 0; i < 80; i++) r.render()
+    // The whole screen and its ring are painted; nothing is left as a stand-in.
+    images.length = 0
+    r.render()
+    expect(images.filter((a) => a.length === 9)).toHaveLength(0)
+    expect(r.chunkCount).toBeGreaterThan(20)
+  })
+
+  it('keeps zoomed-out views of unloaded surroundings filled (no clear to black at any zoom)', () => {
+    const r = new MapRenderer(document.createElement('canvas'), big)
+    for (const z of [0.5, 1, 4, 8, 16]) {
+      fills.length = 0
+      r.zoom = z
+      r.camX = -50
+      r.render()
+      expect(fills[0]).toBe('#c9df8f')
+    }
+  })
+})

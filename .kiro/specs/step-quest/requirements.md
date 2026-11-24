@@ -115,6 +115,20 @@ StepQuest turns a step goal into an 8-bit overworld quest on real streets. The u
 7. WHEN a callout is spoken, THE SYSTEM SHALL show the same text, in the app language, in a pixel-art speech bubble next to the walker on the map, and SHALL remove it when the phrase ends, is interrupted, or sound is muted.
 8. IF speech is unavailable or muted, THEN THE SYSTEM SHALL still show the bubble, for a duration based on the text length (1.8 to 7 seconds), following the same phrase queue so that bubble and voice never disagree.
 
+### Requirement 7a: Map without holes
+
+**User Story:** As a walker, I want everything on screen to be drawn quickly at every zoom level, so that panning and zooming out never shows black areas.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL fill every part of the map screen with map ground colour and SHALL NOT show the ink-black background, at any zoom level and anywhere the camera can go, including outside the loaded area.
+2. WHEN a visible chunk is not painted yet, THE SYSTEM SHALL draw the scaled town map in its place and SHALL paint the missing chunks nearest the screen centre first, within a time budget per frame (6 ms, and at least one chunk) so that the frame rate stays smooth.
+3. WHILE the map is idle, THE SYSTEM SHALL paint one ring of chunks around the screen, one per frame, so that the next pan finds them ready.
+4. THE SYSTEM SHALL keep painted chunks in a size-limited cache (96 chunks, more only when the screen itself needs more) that never evicts a chunk on screen.
+5. WHEN the user rests the map for 1.2 s with its centre outside the loaded area, AND no route is planned and no quest runs, AND no download is running, THE SYSTEM SHALL load the area under the view by itself, using the same polite Overpass client (cache first, one request at a time, at least 10 s between requests).
+6. IF loading that spot failed, THEN THE SYSTEM SHALL NOT ask again for a view within 500 m of it, and SHALL keep the "Load this area" button.
+7. WHILE a route is planned or a quest runs, THE SYSTEM SHALL NOT replace the loaded area without a tap on "Load this area".
+
 ### Requirement 8: Engineering
 
 1. THE SYSTEM SHALL keep domain logic in pure, unit-tested TypeScript and run all tests offline.
