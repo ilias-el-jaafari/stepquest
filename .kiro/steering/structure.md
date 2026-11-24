@@ -14,10 +14,12 @@ src/
   town/                  lots, houses, gardens and landmark placement (town layout)
   routing/               walking graph, A*, loop and A→B planners, checkpoints
   render/                palette, tile painter, structure painters, route path, sprites, MapRenderer (canvas)
-  ui/                    React map view, settings, quest HUD, dialogue box, sound menu, data loading hooks
+  app/                   app state reducer (appState.ts) and the hooks around it: planning, map area and location, number fields, today's steps, online status
+  pwa/                   service worker template (filled in by the build) and the update store
+  ui/                    React map view, planner, tab sheets, quest HUD, dialogs (modal focus), error boundary, sound menu, data loading hooks
   audio/                 formant voice, callouts, chiptune, effects, scheduler, sound settings, Web Audio engine
   i18n/                  English and Spanish dictionaries
-  App.tsx                screen layout and planner wiring
+  App.tsx                screen layout: wires app/ state to ui/ components (about 300 lines)
 scripts/                 fixture builder, route probe, screenshot script
 screenshots/phaseN/      review screenshots per phase
 .kiro/                   steering, specs and hooks

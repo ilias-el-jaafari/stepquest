@@ -62,24 +62,28 @@ export function DialogueBox({ kind, lines, onDone, autoCloseMs, charMs = 28 }: P
   }
 
   return (
-    <div
-      className="dialog"
-      data-kind={kind}
-      data-testid={`dialog-${kind}`}
-      role="button"
-      tabIndex={0}
-      aria-label={`${text} — ${t(last ? 'dialog.close' : 'dialog.next')}`}
-      onClick={advance}
-      onKeyDown={onKey}
-    >
-      <p className="dialog-text" aria-live="polite">
-        {text.slice(0, shown)}
-        {/* Reserve the full text's space so the box does not grow while typing. */}
-        <span className="dialog-ghost" aria-hidden="true">
-          {text.slice(shown)}
-        </span>
+    <>
+      <div
+        className="dialog"
+        data-kind={kind}
+        data-testid={`dialog-${kind}`}
+        role="button"
+        tabIndex={0}
+        aria-label={`${text} — ${t(last ? 'dialog.close' : 'dialog.next')}`}
+        onClick={advance}
+        onKeyDown={onKey}
+      >
+        <p className="dialog-text" aria-hidden="true">
+          {text.slice(0, shown)}
+          {/* Reserve the full text's space so the box does not grow while typing. */}
+          <span className="dialog-ghost">{text.slice(shown)}</span>
+        </p>
+        {!typing && <span className={`dialog-more ${last ? 'last' : ''}`} aria-hidden="true" />}
+      </div>
+      {/* Screen readers get each line whole and once; the letter-by-letter copy above is hidden from them. */}
+      <p className="sr-only" role="status">
+        {text}
       </p>
-      {!typing && <span className={`dialog-more ${last ? 'last' : ''}`} aria-hidden="true" />}
-    </div>
+    </>
   )
 }

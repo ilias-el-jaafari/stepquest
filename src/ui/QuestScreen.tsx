@@ -7,6 +7,8 @@ import { snapToRoute } from '../quest/snap.ts'
 import type { LocationErrorCode } from '../quest/geolocation.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 import { useAudio } from '../audio/useAudio.ts'
+import { CompleteDialog } from './CompleteDialog.tsx'
+import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { DialogueBox } from './DialogueBox.tsx'
 import { MapView } from './MapView.tsx'
 import { SoundMenu } from './SoundMenu.tsx'
@@ -23,6 +25,11 @@ type Props = {
   onUseSim: () => void
 }
 
+/** Words of the "end this quest?" question. */
+const END_CONFIRM = { message: 'quest.endConfirm', yes: 'quest.endYes', no: 'quest.endNo' } as const
+const EMPTY_MARKERS = {}
+const ignoreTap = () => {}
+
 export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, onEnd, onUseSim }: Props) {
   const { t, locale } = useI18n()
   const { engine, status, settings: sound, phrase } = useAudio()
@@ -31,6 +38,7 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
   /** The stats panel starts folded so the map gets the screen. */
   const [statsOpen, setStatsOpen] = useState(false)
   const [dismissed, setDismissed] = useState(0)
+  const [confirming, setConfirming] = useState(false)
   const [showResumed, setShowResumed] = useState(resumed)
   // Dialogue boxes: the welcome line (not after a resume) and the finish speech.
   const [startDone, setStartDone] = useState(resumed || quest.collected > 0)
@@ -63,7 +71,9 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
     () => ({ player: quest.player, accuracyM: quest.simulated ? undefined : quest.accuracy, collected: quest.collected, alongM: quest.alongM, walkedBefore: quest.walkedBefore }),
     [quest.player, quest.accuracy, quest.collected, quest.alongM, quest.simulated, quest.walkedBefore],
   )
-  const markers = useMemo(() => ({}), [])
+  const markers = EMPTY_MARKERS
+  const stopFollowing = useCallback(() => setFollow(false), [])
+  const startFollowing = useCallback(() => setFollow(true), [])
   // Frame the walker once when the quest screen opens (the parent keys this component by quest id).
   const [focus] = useState(() => (player ? [player] : []))
 
@@ -129,9 +139,8 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
     }
   }
 
-  const confirmEnd = () => {
-    if (quest.finishedAt !== undefined || window.confirm(t('quest.endConfirm'))) onEnd()
-  }
+  // A finished quest ends at once; a running one asks first, in the app's own dialog.
+  const askEnd = () => (quest.finishedAt !== undefined ? onEnd() : setConfirming(true))
 
   return (
     <div className="quest" data-testid="quest">
@@ -147,14 +156,14 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
                 markers={markers}
                 focus={focus}
                 focusKey={`quest:${quest.id}`}
-                onTap={() => {}}
+                onTap={ignoreTap}
                 home={player}
                 quest={overlay}
                 follow={follow && quest.finishedAt === undefined}
                 pickup={pickup}
                 bubble={phrase?.text}
-                onUserPan={() => setFollow(false)}
-                onLocate={() => setFollow(true)}
+                onUserPan={stopFollowing}
+                onLocate={startFollowing}
               />
             </div>
 
@@ -252,51 +261,16 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
                   <span className={`chev ${statsOpen ? 'down' : 'up'}`} aria-hidden="true" />
                 </button>
                 <SoundMenu placement="up" showLabel={false} />
-                <button type="button" className="pix-btn small-text danger" onClick={confirmEnd}>
+                <button type="button" className="pix-btn small-text danger" onClick={askEnd}>
                   {t('quest.end')}
                 </button>
               </div>
             </div>
 
             {finished && finishDone && (
-              <div className="complete" role="dialog" aria-modal="true" data-testid="complete">
-                <div className="complete-box">
-                  <div className="stars" aria-hidden="true">
-                    ★ ★ ★
-                  </div>
-                  <h2>{t('complete.title')}</h2>
-                  <p>{t('complete.subtitle', { n: stats.total })}</p>
-                  <dl className="complete-stats">
-                    <div>
-                      <dt>{t('complete.distance')}</dt>
-                      <dd>{formatDistance(stats.walkedM, locale)}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('complete.steps')}</dt>
-                      <dd>{formatNumber(stats.steps, locale)}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('complete.time')}</dt>
-                      <dd>{formatDuration(stats.elapsedMs)}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('complete.pace')}</dt>
-                      <dd>
-                        {formatPace(stats.paceMinPerKm)}
-                        {t('quest.paceUnit')}
-                      </dd>
-                    </div>
-                    <div className="wide">
-                      <dt>{t('complete.goal')}</dt>
-                      <dd>{t('complete.goalValue', { steps: formatNumber(quest.route.targetSteps, locale) })}</dd>
-                    </div>
-                  </dl>
-                  <button type="button" className="pix-btn primary" onClick={onEnd}>
-                    {t('complete.new')}
-                  </button>
-                </div>
-              </div>
+              <CompleteDialog total={stats.total} walkedM={stats.walkedM} steps={stats.steps} elapsedMs={stats.elapsedMs} paceMinPerKm={stats.paceMinPerKm} targetSteps={quest.route.targetSteps} onNew={onEnd} />
             )}
+            {confirming && <ConfirmDialog {...END_CONFIRM} testId="confirm-end" onYes={onEnd} onNo={() => setConfirming(false)} />}
           </div>
         </div>
       </div>

@@ -17,6 +17,12 @@ inclusion: always
 - Polite client (`src/osm/overpass.ts`): cache first (IndexedDB, 7-day TTL, plus an area index), one download at a time per tab (a second one is refused as `busy`), at least 10 s between downloads, a size cap (36 km²), and the public mirrors in `OVERPASS_ENDPOINTS` raced in parallel (`src/osm/download.ts`): each mirror gets one request with a timeout, the first good answer wins and the others are aborted. No retry loops; 429 and 504 map to `rateLimited`. See `osm-etiquette.md`. Browsers send their own Referer and User-Agent; Node scripts must send a descriptive User-Agent with a contact address.
 - The offline demo is a compact, delta-encoded extract of Benicalap, València (`src/data/benicalap.osm.json`, rebuilt with `npm run fixture -- <out.json> <overpass.json> [more.json ...]`, merging the main `out geom` extract with the barrier/square and landmark (`out tags center`) extracts). It is ODbL data; keep the attribution.
 
+## App shell
+
+- `src/app`: a typed reducer (`appState.ts`) holds the planning screens' state as plain data; hooks (`useAppState`, `usePlanner`, `useArea`, `useNumberFields`, `useToday`) run the effects. `useAppState` also gives `latest`, the newest state, for handlers and async code. The loaded map (`World`) lives beside the state, not in it.
+- Components in `src/ui` are presentational (props in, callbacks out). Modal dialogs use `useModal` (focus in, Tab trap, Escape, focus back); the app behind the onboarding is `inert`. `ErrorBoundary` wraps the app and reads the language itself.
+- Production builds write `sw.js` (vite plugin, template in `src/pwa`): the app shell and the bundled demo map work offline; a new version waits for the user's "Update" tap.
+
 ## Domain logic (pure TypeScript, no DOM)
 
 - `src/geo`: haversine, destination, local equirectangular projection, steps ↔ metres.

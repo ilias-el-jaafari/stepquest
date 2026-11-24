@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import type { LatLon } from '../geo/geo.ts'
 import { useI18n } from '../i18n/index.ts'
 import { PixelIcon } from './PixelIcons.tsx'
@@ -38,7 +38,11 @@ type Props = {
   bubble?: string
 }
 
-export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble }: Props) {
+/**
+ * Memoised on purpose: the screen around it re-renders on every keystroke and every clock tick,
+ * and the map only needs to follow its own props (callers pass stable callbacks and objects).
+ */
+export const MapView = memo(function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<MapRenderer | undefined>(undefined)
@@ -180,4 +184,4 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
       <div className="map-attribution">{t('map.attribution')}</div>
     </div>
   )
-}
+})

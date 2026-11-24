@@ -1,9 +1,10 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useId, useMemo, useRef, useState } from 'react'
 import type { LatLon } from '../geo/geo.ts'
 import { sunTimes } from '../geo/sun.ts'
 import { useI18n } from '../i18n/index.ts'
 import type { PlainKey } from '../i18n/en.ts'
 import { PixelIcon } from './PixelIcons.tsx'
+import { useDismiss } from './useDismiss.ts'
 
 const FAQ: readonly (readonly [PlainKey, PlainKey])[] = [
   ['info.q.route', 'info.a.route'],
@@ -42,6 +43,7 @@ export function InfoMenu({ place, now }: Props) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
   const root = useRef<HTMLDivElement>(null)
+  const opener = useRef<HTMLButtonElement>(null)
   const sun = useMemo(() => {
     const s = sunTimes(now, place)
     if (!s) return undefined
@@ -49,21 +51,8 @@ export function InfoMenu({ place, now }: Props) {
     return { sunrise: f(s.sunrise), sunset: f(s.sunset) }
   }, [now, place, locale])
 
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: PointerEvent) => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('pointerdown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  const close = useCallback(() => setOpen(false), [])
+  useDismiss(open, close, root, opener)
 
   return (
     <div className="sound-menu info-menu down" ref={root}>
@@ -71,7 +60,8 @@ export function InfoMenu({ place, now }: Props) {
         type="button"
         className="pix-btn sound-toggle"
         aria-expanded={open}
-        aria-controls={panelId}
+        ref={opener}
+        aria-controls={open ? panelId : undefined}
         aria-label={t('info.title')}
         data-testid="info-button"
         onClick={() => setOpen((o) => !o)}

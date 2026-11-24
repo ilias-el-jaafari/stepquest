@@ -107,7 +107,7 @@ describe('source scan: no hard-coded user-facing text', () => {
 describe('source scan: numbers follow the language', () => {
   /** Files allowed to print a number with `toFixed`, and why. */
   const TO_FIXED_ALLOWED: Record<string, string> = {
-    'App.tsx': 'coordinates are typed and parsed with a point (data.badCoords shows the format)',
+    'geo/coords.ts': 'coordinates are typed and parsed with a point (data.badCoords shows the format)',
     'osm/overpass.ts': 'bounding box in the query string',
     'osm/demoArea.ts': 'bounding box in the query string',
   }

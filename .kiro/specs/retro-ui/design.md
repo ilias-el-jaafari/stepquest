@@ -112,3 +112,106 @@ English copy is unchanged. Spanish numbers change shape: "7.50 km" is now "7,50 
 
 - The web manifest stays English (F5). A per-language manifest would need two files and a swap at load, which the app does not do today.
 - English selects the singular for a count of exactly 1.0 shown with a decimal ("1.0 meter"); no such text exists today.
+
+## App shell review (Nov 2026)
+
+Scope: `src/App.tsx` (955 lines), `src/ui/**`, `src/index.css`, `src/main.tsx`, `public/manifest.webmanifest`, `index.html`. Cross-references: [quest](../quest/design.md) (resume, finish, wake lock) and [map-rendering](../map-rendering/design.md) (`MapView`, data loading). Method: read the code, list suspected bugs, write a failing test for each (`src/AppShell.test.tsx` and friends), then fix (task 67). There was no service worker before this review, so "update prompt of the PWA" had nothing to review; it is added (F15).
+
+### Findings
+
+| Id | Finding | Outcome |
+| --- | --- | --- |
+| F1 | `App.tsx` held 40 `useState`s, three async flows and every tab's markup in one function. Handlers closed over stale state (`plan`, `loadLiveAround`, `locateMe` through a `locateRef` patch). | Typed reducer, `latest` ref, hooks, components (67.2, 67.3). |
+| F2 | Every keystroke in the step field re-rendered `MapView` (new `onTap`, `onLocate`, `onView` closures) and so ran its effects. The quest screen did the same on each one-second clock tick. | `MapView` is `memo`; stable callbacks (B7, B8). |
+| F3 | "Plan quest" had no guard against a second press before the first state update, and nothing marked a request as stale when the inputs changed. | Request tokens in the reducer (B1, B3). |
+| F4 | `plan` had no `catch`: a worker error left the button on "Planning…" for good. | B2. |
+| F5 | The bundled map load had no `catch`: a failed chunk showed "Building the overworld…" forever. A saved live quest whose map failed to load was silently skipped. | B4, B5. |
+| F6 | `stepsToday` was read once per page load, so "Steps today" stayed old after a night or after the app came back from the background. `now` for sunrise was fixed per visit. | `useToday` (B6). |
+| F7 | `window.confirm` ends a quest: blocked in some in-app browsers and installed apps, unstyled, not translatable beyond the message. | `ConfirmDialog` (B13). |
+| F8 | Onboarding handled keys on its own panel only; a click on the dimmed backdrop moved focus out and Escape, arrows and Tab stopped working. The app behind it stayed tabbable and readable. | `useModal`, `inert` (B15). |
+| F9 | The quest-complete screen was `role="dialog"` without a name and did not take focus. | `CompleteDialog` (B12). |
+| F10 | The dialogue box had `aria-live` on text that grows one letter every 28 ms, so a screen reader would read letters. | Whole-line status region (B14). |
+| F11 | `aria-controls` pointed at ids that do not exist while a pop-up or list is closed (Info, Sound, search). Escape closed the pop-ups but dropped focus to the page. `aria-label` on the start/finish group without a role. Preset and place buttons showed their state by colour only. | B9, B10, B11, B16. |
+| F12 | Effects with cleanup are fine: map input, resize observer, timers, wake lock and quest listeners all clean up. `useLiveLoader` keeps one request at a time. No leaks found. | No change. |
+| F13 | Layout at 320 px: the header (logo 18 px, avatar, steps pill) was 417 px wide and the pill stuck out of the screen; at 390 px the pill ran 27 px over. Phone on its side: map 160 px, planner 143 px high with the plan button below the fold. Portrait-only manifest. Safe-area insets were present on top, bottom, left and right of the header, tab bar, sheets and quest screen. | Fixed (67.8). |
+| F14 | Colour contrast measured against the paper background: hint 7.9, accent text 6.2, error 5.7, good 4.8, warning 6.3, footer on ink 5.4, tagline on navy 8.7, gold on navy 7.5. All at least 4.5:1. | No change. |
+| F15 | No service worker, no offline note, no update flow. | 67.9. |
+| F16 | No error boundary: a render error white-screened the app. | 67.7. |
+| F17 | Dead CSS: `.box-sub`, `.topbar-tools`, and 20 earlier declarations in `.app`, `.topbar`, `.logo`, `.tagline`, `.layout`, `.map-wrap`, `.map-buttons`, `.box`, `.presets`, `.chip`, `.quest`, `.hud`, `.hud-top`, `.hud-buttons`, `.dialog`, `.complete-box`, `.avatar`, `.steps-pill`, `.planner-row`, `.tab.on .tab-icon` that a later rule of the same selector always overrode. | Removed (67.10). |
+| F18 | State that must survive a reload: settings, avoid list, look, onboarding flag, locale, quest and daily steps are stored. State that should not: route and plan, planner fold, active tab, simulate options, picked street note; all reset, as intended. The avoid list was saved inside event handlers (and twice in `onTap`); it is now saved by one effect. | Kept; B-free. |
+
+### Bugs
+
+| Id | Where | Problem | Regression test |
+| --- | --- | --- | --- |
+| B1 | `plan` | Two presses in one frame sent two requests. | `AppShell.test.tsx` B1 |
+| B2 | `plan` | A throwing planner left "Planning…" on. | B2 |
+| B3 | `plan` | An answer arriving after the mode changed still set the route. | B3, reducer P-A1, P-A3 |
+| B4 | start-up | A failed demo load showed the loading text forever. | B4 |
+| B5 | start-up | A saved live quest on an unreachable map vanished without a word. | B5 |
+| B6 | header | "Steps today" never refreshed. | B6, `shellCss.test.ts` (midnight timer) |
+| B7 | `MapView` | Typing redrew the map controls on every key. | B7 |
+| B8 | `QuestScreen` | The clock tick redrew the map controls every second. | B8 |
+| B9 | planner | `aria-label` on a plain `div` (start/finish switch). | B9 |
+| B10 | Info, Sound, avoid search | `aria-controls` to a missing id. | B10 |
+| B11 | Info, Sound | Escape lost focus. | B11 |
+| B12 | quest complete | Dialog without name or focus. | B12 |
+| B13 | quest HUD | Browser `confirm`. | B13, `modal.test.tsx` |
+| B14 | dialogue box | Live region on typed text. | `DialogueBox.test.tsx` B14 |
+| B15 | onboarding | Keys died after a click on the backdrop; the app behind was reachable. | B15, `modal.test.tsx` |
+| B16 | planner | State by colour only. | B16 |
+
+### Target structure
+
+```
+App.tsx                 layout and wiring (about 310 lines)
+app/appState.ts         AppState, AppAction, appReducer (pure)
+app/useAppState.ts      useReducer plus `latest`, the newest state for handlers and async code
+app/usePlanner.ts       PlanClient, plan (one at a time, token checked), reroute for the quest runner
+app/useArea.ts          world, boot or resume, live loading, "use my location", auto-load of the area under the view
+app/useNumberFields.ts  raw text of the step and stride fields
+app/useToday.ts         steps today and "now", refreshed on show, storage and midnight
+app/useOnline.ts        navigator.onLine as an external store
+pwa/                    sw.template.js, updateStore.ts
+ui/                     AppHeader, PlannerPanel, BagContent, HeroContent, SettingsContent, MapBanners, Sheet,
+                        ResultBox, SafetyNotice, FieldNote, LocateMessage, ConfirmDialog, CompleteDialog,
+                        ErrorBoundary, UpdateBanner, useModal, useDismiss
+```
+
+### Design decisions
+
+- **Reducer and tokens.** `plan: { status, token, seed }`. `clearPlan` runs on every input change: it drops the route and increases the token. `planStart` is ignored while `status` is `running`. `planDone`, `planFailed` and `planCancelled` apply only when their token equals the current one and the status is `running`. This makes the three plan bugs one rule, and the reducer is pure, so property tests cover it. `useAppState` keeps `latest` by applying the reducer a second time inside `dispatch`; the reducer is pure, so this is safe, and it lets a handler see a dispatch from the same event.
+- **No-op actions return the same state object.** Setting a setting to its current value, switching to the tab already shown and so on do not clear the route or re-render.
+- **Fields.** Number-field text stays local to `useNumberFields` (typing is not app state); usable values flow into `settings` while typing. Plan validates the text first, then reads `latest`.
+- **World outside the reducer.** `World` (graph, grid, OSM data) is large and not plain data. `useArea` keeps it in `useState` plus a ref.
+- **Modals.** `useModal(panel, { onEscape, onKey })` listens on the document, so it works after focus left the panel. Tab wraps; with no focusable element it keeps focus on the panel. Focus goes to `[data-autofocus]` or the panel and returns to the previous element on close. `ConfirmDialog` focuses the safe answer. The onboarding is rendered beside `.app`, which gets `inert` while it is open.
+- **Error boundary.** A class component outside `I18nProvider`; it takes the language from `detectLocale()` and the dictionaries directly, so a broken provider cannot break it. It logs to the console only. It touches no storage. "Try again" re-renders, "Reload" reloads, and a saved quest resumes on boot.
+- **Layout.** Under 430 px the logo is 13 px with a 22 px mark; under 360 px the header avatar is hidden (the Hero tab shows it). On a short landscape phone the layout is a row: map left, planner right (up to 420 px), slim header, tab labels beside their icons, left inset applied. On screens up to 700 px high the plan row sticks to the bottom of the scrolling planner. Wide screens keep the existing rail and 400 px column.
+- **Service worker.** `vite.config.ts` emits `sw.js` from `src/pwa/sw.template.js` with the list of built files and a build id (hash of the file list and `index.html`). Same-origin GETs only; Overpass requests are never intercepted. Pages: network first, cached shell when offline. Assets: cache first. A new worker waits; `UpdateStore.apply()` posts `skip-waiting` and the page reloads once on `controllerchange`. The prompt sits in the planning screen only, so a quest is never reloaded by surprise. The first install is not an update (`controller` is null). The registration runs in production builds only. It is not tested in a browser here; the store and the worker's rules are unit-tested with fakes.
+- **Coordinates.** `geo/coords.ts` owns `toFixed` for coordinates (the one allowed place, see the source scan).
+
+### Visible changes (the look and flow Ilias approved stay)
+
+- Ending a quest opens a pixel dialog ("End this quest?", "Keep walking" / "End quest") instead of the browser box. Spanish: "Seguir andando" / "Terminar misión".
+- Narrow phones: smaller logo in the header; below 360 px the small avatar leaves the header.
+- Phones on their side: map and planner side by side.
+- Short portrait screens: the Plan button stays at the bottom of the planner while it scrolls.
+- New messages: planner failure, map failure with "Try again", saved-quest notice, offline note, update prompt, crash screen. The tab and planner look is unchanged.
+- The installed app can rotate.
+
+### Properties
+
+- **P-A1** A route never outlives a change of its inputs (start, finish, settings, avoid list).
+- **P-A2** A request is running only after `planStart`, and a running request keeps its token.
+- **P-A3** An answer with another token changes nothing (same object returned).
+- **P-A4** The state stays valid after any action sequence: a real tab, an avoid list within bounds, `placing` is `start` or `end`.
+
+### Tests
+
+`AppShell.test.tsx` (bug regressions through the whole app, with render counting through a wrapped `PixelIcon` that only `MapView` draws), `app/appState.test.ts` (reducer and properties, fixed seed `20261204`), `ui/modal.test.tsx`, `ui/ErrorBoundary.test.tsx`, `ui/shellCss.test.ts` (safe areas, landscape rules, dead rules, dead classes), `pwa/updateStore.test.ts` (update flow and worker rules), `geo/coords.test.ts`. `scripts/check-layout.mjs` measures the seven screen sizes in Chrome; `scripts/screenshot-retro.mjs` still passes.
+
+### Open points
+
+- Safe-area insets cannot be emulated by headless Chrome; the CSS is checked by text, not on a device.
+- The service worker is built and linted but was not run in a browser during this review.
+- Onboarding, Info and Sound pop-ups are not yet announced to screen readers when they open beyond the dialog role (focus moves into onboarding; the pop-ups keep focus on their button).

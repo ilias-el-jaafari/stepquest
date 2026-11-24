@@ -255,6 +255,20 @@ export const en = {
   'sound.off': 'off',
   'sound.resume': 'Sound is paused. Tap to turn it on.',
   'sound.hint': 'Music plays while you walk and follows your pace.',
+  'quest.endYes': 'End quest',
+  'quest.endNo': 'Keep walking',
+  'error.planFailed': 'Could not plan a route. Try again.',
+  'map.error': 'The map could not be built. Check your connection and try again.',
+  'map.retry': 'Try again',
+  'quest.resumeFailed': 'Your saved quest is on a map that could not be loaded. It is kept: connect and reload to continue.',
+  'crash.title': 'Oops! The game froze',
+  'crash.body': 'Something broke on this screen. Your saved quest and settings are safe.',
+  'crash.retry': 'Try again',
+  'crash.reload': 'Reload',
+  'update.ready': 'A new version is ready.',
+  'update.apply': 'Update',
+  'update.later': 'Later',
+  'net.offline': 'You are offline. The demo map and areas you saved still work.',
 } as const
 
 export type MessageKey = keyof typeof en

@@ -2,7 +2,7 @@
 
 Part of the StepQuest specs; see [../README.md](../README.md) for the introduction, glossary and index. Requirement ids are kept from the original single spec so history stays traceable.
 
-Related: [quest](../quest/requirements.md) (HUD content), [voice-audio](../voice-audio/requirements.md) (sound menu).
+Related: [quest](../quest/requirements.md) (HUD content, resume after reload), [map-rendering](../map-rendering/requirements.md) (map view, data loading), [voice-audio](../voice-audio/requirements.md) (sound menu).
 
 ## Requirements
 
@@ -26,6 +26,30 @@ Related: [quest](../quest/requirements.md) (HUD content), [voice-audio](../voice
 4. THE SYSTEM SHALL use the same button family on the planner, the map controls, the quest HUD, the Bag, Hero and Settings tabs, the sound and info menus and the dialogs.
 5. THE SYSTEM SHALL keep a press area of at least 48 px on both axes for every button, an accessible name for every icon-only button, a visible `:focus-visible` outline, and a label colour with a contrast of at least 4.5:1 on its fill.
 6. WHERE the user prefers reduced motion, THE SYSTEM SHALL show the pressed state without any transition.
+
+### Requirement 5c (task 67, Nov 2026 review): A dependable app shell
+
+**User Story:** As a walker using the app on a phone for weeks, I want the screens around the map to stay correct when I tap fast, lose signal, turn the phone, or leave the app open overnight, so that I never meet a stuck button, a blank screen or yesterday's numbers.
+
+#### Acceptance Criteria
+
+1. WHEN the user presses "Plan quest" twice before the first answer arrives, THE SYSTEM SHALL send one planning request.
+2. WHEN the user changes the mode, the step goal, the stride, the start or finish, or the avoid list while a request is out, THE SYSTEM SHALL drop that request's answer and SHALL NOT show a route that no longer matches the inputs.
+3. IF the planner fails or throws, THEN THE SYSTEM SHALL leave the "Planning…" state, show a translated message and allow another try.
+4. IF the bundled map cannot be built at start-up, THEN THE SYSTEM SHALL show a translated message with a "Try again" button instead of "Building the overworld…" forever.
+5. IF a saved quest belongs to a live map that cannot be loaded, THEN THE SYSTEM SHALL keep the saved quest and tell the user why it is not shown.
+6. WHEN the app returns to the foreground, another tab changes the stored total, or local midnight passes, THE SYSTEM SHALL read "steps today" again.
+7. WHEN a text field or a clock changes state, THE SYSTEM SHALL NOT redraw the map view (its props are stable).
+8. THE SYSTEM SHALL ask "End this quest?" in a dialog of its own style (`role="alertdialog"`, safe answer focused first, Escape means no) and SHALL NOT use the browser's `confirm`.
+9. WHILE a modal dialog is open (onboarding, end-quest question, quest complete), THE SYSTEM SHALL keep Tab inside it, move focus into it, return focus to the previous element on close, and react to Escape wherever focus is. WHILE the onboarding is open, the app behind it SHALL be `inert`.
+10. WHEN the Info or Sound pop-up closes with Escape while focus is inside it, THE SYSTEM SHALL put focus back on the button that opened it. `aria-controls` SHALL only point at an element that exists.
+11. THE SYSTEM SHALL announce each dialogue line once and whole (a status region), and SHALL hide the letter-by-letter copy from screen readers.
+12. THE SYSTEM SHALL mark the quest-complete screen as a named modal dialog and the preset and start/finish buttons with `aria-pressed`.
+13. IF a render error occurs, THEN THE SYSTEM SHALL show a friendly English or Spanish message with "Try again" and "Reload", SHALL NOT show the raw error, and SHALL NOT delete the saved quest or settings.
+14. THE SYSTEM SHALL fit without sideways scrolling and keep the "Plan quest" button reachable at 320×568, 390×844, phones on their side (844×390, 568×320), tablets, desktop and 2560 px wide screens, and SHALL keep notch and home-bar insets on every edge. The header SHALL fit at 320 px.
+15. THE SYSTEM SHALL NOT lock the installed app to portrait.
+16. THE SYSTEM SHALL keep the app shell and the bundled demo map working offline once visited (service worker), SHALL show a note while the browser is offline, and WHEN a new version is ready SHALL offer an "Update" button on the planning screens and SHALL NOT reload by itself.
+17. THE SYSTEM SHALL keep `App.tsx` to screen layout and wiring: state transitions in a typed, pure reducer with property tests; presentational components under `src/ui`.
 
 ### Requirement 9: Onboarding and logo
 

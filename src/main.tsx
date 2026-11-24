@@ -4,11 +4,18 @@ import '@fontsource/press-start-2p/latin-400.css'
 import './index.css'
 import App from './App.tsx'
 import { I18nProvider } from './i18n/index.ts'
+import { registerServiceWorker } from './pwa/updateStore.ts'
+import { ErrorBoundary } from './ui/ErrorBoundary.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <I18nProvider>
-      <App />
-    </I18nProvider>
+    <ErrorBoundary>
+      <I18nProvider>
+        <App />
+      </I18nProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )
+
+// Offline shell and update prompt, in the built app only (the dev server must always serve fresh files).
+if (import.meta.env.PROD) registerServiceWorker(`${import.meta.env.BASE_URL}sw.js`)

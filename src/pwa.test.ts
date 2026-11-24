@@ -20,6 +20,9 @@ describe('home-screen app setup', () => {
     expect(m.icons.some((i) => i.sizes === '512x512' && i.purpose === 'maskable')).toBe(true)
     for (const icon of m.icons) expect(exists(icon.src), icon.src).toBe(true)
   })
+  it('does not lock the screen to portrait (landscape must work for people who dock the phone)', () => {
+    expect((JSON.parse(manifestText) as { orientation: string }).orientation).toBe('any')
+  })
   it('sets the iPhone meta tags and safe-area viewport', () => {
     expect(html).toContain('viewport-fit=cover')
     expect(html).toContain('rel="manifest"')

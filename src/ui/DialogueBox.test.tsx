@@ -66,4 +66,15 @@ describe('DialogueBox', () => {
     await act(async () => vi.advanceTimersByTime(200))
     expect(done).toHaveBeenCalledTimes(1)
   })
+
+  it('B14: announces the whole line once, not every typed letter', async () => {
+    await act(async () => root.render(<I18nProvider><DialogueBox kind="start" lines={['Hello walker!']} onDone={() => {}} charMs={10} /></I18nProvider>))
+    const status = host.querySelector('[role="status"]')!
+    expect(status.textContent).toBe('Hello walker!')
+    // The typed copy is hidden from screen readers and holds no live region.
+    expect(box().querySelector('.dialog-text')!.getAttribute('aria-hidden')).toBe('true')
+    expect(box().querySelector('.dialog-text [aria-live], .dialog-text[aria-live]')).toBeNull()
+    await act(async () => vi.advanceTimersByTime(30))
+    expect(status.textContent).toBe('Hello walker!')
+  })
 })

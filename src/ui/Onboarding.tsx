@@ -1,9 +1,10 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useI18n } from '../i18n/index.ts'
 import type { PlainKey } from '../i18n/en.ts'
 import { LogoMark } from './Logo.tsx'
 import { PixelSvg } from './PixelIcons.tsx'
 import { ONBOARDING_ART } from './onboardingArt.ts'
+import { useModal } from './useModal.ts'
 
 export const ONBOARDING_STEPS = 3
 
@@ -24,43 +25,27 @@ export function Onboarding({ onClose }: Props) {
   const bodyId = useId()
   const last = step === ONBOARDING_STEPS - 1
 
-  useEffect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
-    panel.current?.focus()
-    return () => before?.focus?.()
-  }, [])
-
   const next = () => (last ? onClose() : setStep((s) => s + 1))
   const back = () => setStep((s) => Math.max(0, s - 1))
 
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const onButton = e.target instanceof HTMLElement && e.target.closest('button') !== null
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onClose()
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault()
-      if (!last) setStep((s) => s + 1)
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault()
-      back()
-    } else if (e.key === 'Enter' && !onButton) {
-      e.preventDefault()
-      next()
-    } else if (e.key === 'Tab' && panel.current) {
-      const items = Array.from(panel.current.querySelectorAll<HTMLElement>('button:not(:disabled)'))
-      const first = items[0]
-      const lastItem = items[items.length - 1]
-      const active = document.activeElement
-      if (e.shiftKey && (active === first || active === panel.current)) {
+  // Arrow keys and Enter work from anywhere on the page (a click on the backdrop moves focus out).
+  // Enter on a button keeps its own click.
+  useModal(panel, {
+    onEscape: onClose,
+    onKey: (e) => {
+      const onButton = e.target instanceof HTMLElement && e.target.closest('button') !== null
+      if (e.key === 'ArrowRight') {
         e.preventDefault()
-        lastItem?.focus()
-      } else if (!e.shiftKey && active === lastItem) {
+        if (!last) setStep((s) => s + 1)
+      } else if (e.key === 'ArrowLeft') {
         e.preventDefault()
-        first?.focus()
+        back()
+      } else if (e.key === 'Enter' && !onButton) {
+        e.preventDefault()
+        next()
       }
-    }
-  }
+    },
+  })
 
   return (
     <div className="onb-wrap" data-testid="onboarding">
@@ -72,7 +57,6 @@ export function Onboarding({ onClose }: Props) {
         aria-labelledby={titleId}
         aria-describedby={bodyId}
         tabIndex={-1}
-        onKeyDown={onKeyDown}
       >
         <p className="onb-step">{t('onboarding.step', { n: step + 1, total: ONBOARDING_STEPS })}</p>
         <div className="onb-art" aria-hidden="true">

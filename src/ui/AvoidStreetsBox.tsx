@@ -47,7 +47,7 @@ export function AvoidStreetsBox(p: Props) {
           value={query}
           placeholder={t('safety.searchPlaceholder')}
           aria-label={t('safety.search')}
-          aria-controls={listId}
+          aria-controls={query.trim() ? listId : undefined}
           autoComplete="off"
           onChange={(e) => setQuery(e.target.value)}
         />

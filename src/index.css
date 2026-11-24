@@ -43,37 +43,21 @@ body {
   clip: rect(0 0 0 0);
 }
 
-.app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
-
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
-  padding-top: max(10px, env(safe-area-inset-top));
-  background:
-    repeating-linear-gradient(90deg, #26254a 0 8px, #222143 8px 16px);
-  border-bottom: 4px solid #000;
   color: var(--paper);
 }
 
 .logo {
   margin: 0;
-  font-size: 18px;
   letter-spacing: 1px;
-  color: var(--gold);
-  text-shadow: 3px 3px 0 var(--accent-dark);
 }
 
 .tagline {
   margin: 4px 0 0;
-  font-size: 8px;
-  color: #c9c6f0;
 }
 
 .lang select {
@@ -86,17 +70,8 @@ body {
   border-radius: 0;
 }
 
-.layout {
-  flex: 1;
-  display: grid;
-  grid-template-rows: minmax(330px, 56vh) auto;
-  min-height: 0;
-}
-
 .map-wrap {
   position: relative;
-  min-height: 0;
-  border-bottom: 4px solid #000;
 }
 
 .map {
@@ -123,11 +98,8 @@ body {
 
 .map-buttons {
   position: absolute;
-  top: 10px;
-  right: 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .map-attribution {
@@ -157,19 +129,12 @@ body {
     inset 0 0 0 3px var(--frame),
     inset 0 0 0 5px var(--paper),
     4px 4px 0 #000;
-  padding: 14px 14px 12px;
 }
 
 .box-title {
   display: block;
   margin: 0 0 8px;
   font-size: 10px;
-  color: var(--frame-dark);
-}
-
-.box-sub {
-  margin: 10px 0 6px;
-  font-size: 8px;
   color: var(--frame-dark);
 }
 
@@ -316,7 +281,6 @@ input[aria-invalid='true'] {
 
 .presets {
   display: flex;
-  gap: 6px;
   margin-top: 8px;
   flex-wrap: wrap;
 }
@@ -324,8 +288,6 @@ input[aria-invalid='true'] {
 .chip {
   font: inherit;
   font-size: 8px;
-  padding: 6px 8px;
-  border: 2px solid #000;
   background: #fff;
   cursor: pointer;
 }
@@ -391,8 +353,6 @@ input[aria-invalid='true'] {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-
-
 /* ---------- Phase 2: location, quest start, active quest HUD ---------- */
 
 .check {
@@ -428,7 +388,6 @@ input[aria-invalid='true'] {
 .quest {
   position: fixed;
   inset: 0;
-  background: var(--ink);
   overflow: hidden;
 }
 
@@ -444,7 +403,6 @@ input[aria-invalid='true'] {
   background: var(--paper);
   border: 4px solid #000;
   box-shadow: inset 0 0 0 3px var(--frame), inset 0 0 0 5px var(--paper), 4px 4px 0 #000;
-  padding: 10px 12px;
   z-index: 2;
 }
 
@@ -452,7 +410,6 @@ input[aria-invalid='true'] {
   top: max(8px, env(safe-area-inset-top));
   right: 58px;
   display: grid;
-  grid-template-columns: 1fr auto;
   gap: 4px 12px;
   align-items: center;
 }
@@ -559,7 +516,6 @@ input[aria-invalid='true'] {
 .hud-buttons {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
   margin-top: 8px;
 }
 
@@ -593,14 +549,8 @@ input[aria-invalid='true'] {
   position: relative;
   width: min(460px, 100%);
   min-height: 64px;
-  padding: 14px 16px 16px;
   color: var(--ink);
   background: #fbf7ec;
-  border: 4px solid #1b1a2e;
-  box-shadow:
-    inset 0 0 0 3px #fbf7ec,
-    inset 0 0 0 5px #4a8ff0,
-    4px 4px 0 rgba(0, 0, 0, 0.6);
   cursor: pointer;
   pointer-events: auto;
   animation: dialog-in 0.18s steps(3);
@@ -609,13 +559,6 @@ input[aria-invalid='true'] {
 .dialog:focus-visible {
   outline: 3px dashed var(--gold);
   outline-offset: 3px;
-}
-
-.dialog[data-kind='finish'] {
-  box-shadow:
-    inset 0 0 0 3px #fbf7ec,
-    inset 0 0 0 5px var(--gold),
-    4px 4px 0 rgba(0, 0, 0, 0.6);
 }
 
 .dialog-text {
@@ -682,7 +625,6 @@ input[aria-invalid='true'] {
   text-align: center;
   background: var(--paper);
   border: 4px solid #000;
-  box-shadow: inset 0 0 0 3px var(--gold), inset 0 0 0 5px var(--paper), 6px 6px 0 #000;
   padding: 20px 18px;
   animation: pop 0.5s steps(5);
 }
@@ -788,12 +730,6 @@ input[aria-invalid='true'] {
 }
 
 /* ---- Sound menu (compact: one button and a small panel; can move into an options menu later) ---- */
-.topbar-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .sound-menu {
   position: relative;
 }
@@ -1042,10 +978,7 @@ button.hud-msg.sound-resume {
   place-items: center;
   width: 38px;
   height: 38px;
-  border-radius: 50%;
   background: #74c45a;
-  border: 3px solid #000;
-  box-shadow: inset 0 0 0 2px #fff;
   overflow: hidden;
 }
 
@@ -1065,9 +998,6 @@ button.hud-msg.sound-resume {
   line-height: 1.4;
   color: #fff;
   background: #2c3f6b;
-  border: 3px solid #000;
-  border-radius: 10px;
-  box-shadow: inset 0 0 0 2px #7fe07a;
   white-space: nowrap;
 }
 
@@ -1185,7 +1115,6 @@ button.hud-msg.sound-resume {
 
 .planner-row {
   display: flex;
-  gap: 6px;
   margin-bottom: 8px;
 }
 
@@ -1286,7 +1215,6 @@ button.hud-msg.sound-resume {
 .tab.on .tab-icon {
   background: #3d5a9c;
   border-color: #000;
-  box-shadow: inset 0 0 0 2px var(--gold);
 }
 
 .tab:focus-visible {
@@ -2230,4 +2158,207 @@ select {
 
 .onb-actions .pix-btn:first-child {
   margin-right: auto;
+}
+
+/* ============================================================
+   App shell review (task 67): narrow headers, landscape phones,
+   banners, confirm and crash dialogs.
+   ============================================================ */
+
+.brand {
+  min-width: 0;
+}
+
+@media (max-width: 430px) {
+  .logo {
+    font-size: 13px;
+  }
+
+  .logo-lockup {
+    gap: 6px;
+  }
+
+  .logo-lockup .logo-mark {
+    width: 22px;
+    height: 22px;
+  }
+
+  .topbar {
+    gap: 8px;
+  }
+}
+
+/* The walker is also in the Hero tab; on the narrowest phones the header keeps the name and the count. */
+@media (max-width: 359px) {
+  .topbar .avatar {
+    display: none;
+  }
+}
+
+/* Short wide screens (a phone on its side): map and planner side by side, a slim header and tab bar. */
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 899px) {
+  .topbar {
+    padding-top: max(4px, env(safe-area-inset-top));
+    padding-bottom: 4px;
+  }
+
+  .tagline {
+    display: none;
+  }
+
+  .layout {
+    flex-direction: row;
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .map-wrap {
+    min-height: 0;
+    border-right: 4px solid #000;
+  }
+
+  .sheet.planner {
+    flex: 0 0 min(50%, 420px);
+    max-height: none;
+    border-top: none;
+    padding-left: 12px;
+  }
+
+  .tab {
+    flex-direction: row;
+    justify-content: center;
+    min-height: 48px;
+    gap: 6px;
+  }
+
+  .tab-icon {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* Short screens: the main button stays in view while the rest of the planner scrolls. */
+@media (max-width: 899px) and (max-height: 700px) {
+  .planner .actions {
+    position: sticky;
+    bottom: -8px;
+    z-index: 2;
+    padding: 6px 0 2px;
+    background: var(--paper);
+  }
+}
+
+.net-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 12px;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  font-size: 8px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: #fff3b0;
+  border-bottom: 4px solid #000;
+}
+
+.net-banner span {
+  flex: 1;
+}
+
+.map-banner.top {
+  top: 28px;
+  bottom: auto;
+  right: 64px;
+}
+
+.map-error {
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+  font-size: 9px;
+}
+
+.map-error p {
+  margin: 0;
+}
+
+.confirm-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: repeating-linear-gradient(0deg, rgba(27, 26, 46, 0.75) 0 2px, rgba(27, 26, 46, 0.6) 2px 4px);
+}
+
+.confirm-box {
+  width: min(360px, 100%);
+  padding: 18px;
+  font-size: 9px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--paper);
+  border: 4px solid #000;
+  box-shadow: inset 0 0 0 3px var(--accent), inset 0 0 0 5px var(--paper), 6px 6px 0 #000;
+}
+
+.confirm-box p {
+  margin: 0;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.confirm-actions .pix-btn {
+  flex: 1 1 120px;
+}
+
+.crash {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: var(--ink);
+}
+
+.crash-box {
+  width: min(420px, 100%);
+  padding: 20px 18px;
+  font-size: 9px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--paper);
+  border: 4px solid #000;
+  box-shadow: inset 0 0 0 3px var(--accent), inset 0 0 0 5px var(--paper), 6px 6px 0 #000;
+}
+
+.crash-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--accent-dark);
+}
+
+.crash-box p {
+  margin: 0;
+}
+
+.crash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.crash-actions .pix-btn {
+  flex: 1 1 120px;
 }

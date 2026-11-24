@@ -1,9 +1,10 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useId, useRef, useState } from 'react'
 import { VOLUME_CHANNELS, type VolumeChannel } from '../audio/settings.ts'
 import { useAudio } from '../audio/useAudio.ts'
 import { useI18n } from '../i18n/index.ts'
 import type { PlainKey } from '../i18n/en.ts'
 import { PixelIcon } from './PixelIcons.tsx'
+import { useDismiss } from './useDismiss.ts'
 
 const LABELS: Record<VolumeChannel, PlainKey> = { master: 'sound.master', music: 'sound.music', voice: 'sound.voice', sfx: 'sound.sfx' }
 
@@ -25,22 +26,10 @@ export function SoundMenu({ placement = 'down', showLabel = true }: Props) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
   const root = useRef<HTMLDivElement>(null)
+  const opener = useRef<HTMLButtonElement>(null)
 
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: PointerEvent) => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('pointerdown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  const close = useCallback(() => setOpen(false), [])
+  useDismiss(open, close, root, opener)
 
   const off = settings.muted
   return (
@@ -49,7 +38,8 @@ export function SoundMenu({ placement = 'down', showLabel = true }: Props) {
         type="button"
         className={`pix-btn sound-toggle ${showLabel ? '' : 'round'} ${off ? 'is-off' : ''}`}
         aria-expanded={open}
-        aria-controls={panelId}
+        ref={opener}
+        aria-controls={open ? panelId : undefined}
         aria-label={off ? `${t('sound.button')}: ${t('sound.off')}` : t('sound.button')}
         data-testid="sound-button"
         onClick={() => {
