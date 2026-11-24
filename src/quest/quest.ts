@@ -103,7 +103,7 @@ export const DEFAULT_QUEST_CONFIG: QuestConfig = {
   offRouteM: 40,
   offRouteFixes: 2,
   maxPassJumpM: 400,
-  decideM: 30,
+  decideM: 20,
   towardDeg: 90,
   goalSlackM: 25,
   lostM: 60,

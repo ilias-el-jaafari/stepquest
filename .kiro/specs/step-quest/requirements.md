@@ -141,6 +141,21 @@ StepQuest turns a step goal into an 8-bit overworld quest on real streets. The u
 4. WHEN the start and the end of a leg lie on opposite sides of a roundabout, THE SYSTEM SHALL return a route that never enters the island interior.
 5. THE SYSTEM SHALL keep the safety weights and the ±5 % length tolerance unchanged, and SHALL make no new Overpass request for this (the existing query already returns the junction tag).
 
+### Requirement 7c: Fast rerouting
+
+**User Story:** As a walker who left the planned route, I want the new route to appear quickly and the screen to stay smooth, so that I can keep walking without waiting for the app.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL run route planning and rerouting in a Web Worker, so that the main thread only sends a request and applies the answer, and SHALL fall back to the same code running on the main thread (in a later task, not inside the fix handler) WHERE Web Workers are not available, such as in tests.
+2. THE SYSTEM SHALL talk to the worker through a typed message protocol (world, plan, reroute requests; ready, plan, reroute, error answers) and SHALL build the walking graph and safety context once per loaded map, not once per request.
+3. WHEN a new request of the same kind arrives before the previous one has been answered, THE SYSTEM SHALL drop the older request and its answer (latest wins), and SHALL NOT start work for a request that is already out of date.
+4. WHEN the walker is off the route and still heading for the goal, THE SYSTEM SHALL first try to reconnect: a safety-weighted shortest path from the current position to a point ahead on the planned route (not behind the walker and not beyond the next gem), keeping every uncollected gem at its place and in its order.
+5. THE SYSTEM SHALL accept a reconnection only WHEN the walked steps plus the new route stay within ±5 % of the step goal (remaining step budget); OTHERWISE it SHALL replan the whole remainder as before, with safety weights, the avoid list (including the street the walker left), and gems placed evenly.
+6. WHEN an answer arrives for a quest that has changed route in the meantime (another reroute applied, quest ended or replaced), THE SYSTEM SHALL ignore it.
+7. WHEN the walker has walked 20 m off the line (two fixes beyond 40 m or 1.5 × accuracy, and the walked distance counted by the odometer, which ignores GPS jitter) in the direction of the goal or without getting further from it, THE SYSTEM SHALL start rerouting; GPS jitter and a walk toward the next gem along a different street SHALL NOT show the "you left the route" message.
+8. THE SYSTEM SHALL have a timing test on the bundled Benicalap map that reports the time of graph build, safety context, edge costs, shortest path, local reconnect, full replan and drawing the new route, and fails when a local reconnect or a full replan exceeds a generous budget.
+
 ### Requirement 8: Engineering
 
 1. THE SYSTEM SHALL keep domain logic in pure, unit-tested TypeScript and run all tests offline.

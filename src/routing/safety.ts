@@ -232,9 +232,24 @@ export function safetyContext(graph: WalkGraph, data: OsmData): SafetyContext {
  * Per-edge cost multipliers for the planner, plus the smallest one (for A*).
  * Avoided streets get Infinity (closed). Returns undefined when nothing applies.
  */
-export function edgeCosts(ctx: SafetyContext, opts: SafetyOptions): { cost: Float32Array; min: number; closed: number } | undefined {
+export function edgeCosts(ctx: SafetyContext, opts: SafetyOptions): EdgeCosts | undefined {
   const avoid = new Set(opts.avoid.map(normalizeName))
   if (!opts.safe && avoid.size === 0) return undefined
+  // Planning falls back through several option sets and a reroute asks again and again with the same ones.
+  const key = `${opts.safe ? 1 : 0}${opts.night ? 1 : 0}|${[...avoid].sort().join('|')}`
+  const last = costCache.get(ctx)
+  if (last?.key === key) return last.costs
+  const costs = computeEdgeCosts(ctx, opts, avoid)
+  costCache.set(ctx, { key, costs })
+  return costs
+}
+
+export type EdgeCosts = { cost: Float32Array; min: number; closed: number }
+
+/** Last result per context. Callers must not modify the returned array (the planner copies it). */
+const costCache = new WeakMap<SafetyContext, { key: string; costs: EdgeCosts }>()
+
+function computeEdgeCosts(ctx: SafetyContext, opts: SafetyOptions, avoid: Set<string>): EdgeCosts {
   const cost = new Float32Array(ctx.info.length)
   let min = 1
   let closed = 0

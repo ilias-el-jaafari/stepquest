@@ -6,6 +6,7 @@ import { useI18n } from '../i18n/index.ts'
 import type { LatLon } from '../geo/geo.ts'
 import { browserSource, type LocationErrorCode, type LocationSource } from '../quest/geolocation.ts'
 import { applyFix, trackFor, type QuestState } from '../quest/quest.ts'
+import { applyReroute, type ReroutePatch } from '../quest/reroute.ts'
 import { simulatedSource } from '../quest/simSource.ts'
 import { clearQuest, saveQuest } from '../quest/storage.ts'
 import type { GpsFix } from '../quest/types.ts'
@@ -37,11 +38,13 @@ function sourceFor(q: QuestState): LocationSource {
 }
 
 /** Drives an active quest: location source, events, sounds, wake lock and persistence. */
-export function useQuestRunner(reroute?: (q: QuestState) => QuestState | undefined) {
+export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch | undefined>) {
   const rerouteRef = useRef(reroute)
   useLayoutEffect(() => {
     rerouteRef.current = reroute
   })
+  /** Numbers the reroute requests: only the newest answer is applied (latest wins). */
+  const rerouteTicket = useRef(0)
   const [quest, setQuest] = useState<QuestState>()
   const [pickup, setPickup] = useState<Pickup>()
   const [error, setError] = useState<LocationErrorCode>()
@@ -69,6 +72,21 @@ export function useQuestRunner(reroute?: (q: QuestState) => QuestState | undefin
     setWakeActive(false)
   }, [])
 
+  const startReroute = useCallback((snapshot: QuestState) => {
+    const run = rerouteRef.current
+    if (!run) return
+    const ticket = ++rerouteTicket.current
+    void run(snapshot).then((patch) => {
+      if (!patch || ticket !== rerouteTicket.current) return
+      const next = applyReroute(questRef.current, patch)
+      if (!next) return
+      questRef.current = next
+      setQuest(next)
+      lastSaveRef.current = Date.now()
+      saveQuest(next)
+    })
+  }, [])
+
   const onFix = useCallback(
     (fix: GpsFix) => {
       const current = questRef.current
@@ -77,9 +95,10 @@ export function useQuestRunner(reroute?: (q: QuestState) => QuestState | undefin
       const applied = applyFix(current, fix)
       const events = applied.events
       let state = applied.state
-      // Still heading for the goal off the line: quietly recalculate the rest of the route.
-      if (events.some((e) => e.type === 'reroute')) state = rerouteRef.current?.(state) ?? state
       questRef.current = state
+      // Still heading for the goal off the line: quietly recalculate the rest of the route
+      // (in the worker; the answer is merged in when it arrives, the fix handler never waits).
+      if (events.some((e) => e.type === 'reroute')) startReroute(state)
       setError(undefined)
       const audio = audioEngine()
       // Sound: effects, spoken callouts and the music tempo from the walking pace.
@@ -110,7 +129,7 @@ export function useQuestRunner(reroute?: (q: QuestState) => QuestState | undefin
         saveQuest(state)
       }
     },
-    [stopTracking],
+    [stopTracking, startReroute],
   )
 
   const startTracking = useCallback(
@@ -136,6 +155,7 @@ export function useQuestRunner(reroute?: (q: QuestState) => QuestState | undefin
       if (resumed) audio.armUnlock()
       else audio.unlock()
       audio.stopVoice()
+      rerouteTicket.current++
       paceRef.current.reset()
       lastFixWallRef.current = undefined
       const planner = new CalloutPlanner(q)
@@ -174,6 +194,7 @@ export function useQuestRunner(reroute?: (q: QuestState) => QuestState | undefin
     audioEngine().playMenuMusic()
     audioEngine().stopVoice()
     plannerRef.current = undefined
+    rerouteTicket.current++
     stopTracking()
     clearQuest()
     questRef.current = undefined

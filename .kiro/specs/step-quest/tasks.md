@@ -62,7 +62,7 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 - [x] 30. Fix: once the quest is finished, signal and route warnings are hidden and `watchPosition` and the wake lock are released; late fixes are ignored
 - [x] 31. Tests: lot subdivision, largest rectangle, town layout on synthetic and fixture grids, landmark tag mapping and dedupe, way styles, codec v2 (and v1 decoding), diagonal corners, route continuity, arrows and smoothing, walker frames and facing, structure painters, dialogue box, plurals, finished-quest banner and watch stop
 - [x] 32. Before / after screenshots (390×844 in Spanish, 1280×800 in English) in `screenshots/phase3/`
-- [ ] 33. Run planning in a Web Worker if larger live areas make the UI stutter
+- [x] 33. Run planning in a Web Worker if larger live areas make the UI stutter (done with task 54: plans and reroutes run in a worker with a synchronous fallback)
 
 ## Phase 4 — Sound
 
@@ -96,6 +96,7 @@ Tasks are grouped by phase. Do not start the next phase until the current phase 
 - [x] 50b. Map without holes: ground colour instead of black, time-budgeted nearest-first chunk painting with town-map stand-ins, idle prefetch ring, size-limited chunk cache that keeps on-screen chunks, automatic loading of the area under a rested view (debounced, one request at a time, no retry storms) when no route would be lost; tests for chunk planning, cache, auto-load rule and renderer fills
 - [ ] 51. New tile art
 - [x] 51b. Field fix: routes go around roundabouts (ring detection incl. split arcs and untagged loops, island edges removed from the walking graph, ways split at out-of-box nodes instead of chords); tests on synthetic plazas and the Benicalap fixture
+- [x] 54. Fast rerouting (requirement 7c): timing test on the Benicalap map; planning and rerouting in a Web Worker with a typed protocol, latest-wins and an inline fallback; local reconnect to the planned route within the step budget before a full replan; edge-cost cache; off-route decision after 20 m instead of 30 m; tests for the protocol, stale requests, reconnect (budget, gem order, stale patch) and the debounce
 
 ## Phase 5 — Submission
 

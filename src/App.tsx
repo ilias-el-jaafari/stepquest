@@ -7,6 +7,7 @@ import { DEMO_AREA } from './osm/demoArea.ts'
 import { areaForWalk } from './osm/overpass.ts'
 import { STEPS_PER_CHECKPOINT } from './routing/checkpoints.ts'
 import { type PlanResult, type RouteMode } from './routing/planner.ts'
+import { PlanClient } from './routing/planClient.ts'
 import { planWithSafety, type SafePlan } from './routing/safePlanner.ts'
 import { avoidedPolylines, nearestStreet, streetNames } from './routing/safety.ts'
 import { isDark } from './geo/sun.ts'
@@ -15,7 +16,6 @@ import { AvoidStreetsBox } from './ui/AvoidStreetsBox.tsx'
 import { InfoMenu } from './ui/InfoMenu.tsx'
 import { locateOnce, type LocationErrorCode } from './quest/geolocation.ts'
 import { createQuest, type AreaRef, type QuestState } from './quest/quest.ts'
-import { rerouteQuest } from './quest/reroute.ts'
 import { audioEngine } from './audio/engine.ts'
 import { loadQuest } from './quest/storage.ts'
 import { MapView } from './ui/MapView.tsx'
@@ -90,8 +90,19 @@ export default function App() {
   const [stepsNote, setStepsNote] = useState<Committed>()
   const [strideNote, setStrideNote] = useState<Committed>()
   const live = useLiveLoader()
+  // Planning and rerouting run in a Web Worker (or on the main thread where there is none).
+  const planClient = useRef<PlanClient>(undefined)
+  planClient.current ??= new PlanClient()
+  useEffect(() => {
+    const client = planClient.current
+    return () => client?.dispose()
+  }, [])
   const reroute = useCallback(
-    (q: QuestState) => (world ? rerouteQuest(q, { graph: world.graph, ctx: world.safety, data: world.data, bbox: world.data.bbox }, { avoid, now: Date.now() }) : undefined),
+    async (q: QuestState) => {
+      if (!world || !planClient.current) return undefined
+      const outcome = await planClient.current.reroute(world, q, avoid, Date.now())
+      return outcome.status === 'ok' ? outcome.value : undefined
+    },
     [world, avoid],
   )
   const runner = useQuestRunner(reroute)
@@ -252,20 +263,18 @@ export default function App() {
     const strideM = commitStrideField()
     setPlanning(true)
     setSeed(nextSeed)
-    // Let the button repaint before the (fast but synchronous) search.
-    setTimeout(() => {
-      // Safe routing is always on. From sunset to sunrise (at the start or by the
-      // estimated end of the walk) lighting counts more, automatically.
-      const now = Date.now()
-      const walkMs = (stepsToMetres(targetSteps, strideM) / 1000 / WALK_KMH) * 3_600_000
-      const night = isDark(now, start) || isDark(now + walkMs, start)
-      const sp = planWithSafety(
-        world.graph,
-        world.safety,
-        { mode: settings.mode, start, end: settings.mode === 'oneway' ? end : undefined, targetSteps, strideM, seed: nextSeed },
-        world.data.bbox,
-        { safe: true, night, avoid },
-      )
+    // Safe routing is always on. From sunset to sunrise (at the start or by the
+    // estimated end of the walk) lighting counts more, automatically.
+    const now = Date.now()
+    const walkMs = (stepsToMetres(targetSteps, strideM) / 1000 / WALK_KMH) * 3_600_000
+    const night = isDark(now, start) || isDark(now + walkMs, start)
+    const req = { mode: settings.mode, start, end: settings.mode === 'oneway' ? end : undefined, targetSteps, strideM, seed: nextSeed }
+    const opts = { safe: true, night, avoid }
+    void (async () => {
+      // The search runs in the worker, so the button repaints and the map keeps moving meanwhile.
+      const outcome = await planClient.current!.plan(world, req, world.data.bbox, opts)
+      if (outcome.status === 'stale') return
+      const sp = outcome.status === 'ok' ? outcome.value : planWithSafety(world.graph, world.safety, req, world.data.bbox, opts)
       setSafePlan(sp)
       setUsingNormal(false)
       setResult(sp.result)
@@ -274,7 +283,7 @@ export default function App() {
       // On phones the panel sits under the map: bring the map back into view.
       const map = document.querySelector('.map-wrap')
       if (map && map.getBoundingClientRect().bottom < 120) map.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 30)
+    })()
   }
 
   /** Load the live OSM area around a point and make it the start. */

@@ -7,7 +7,7 @@ import { placeCheckpoints } from '../routing/checkpoints.ts'
 import { WalkGraph } from '../routing/graph.ts'
 import { planRoute } from '../routing/planner.ts'
 import { nearestStreet, safetyContext } from '../routing/safety.ts'
-import { applyFix, createQuest, judgeDeviation, type QuestEvent, type QuestState } from './quest.ts'
+import { applyFix, createQuest, DEFAULT_QUEST_CONFIG, judgeDeviation, type QuestEvent, type QuestState } from './quest.ts'
 import { rerouteQuest } from './reroute.ts'
 import type { GpsFix, QuestRoute } from './types.ts'
 
@@ -55,12 +55,17 @@ describe('judging a deviation', () => {
   const off = { from: origin, point: origin, odoM: 100, goalM: 300 }
   const goal = destination(origin, 90, 300)
   it('waits until the walker has really moved off the line', () => {
-    expect(judgeDeviation(off, destination(origin, 270, 20), 120, goal)).toBe('wait')
+    expect(judgeDeviation(off, destination(origin, 270, 15), 115, goal)).toBe('wait')
   })
   it('sees a parallel street towards the goal as heading for it', () => {
     expect(judgeDeviation(off, destination(destination(origin, 0, 30), 90, 40), 170, goal)).toBe('toward')
     // 80° off the goal bearing still counts.
     expect(judgeDeviation(off, destination(origin, 10, 40), 140, goal)).toBe('toward')
+  })
+  it('decides after 20 m of real walking, not 30', () => {
+    expect(DEFAULT_QUEST_CONFIG.decideM).toBe(20)
+    expect(judgeDeviation(off, destination(destination(origin, 0, 15), 90, 10), 117, goal)).toBe('wait')
+    expect(judgeDeviation(off, destination(destination(origin, 0, 15), 90, 10), 121, goal)).toBe('toward')
   })
   it('flags walking clearly away only after a sustained distance', () => {
     const back = destination(origin, 270, 40)
@@ -74,6 +79,29 @@ describe('off-route while walking (simulated tracks)', () => {
     const { q, events } = run(quest(), walk(origin, [[90, 200]], 0, 18))
     expect(events.filter((e) => e.type === 'offRoute' || e.type === 'reroute')).toEqual([])
     expect(q.lost).toBe(false)
+  })
+
+  it('starts rerouting soon after a genuine deviation: within 90 m of leaving the line', () => {
+    // 100 m along, then straight north across the neighbouring blocks (towards nothing in particular, not away from the goal).
+    const fixes = walk(origin, [[90, 100], [0, 200]])
+    let q = quest()
+    let at: number | undefined
+    fixes.forEach((f, i) => {
+      const r = applyFix(q, f)
+      q = r.state
+      if (at === undefined && r.events.some((e) => e.type === 'reroute')) at = i
+    })
+    expect(at).toBeDefined()
+    // 10 fixes on the line, then 10 m per fix: the reroute comes within 9 fixes (90 m) of the corner.
+    expect(at! - 10).toBeLessThanOrEqual(9)
+  })
+
+  it('does not reroute for GPS jitter that jumps off the line for one fix', () => {
+    const fixes = walk(origin, [[90, 300]])
+    fixes[14] = { ...fixes[14]!, lat: fixes[14]!.lat + 90 / 111_320 }
+    const { events, q } = run(quest(), fixes)
+    expect(events.filter((e) => e.type === 'reroute' || e.type === 'offRoute')).toEqual([])
+    expect(q.offRoute).toBe(false)
   })
 
   it('asks for a quiet reroute on a parallel street towards the next checkpoint, with no message', () => {
