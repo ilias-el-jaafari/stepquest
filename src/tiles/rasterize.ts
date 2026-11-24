@@ -1,4 +1,4 @@
-import type { OsmData, OsmWay } from '../osm/types.ts'
+import { SAFETY_LIT, type OsmData, type OsmWay } from '../osm/types.ts'
 import { BARRIERS, BUILDING_STYLES, Layer, PARK_STYLES, TileGrid } from './grid.ts'
 
 export type Pt = { x: number; y: number }
@@ -168,7 +168,8 @@ export function rasterizeOsm(grid: TileGrid, data: OsmData): TileGrid {
           break
         }
         const half = roadWidthMetres(way.highway) / 2 / grid.metresPerTile
-        for (let i = 1; i < pts.length; i++) thickSegment(pts[i - 1]!, pts[i]!, half, mark(Layer.road))
+        const bits = (way.safety ?? 0) & SAFETY_LIT ? Layer.road | Layer.lit : Layer.road
+        for (let i = 1; i < pts.length; i++) thickSegment(pts[i - 1]!, pts[i]!, half, mark(bits))
         break
       }
       case 'rail':

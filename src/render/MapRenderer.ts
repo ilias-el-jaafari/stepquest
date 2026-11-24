@@ -13,6 +13,9 @@ import { paintTile, tileHash, tileKey, type TileSpec } from './tileset.ts'
 import { tileSpecAt } from './tileSpecs.ts'
 import { chunkLimit, LruCache, planChunks, type ChunkPlan, type ChunkRef } from './chunkPlan.ts'
 import { wrapBubbleText } from '../audio/speechBubble.ts'
+import { atLocalMinutes, cssRgb, lightingAt, type Lighting } from './daylight.ts'
+import { lampsInChunk } from './lamps.ts'
+import { LAMP_RGB, litHouseWindows, litLandmarkWindows, paintGlow, WALKER_RGB, WINDOW_RGB } from './lights.ts'
 
 /** Screen pixels per tile. ≥ DETAIL_ZOOM draws real 16×16 tiles; below it, a 1-px-per-tile town map. */
 export const ZOOM_LEVELS = [0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 16, 24, 32, 48] as const
@@ -130,6 +133,11 @@ export class MapRenderer {
   private quest: QuestOverlay | undefined
   private pickups: { point: LatLon; t0: number }[] = []
   private frame = 0
+  /** Lighting preview clock (minutes after local midnight); undefined follows the real time. */
+  private clockOverride: number | undefined
+  private lightingCache: { key: number; value: Lighting } | undefined
+  private clockTimer: ReturnType<typeof setInterval> | undefined
+  private readonly glowCache = new Map<string, HTMLCanvasElement>()
   /** Camera centre in tile units and zoom in CSS px per tile. */
   camX: number
   camY: number
@@ -344,7 +352,104 @@ export class MapRenderer {
     return this.grid.tileToLatLon(t.x, t.y)
   }
 
+  /** Preview a time of day for the lighting only (minutes after local midnight), or undefined for real time. */
+  setClockOverride(minutes: number | undefined): void {
+    this.clockOverride = minutes
+    this.lightingCache = undefined
+    this.requestRender()
+  }
+
+  /** Current lighting from the real (or overridden) clock and the map's location; recomputed at most once per 30 s. */
+  get lighting(): Lighting {
+    const now = Date.now()
+    const ms = this.clockOverride === undefined ? now : atLocalMinutes(now, this.clockOverride)
+    const key = Math.floor(ms / 30_000)
+    if (this.lightingCache?.key !== key) {
+      const b = this.grid.bbox
+      this.lightingCache = { key, value: lightingAt(ms, { lat: (b.north + b.south) / 2, lon: (b.east + b.west) / 2 }) }
+    }
+    return this.lightingCache.value
+  }
+
+  private startClock(): void {
+    // The sky moves slowly: a repaint once a minute is enough to follow it (no per-frame animation).
+    if (this.clockTimer === undefined && typeof setInterval === 'function') this.clockTimer = setInterval(() => this.requestRender(), 60_000)
+  }
+
+  private glow(size: number, rgb: readonly [number, number, number]): HTMLCanvasElement {
+    const key = `${size}:${rgb.join(',')}`
+    let c = this.glowCache.get(key)
+    if (!c) {
+      c = makeCanvas(size, size)
+      paintGlow(c.getContext('2d')!, size, rgb)
+      this.glowCache.set(key, c)
+    }
+    return c
+  }
+
+  /** Additive glow centred on a screen point; `tiles` is its diameter in tiles. */
+  private drawGlow(ctx: CanvasRenderingContext2D, x: number, y: number, tiles: number, scale: number, rgb: readonly [number, number, number], alpha: number): void {
+    const d = Math.round(tiles * scale)
+    if (d < 2 || alpha <= 0) return
+    ctx.globalAlpha = alpha
+    ctx.drawImage(this.glow(32, rgb), Math.round(x - d / 2), Math.round(y - d / 2), d, d)
+    ctx.globalAlpha = 1
+  }
+
+  /** Warm window light and street lamp pools over the tinted map (detail zoom only). */
+  private drawNightLights(ctx: CanvasRenderingContext2D, plan: ChunkPlan, originX: number, originY: number, scale: number, light: Lighting): void {
+    const px = scale / TILE_PX // device px per art pixel
+    const seen = new Set<number>()
+    if (light.windows > 0.02) {
+      ctx.globalAlpha = light.windows
+      ctx.fillStyle = WINDOW_RGB
+      for (const c of plan.visible) {
+        const entry = this.chunkStructures.get(`${c.cx},${c.cy}`)
+        if (!entry) continue
+        for (const k of entry.houses) {
+          if (seen.has(k)) continue
+          seen.add(k)
+          const h = this.town.houses[k]!
+          const bx = originX + h.x * scale
+          const by = originY + h.y * scale
+          for (const r of litHouseWindows(h)) ctx.fillRect(Math.round(bx + r.x * px), Math.round(by + r.y * px), Math.max(1, Math.round(r.w * px)), Math.max(1, Math.round(r.h * px)))
+        }
+        for (const k of entry.landmarks) {
+          if (seen.has(-1 - k)) continue
+          seen.add(-1 - k)
+          const l = this.town.landmarks[k]!
+          const bx = originX + l.x * scale
+          const by = originY + l.y * scale
+          for (const r of litLandmarkWindows(l)) ctx.fillRect(Math.round(bx + r.x * px), Math.round(by + r.y * px), Math.max(1, Math.round(r.w * px)), Math.max(1, Math.round(r.h * px)))
+        }
+      }
+      ctx.globalAlpha = 1
+    }
+    if (light.lamps > 0.02) {
+      ctx.globalCompositeOperation = 'lighter'
+      for (const c of plan.visible) {
+        for (const lamp of lampsInChunk(this.grid, c.cx, c.cy, CHUNK)) {
+          const sx = originX + (lamp.x + 0.5) * scale
+          const sy = originY + (lamp.y + 0.5) * scale
+          this.drawGlow(ctx, sx, sy, 5, scale, LAMP_RGB, light.lamps)
+        }
+      }
+      ctx.globalCompositeOperation = 'source-over'
+      // Lamp heads: a bright 2×2 art-pixel dot in the middle of each pool.
+      ctx.fillStyle = '#fff2b8'
+      ctx.globalAlpha = light.lamps
+      const dot = Math.max(1, Math.round(2 * px))
+      for (const c of plan.visible) {
+        for (const lamp of lampsInChunk(this.grid, c.cx, c.cy, CHUNK)) {
+          ctx.fillRect(Math.round(originX + (lamp.x + 0.5) * scale - dot / 2), Math.round(originY + (lamp.y + 0.5) * scale - dot / 2), dot, dot)
+        }
+      }
+      ctx.globalAlpha = 1
+    }
+  }
+
   requestRender(): void {
+    this.startClock()
     if (this.frame) return
     if (typeof requestAnimationFrame === 'undefined') {
       this.render()
@@ -360,6 +465,8 @@ export class MapRenderer {
     if (this.frame && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(this.frame)
     this.chunks.clear()
     this.chunkWater.clear()
+    if (this.clockTimer !== undefined) clearInterval(this.clockTimer)
+    this.clockTimer = undefined
     if (this.waterTimer !== undefined) clearTimeout(this.waterTimer)
     this.waterTimer = undefined
   }
@@ -574,10 +681,11 @@ export class MapRenderer {
     const originY = Math.round(h / 2 - this.camY * scale)
     const toScreen = (tx: number, ty: number) => ({ x: originX + tx * scale, y: originY + ty * scale })
 
+    let plan: ChunkPlan | undefined
     if (this.zoom >= DETAIL_ZOOM) {
       ctx.fillStyle = P.groundA
       ctx.fillRect(originX, originY, Math.round(this.grid.cols * scale), Math.round(this.grid.rows * scale))
-      const plan = planChunks({ camX: this.camX, camY: this.camY, zoom: this.zoom, cssW, cssH, cols: this.grid.cols, rows: this.grid.rows, chunk: CHUNK, margin: PREFETCH_MARGIN })
+      plan = planChunks({ camX: this.camX, camY: this.camY, zoom: this.zoom, cssW, cssH, cols: this.grid.cols, rows: this.grid.rows, chunk: CHUNK, margin: PREFETCH_MARGIN })
       if (this.drawChunks(ctx, plan, originX, originY, scale)) this.requestRender()
       this.drawWater(ctx, plan, originX, originY, scale)
     } else {
@@ -588,6 +696,17 @@ export class MapRenderer {
 
     // Tram, metro and train tracks above ground.
     if (this.grid.rails.length) this.drawRails(ctx, scale, toScreen, w, h, dpr)
+
+    // Day cycle: multiply the map by the sky tint, then add window and lamp light. The route,
+    // gems and walker are drawn afterwards, so they keep their full colours.
+    const light = this.lighting
+    if (light.darkness > 0.005) {
+      ctx.globalCompositeOperation = 'multiply'
+      ctx.fillStyle = cssRgb(light.tint)
+      ctx.fillRect(0, 0, w, h)
+      ctx.globalCompositeOperation = 'source-over'
+      if (plan) this.drawNightLights(ctx, plan, originX, originY, scale, light)
+    }
 
     // Avoided streets: hazard tape under the route.
     if (this.avoided.length) this.drawAvoided(ctx, scale, toScreen, w, h, dpr)
@@ -600,6 +719,11 @@ export class MapRenderer {
       const t = this.grid.toTileXY(p)
       const s = toScreen(t.x, t.y)
       const size = 16 * spriteScale
+      if (sprite === CHECKPOINT && light.lamps > 0.02) {
+        ctx.globalCompositeOperation = 'lighter'
+        this.drawGlow(ctx, s.x, s.y - size * 0.4, 2.4, scale, WALKER_RGB, light.lamps * 0.8)
+        ctx.globalCompositeOperation = 'source-over'
+      }
       ctx.drawImage(this.sprite(sprite), Math.round(s.x - size / 2), Math.round(s.y - size * anchorY), size, size)
       return { x: s.x, y: s.y, size }
     }
@@ -641,14 +765,14 @@ export class MapRenderer {
           ctx.fill()
           ctx.stroke()
         }
-        const at = this.drawWalker(ctx, player, toScreen, spriteScale)
+        const at = this.drawWalker(ctx, player, toScreen, spriteScale, scale, light)
         if (this.bubble) this.drawBubble(ctx, this.bubble, at, dpr, w, h)
       }
     } else {
       if (this.markers.end) drawSprite(FINISH_FLAG, this.markers.end, 0.9)
       if (this.markers.start) {
         drawSprite(START_MAT, this.markers.start, 0.75)
-        const at = this.drawWalker(ctx, this.markers.start, toScreen, spriteScale)
+        const at = this.drawWalker(ctx, this.markers.start, toScreen, spriteScale, scale, light)
         if (this.bubble) this.drawBubble(ctx, this.bubble, at, dpr, w, h)
       }
     }
@@ -679,7 +803,7 @@ export class MapRenderer {
     if (this.pickups.length) this.requestRender()
   }
 
-  private drawWalker(ctx: CanvasRenderingContext2D, p: LatLon, toScreen: (x: number, y: number) => { x: number; y: number }, spriteScale: number): { x: number; y: number; size: number } {
+  private drawWalker(ctx: CanvasRenderingContext2D, p: LatLon, toScreen: (x: number, y: number) => { x: number; y: number }, spriteScale: number, scale: number, light: Lighting): { x: number; y: number; size: number } {
     const now = typeof performance === 'undefined' ? 0 : performance.now()
     const w = this.walker
     const target = this.grid.toTileXY(p)
@@ -690,6 +814,12 @@ export class MapRenderer {
     const sprite = frames[walkFrame(now, moving)] ?? frames[0]!
     const s = toScreen(pos.x, pos.y)
     const size = 16 * spriteScale
+    // A small lantern glow keeps the walker clear of the dark.
+    if (light.lamps > 0.02) {
+      ctx.globalCompositeOperation = 'lighter'
+      this.drawGlow(ctx, s.x, s.y - size * 0.4, 4, scale, WALKER_RGB, light.lamps * 0.9)
+      ctx.globalCompositeOperation = 'source-over'
+    }
     ctx.drawImage(this.sprite(sprite), Math.round(s.x - size / 2), Math.round(s.y - size), size, size)
     const tweening = w.from && w.ms > 0 && now - w.t0 < w.ms
     if (moving || tweening) this.requestRender()

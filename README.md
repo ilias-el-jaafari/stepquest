@@ -42,6 +42,12 @@ Phase 4 of 5 done: route planner and tile map, GPS tracking and checkpoints, the
 - **Tram, metro and train tracks** above ground are drawn as rails (gravel bed, sleepers, two steel rails) and are never walkable, even if a highway tag is also present; they are only crossed where a street or crossing is mapped. Tracks in tunnels are not drawn.
 - These are proxies from OpenStreetMap tags, not crime data. Lighting is only mapped on part of the streets (about one in eight in the demo area). **Settings → Info** explains all this (EN/ES); the main screens do not show safety notes.
 
+## Day-cycle lighting
+
+The map (not the menus) follows the sun at your location: full daylight, a warm golden tint in the last hours before sunset and after sunrise, a blue-purple dusk, then a dark night with lit house windows, street lamps with soft light pools (on streets mapped `lit=yes` and on main streets) and a small light around the walker and the gems. It uses the same sunrise/sunset maths as the safe-route night rule and never changes routing.
+
+**Preview a time of day** (screenshots, demo video): add `?time=HH:MM` to the URL, for example `http://127.0.0.1:4188/stepquest/?time=19:45`. It uses that local time of today for the lighting only; without it the real clock is used. Dusk falls about at sunset (about 17:40 in Valencia in late November, about 21:30 in June), so pick a time that matches the date.
+
 ## Run it
 
 ```bash

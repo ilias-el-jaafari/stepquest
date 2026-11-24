@@ -75,3 +75,21 @@ Related: [routing](../routing/requirements.md), [quest](../quest/requirements.md
 7. THE SYSTEM SHALL draw houses with one of three roof styles (shingles, standing-seam stripes, clay tiles), optional shutters, a stone base course, an optional door porch, a chimney on some houses, and ground-floor shop fronts with striped awnings on some apartment blocks, all chosen from the building's seed.
 8. THE SYSTEM SHALL keep 4-bit and blob-mask auto-tiling, lazily painted atlas tiles and chunk caching unchanged, and SHALL add no per-frame cost except redrawing the water tiles of painted visible chunks once per ripple frame (450 ms).
 
+
+### Requirement 9 (task 60): Day-cycle lighting on the map
+
+Owner: this spec. The night-from-sunset rule (`isDark`, sunrise/sunset in `src/geo/sun.ts`) belongs to [safety-night](../safety-night/requirements.md); this requirement only reuses it and never changes routing weights.
+
+**User Story:** As a walker, I want the map to follow the real light outside, so that an evening walk looks like an evening.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL derive the map lighting from the sun's altitude at the map's centre and the current local time, using `sunAltitude` from `src/geo/sun.ts`, and SHALL NOT duplicate the solar formulas.
+2. THE SYSTEM SHALL distinguish four phases: day (altitude ≥ 12°), golden (from 12° down to sunset), dusk (sunset down to −12°) and night (below −12°), where sunset is the same altitude at which safe routing starts treating a walk as night, and SHALL show a warm golden tint after sunrise and before sunset and a blue-purple tint at dusk.
+3. THE SYSTEM SHALL change tint, lamp strength and window strength continuously with altitude: no jump between consecutive minutes, darkness never decreasing as the sun sinks, and every value within its range (tint channels 0 to 255, strengths 0 to 1).
+4. WHILE it is dusk or night, THE SYSTEM SHALL light about 70 % of the windows of each building in warm yellow, chosen deterministically from the building and window position, and SHALL draw street lamps with soft light pools along streets mapped lit=yes, plus wide main streets (and, when no street in the area carries a lighting tag, every street at least 2 tiles wide), at a regular spacing of 12 tiles per kerb side.
+5. THE SYSTEM SHALL draw the route, checkpoint gems, start and finish marks and the walker after the tint, so they keep their full colours, and SHALL add a small light around the walker and each gem at night.
+6. THE SYSTEM SHALL apply the tint as one multiply fill per frame over the map, SHALL keep the chunk cache independent of the time of day, SHALL draw lights from cached glow sprites, and SHALL repaint for the passing time at most once a minute.
+7. THE SYSTEM SHALL NOT animate the lights (no flicker, nothing that moves with panning), so that reduced-motion preferences need no special case and nothing shimmers when panning.
+8. WHERE the page URL has `?time=HH:MM`, THE SYSTEM SHALL use that local time of today for the lighting only, and SHALL leave routing, night safety and the quest untouched.
+9. THE SYSTEM SHALL NOT change any routing weight or planner behaviour.

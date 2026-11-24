@@ -17,6 +17,8 @@ export const Layer = {
   crossing: 32,
   /** Paved square or pedestrian area (drawn as plaza paving). */
   plaza: 64,
+  /** Road tile of a way mapped lit=yes (street lamps are drawn along these at night). */
+  lit: 128,
 } as const
 export type LayerName = keyof typeof Layer
 

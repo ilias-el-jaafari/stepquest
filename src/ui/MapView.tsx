@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { LatLon } from '../geo/geo.ts'
 import { useI18n } from '../i18n/index.ts'
 import { PixelIcon } from './PixelIcons.tsx'
+import { parseTimeParam } from '../render/daylight.ts'
 import { MapRenderer, type Markers, type QuestOverlay, type RouteShape } from '../render/MapRenderer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 import { walkerFor } from '../hero/look.ts'
@@ -59,6 +60,8 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
     if (!canvas) return
     const renderer = new MapRenderer(canvas, grid)
     rendererRef.current = renderer
+    // `?time=19:45` previews the lighting at that local time (screenshots, demo video).
+    if (typeof location !== 'undefined') renderer.setClockOverride(parseTimeParam(location.search))
     renderer.requestRender()
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => renderer.requestRender())
     observer?.observe(canvas)

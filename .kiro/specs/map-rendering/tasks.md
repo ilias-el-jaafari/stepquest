@@ -35,3 +35,7 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 ## Property-based tests
 
 - [x] 58. Codec and chunk-plan property tests (P-M1, P-D1, P-D2 in `design.md`). No source bug found.
+
+## Day-cycle lighting
+
+- [x] 60. Day-cycle lighting on the map (requirement 9): `daylight.ts` model from solar altitude, multiply tint, lit windows from the real painters, street lamps from `lit` tags or main streets, walker and gem glow, `?time=HH:MM` preview, README section; unit, property (P-L1 to P-L4) and renderer tests. Routing untouched.

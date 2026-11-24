@@ -8,7 +8,7 @@ import type { LatLon } from './geo.ts'
 
 const RAD = Math.PI / 180
 /** The sun's centre is 0.833° below the horizon at sunrise/sunset (refraction + disc). */
-const HORIZON = -0.833
+export const HORIZON = -0.833
 
 function julian(ms: number): number {
   return ms / 86_400_000 + 2_440_587.5
