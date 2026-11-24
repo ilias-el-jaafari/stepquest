@@ -15,19 +15,23 @@
     "glob"
   ],
   "toolsSettings": {
-    "execute_bash": {
+    "shell": {
       "allowedCommands": [
-        "npm test",
-        "npx tsc -b",
-        "npm run lint",
-        "npm run build",
-        "git status",
-        "git status --short",
-        "git diff",
-        "git diff --staged",
-        "git diff --stat",
-        "git log",
-        "git log .*"
+        "npm test( [^;&|<>`$]*)?( \\| (head|tail|wc|sort|uniq|grep|rg)( [^;&|<>`$]*)?)*",
+        "npx tsc -b( [^;&|<>`$]*)?( \\| (head|tail|wc|sort|uniq|grep|rg)( [^;&|<>`$]*)?)*",
+        "npm run lint( [^;&|<>`$]*)?( \\| (head|tail|wc|sort|uniq|grep|rg)( [^;&|<>`$]*)?)*",
+        "npm run build( [^;&|<>`$]*)?( \\| (head|tail|wc|sort|uniq|grep|rg)( [^;&|<>`$]*)?)*",
+        "git (status|diff|log|show)( [^;&|<>`$]*)?( \\| (head|tail|wc|sort|uniq|grep|rg)( [^;&|<>`$]*)?)*",
+        "git ls-files( [^;&|<>`$]*)?( \\| (head|tail|wc|sort|uniq|grep|rg)( [^;&|<>`$]*)?)*",
+        "grep( [^;&|<>`$]*)?( \\| (head|tail|wc|sort|uniq|grep|rg)( [^;&|<>`$]*)?)*",
+        "rg( [^;&|<>`$]*)?( \\| (head|tail|wc|sort|uniq|grep|rg)( [^;&|<>`$]*)?)*"
+      ],
+      "deniedCommands": [
+        ".*--output.*",
+        ".*--pre.*",
+        ".*--ext-diff.*",
+        ".*--open-files-in-pager.*",
+        "git (diff|log|show)[^|]* -O.*"
       ],
       "autoAllowReadonly": true
     }
@@ -44,16 +48,22 @@
         "capability": "shell",
         "match": [
           "npm test",
+          "npm test *",
           "npx tsc -b",
           "npm run lint",
           "npm run build",
           "git status",
-          "git status --short",
+          "git status *",
           "git diff",
-          "git diff --staged",
-          "git diff --stat",
+          "git diff *",
           "git log",
-          "git log *"
+          "git log *",
+          "git show",
+          "git show *",
+          "git ls-files",
+          "git ls-files *",
+          "grep *",
+          "rg *"
         ],
         "effect": "allow"
       },

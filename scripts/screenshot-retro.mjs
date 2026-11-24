@@ -39,8 +39,8 @@ async function pressAreas(page) {
 
 async function roundCorners(page) {
   return page.evaluate(() => {
-    const radius = [...document.querySelectorAll('.box, .hud, .dialog, .pix-btn, .swatch, .avatar, .steps-pill, .complete-box, .console, .console-bezel')]
-      .filter((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius) > 0)
+    const radius = [...document.querySelectorAll('.box, .hud, .dialog, .pix-btn, .swatch, .avatar, .steps-pill, .complete-box, .map-attribution, .sound-panel, .info-panel, .console, .console-bezel')]
+      .filter((el) => ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].some((c) => parseFloat(getComputedStyle(el)[`border${c}Radius`]) > 0))
       .map((el) => el.className)
     // Pill and round buttons: stepped corners (clip-path on the outline and the fill), square box for the press area.
     const flat = [...document.querySelectorAll('.pix-btn')]

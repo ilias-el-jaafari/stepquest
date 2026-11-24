@@ -4,8 +4,6 @@ Part of the StepQuest specs; see [../README.md](../README.md). See also: [safety
 
 ## Routing
 
-## Routing
-
 - Graph: walkable ways only, clipped to the loaded bbox; CSR adjacency; components labelled, snapping only to the largest one (≤ 150 m).
 - A* with a straight-line heuristic and a per-edge cost multiplier; each leg of a multi-stop route multiplies already-used edges by 6 to avoid retracing.
 - Loop: triangle start → P1 → P2 → start, P1/P2 at a size `r` along a seeded bearing with a 70–110° spread. `r` is tuned by a damped secant step (≤ 7 iterations) until length is within ±5 %; up to 8 bearings are tried.
@@ -14,15 +12,11 @@ Part of the StepQuest specs; see [../README.md](../README.md). See also: [safety
 
 ## Roundabouts (task 51b)
 
-## Roundabouts (task 51b)
-
 - `OsmWay.roundabout` is set from `junction=roundabout|circular` (codec flag 16, backwards compatible: old data decodes without it).
 - `findRoundabouts` (`src/osm/roundabout.ts`) stitches tagged arcs into closed rings (every node used by exactly two segments) and adds small round untagged loops by shape. The island is the ring polygon in local metres.
 - `WalkGraph` drops every non-ring edge whose interior (samples at 10-90 %, at least 0.5 m from the ring) is inside an island. Ring edges are exempt, so the ring and the crossings that meet it still route. Safety weights and the planner are untouched, so the ±5 % tolerance holds.
 - `normalizeOverpass` splits line ways at nodes with null geometry (outside the box) instead of joining the neighbours, which used to create straight chords. Clipped polygons keep their old behaviour.
 - The route is drawn from graph node chains only, so once no edge crosses the island no chord can be drawn through it.
-
-## Fast rerouting (tasks 33 and 54)
 
 ## Fast rerouting (tasks 33 and 54)
 

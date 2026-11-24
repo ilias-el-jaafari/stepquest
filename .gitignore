@@ -31,3 +31,6 @@ blob-report
 
 # Local screenshot debug
 screenshots/**/*.diff.png
+
+# Live-location screenshots: never commit
+screenshots/live/
