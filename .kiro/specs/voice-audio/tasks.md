@@ -21,3 +21,20 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 ## Property-based tests
 
 - [x] 59. Speech bubble property tests (P-V1, P-V2 in `design.md`). No source bug found.
+
+## Nov 2026 architecture review (requirements 7d, 7e, 7f)
+
+Findings are listed in `design.md` ("Architecture review (Nov 2026)"). Every bug task starts with a failing regression test.
+
+- [x] 62. Voice and audio rework
+  - [x] 62.1 Speech text pipeline (`voice/text.ts`): NFC and accent folding, decimals, big numbers digit by digit, ASCII-space thousands removed, units and abbreviations, one pause for repeated punctuation, phrase length limit (bugs B1 to B6, B8, B25)
+  - [x] 62.2 Synthesizer hardening: validated options, finite and bounded output, zero at both ends, no per-frame allocation (B7, P1)
+  - [x] 62.3 Voice queue: language kept per phrase, injectable monotonic clock, blank phrases refused, documented invariants (B9, B19, B20, B24)
+  - [x] 62.4 Speech bubble: `wrapBubbleText` terminates for any width and counts code points (B16)
+  - [x] 62.5 Automation helpers and envelopes (`automation.ts`): pop-free parameter changes, pure note/drum/effect envelopes that start and end at zero, node release on end (B13, B22, B23)
+  - [x] 62.6 Voice player module (`voicePlayer.ts`): failure isolation, watchdog for a lost end event, interruption handling, fade-out, ducking release, byte-bounded cache, idle pre-rendering and `prewarm` (B10 to B12, B14, P2, P3)
+  - [x] 62.7 Music: finite tempo everywhere, look-ahead that grows in a hidden tab, single held tonic in the last bar, `musicPlayer.ts` module (B17, B18, B21)
+  - [x] 62.8 Engine split and lifecycle: `graph.ts`, `effects.ts`, `lifecycle.ts`, thin `engine.ts`, closed context recreated (B15, D1 to D4)
+  - [x] 62.9 Tests: regression tests for every bug, property tests P-V3 to P-V8
+  - [x] 62.10 Spec sync: design, audible-change log and this list
+

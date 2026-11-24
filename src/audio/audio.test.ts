@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { BARS_PER_SONG, calmEvents, eventsAt, nextBarStep, MAJOR, makeSong, midiToHz, scaleNote, STEPS_PER_BAR, STEPS_PER_SONG, triad } from './chiptune.ts'
-import { scheduleWindow, stepSeconds } from './scheduler.ts'
+import { lookaheadFor, scheduleWindow, stepSeconds } from './scheduler.ts'
 import { AUDIO_STORAGE_KEY, busGains, clampVolume, DEFAULT_AUDIO, LEGACY_MUTE_KEY, loadAudioSettings, sanitizeAudio, saveAudioSettings, sliderToGain } from './settings.ts'
 import { FINISH, GEM, GEM_LAST, sfxDuration, SFX } from './sfx.ts'
-import { cadence, glideTempo, isStale, MAX_BPM, MENU_BPM, MIN_BPM, PaceTracker, tempoForSpeed } from './tempo.ts'
-import { VoiceQueue } from './voiceQueue.ts'
+import { cadence, glideTempo, isStale, MAX_BPM, MENU_BPM, MIN_BPM, PaceTracker, sanitizeBpm, tempoForSpeed } from './tempo.ts'
+import { monotonicNow, VoiceQueue } from './voiceQueue.ts'
 
 class MemStore {
   data = new Map<string, string>()
@@ -209,11 +209,11 @@ describe('sound effects', () => {
 describe('voice queue', () => {
   it('plays one phrase at a time and queues the rest by priority', () => {
     const q = new VoiceQueue(2, 5000)
-    expect(q.push({ text: 'a', priority: 1, at: 0 })).toBe('play')
-    expect(q.push({ text: 'a', priority: 1, at: 1 })).toBe('dropped') // same text while it plays
-    expect(q.push({ text: 'b', priority: 1, at: 2 })).toBe('queued')
-    expect(q.push({ text: 'c', priority: 2, at: 3 })).toBe('queued')
-    expect(q.push({ text: 'd', priority: 1, at: 4 })).toBe('dropped') // queue full, least important
+    expect(q.push({ text: 'a', locale: 'en', priority: 1, at: 0 })).toBe('play')
+    expect(q.push({ text: 'a', locale: 'en', priority: 1, at: 1 })).toBe('dropped') // same text while it plays
+    expect(q.push({ text: 'b', locale: 'en', priority: 1, at: 2 })).toBe('queued')
+    expect(q.push({ text: 'c', locale: 'en', priority: 2, at: 3 })).toBe('queued')
+    expect(q.push({ text: 'd', locale: 'en', priority: 1, at: 4 })).toBe('dropped') // queue full, least important
     expect(q.next(100)?.text).toBe('c')
     expect(q.next(200)?.text).toBe('b')
     expect(q.next(300)).toBeUndefined()
@@ -221,12 +221,12 @@ describe('voice queue', () => {
 
   it('lets urgent phrases cut in and drops stale ones', () => {
     const q = new VoiceQueue(3, 5000)
-    q.push({ text: 'turn', priority: 2, at: 0 })
-    q.push({ text: 'halfway', priority: 1, at: 0 })
-    expect(q.push({ text: 'finish', priority: 5, at: 10 })).toBe('interrupt')
+    q.push({ text: 'turn', locale: 'en', priority: 2, at: 0 })
+    q.push({ text: 'halfway', locale: 'en', priority: 1, at: 0 })
+    expect(q.push({ text: 'finish', locale: 'en', priority: 5, at: 10 })).toBe('interrupt')
     expect(q.playing?.text).toBe('finish')
     expect(q.size).toBe(0)
-    q.push({ text: 'old', priority: 1, at: 0 })
+    q.push({ text: 'old', locale: 'en', priority: 1, at: 0 })
     expect(q.next(60_000)).toBeUndefined()
   })
 })
@@ -259,5 +259,96 @@ describe('planning-screen music', () => {
   it('uses a calm tempo at the slow end of the walking range', () => {
     expect(MENU_BPM).toBeLessThanOrEqual(MIN_BPM)
     expect(MENU_BPM).toBeGreaterThanOrEqual(60)
+  })
+})
+
+describe('review Nov 2026: regressions', () => {
+  it('B17: a non-finite tempo never reaches the scheduler or kills the clock', () => {
+    for (const bad of [NaN, Infinity, -Infinity, 0, -5]) {
+      expect(Number.isFinite(stepSeconds(bad)), String(bad)).toBe(true)
+      const { steps, state } = scheduleWindow({ nextTime: 0, step: 0 }, 0, 0.5, bad)
+      expect(steps.length).toBeGreaterThan(0)
+      expect(Number.isFinite(state.nextTime)).toBe(true)
+    }
+    // A poisoned clock recovers instead of staying NaN for ever.
+    const { steps, state } = scheduleWindow({ nextTime: NaN, step: 4 }, 2, 0.3, 120)
+    expect(steps.length).toBeGreaterThan(0)
+    expect(Number.isFinite(state.nextTime)).toBe(true)
+    expect(sanitizeBpm(NaN)).toBeUndefined()
+    expect(sanitizeBpm('120')).toBeUndefined()
+    expect(sanitizeBpm(1e9)).toBe(300)
+    expect(sanitizeBpm(-4)).toBe(1)
+    expect(glideTempo(NaN, 120, 0.1)).toBe(120)
+    expect(glideTempo(100, NaN, 0.1)).toBe(100)
+    expect(glideTempo(NaN, NaN, 0.1)).toBe(MENU_BPM)
+    expect(glideTempo(100, 140, Infinity)).toBeLessThanOrEqual(140)
+    expect(tempoForSpeed(Infinity, 0.75)).toBe(MAX_BPM)
+    expect(tempoForSpeed(1.3, 0)).toBe(MIN_BPM)
+  })
+
+  it('B21: a hidden tab schedules at least a second and a half ahead', () => {
+    expect(lookaheadFor(true)).toBeGreaterThanOrEqual(1.5)
+    expect(lookaheadFor(false)).toBeLessThan(0.5)
+    // At the fastest tempo that window holds a sensible number of steps.
+    const { steps } = scheduleWindow({ nextTime: 0, step: 0 }, 0, lookaheadFor(true), MAX_BPM)
+    expect(steps.length).toBeGreaterThan(10)
+    expect(steps.length).toBeLessThan(64)
+  })
+
+  it('B18: the last bar holds one tonic, not several overlapping copies', () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const song = makeSong(seed)
+      const lastBar = song.steps.slice(song.steps.length - STEPS_PER_BAR)
+      const held = lastBar.map((e, i) => ({ i, lead: e.lead })).filter((x) => x.lead && x.i >= 8)
+      expect(held.length, `seed ${seed}`).toBeLessThanOrEqual(1)
+      for (const h of held) {
+        expect(h.lead!.midi).toBe(scaleNote(song.root, 7))
+        expect(h.i + h.lead!.steps).toBe(STEPS_PER_BAR) // holds to the end of the song
+      }
+    }
+  })
+
+  it('B9, B19, B20: phrases carry their language, use a monotonic clock and may not be blank', () => {
+    const q = new VoiceQueue(3, 1000)
+    expect(q.push({ text: '', locale: 'en', priority: 1, at: 0 })).toBe('dropped')
+    expect(q.push({ text: '  \n', locale: 'es', priority: 1, at: 0 })).toBe('dropped')
+    expect(q.playing).toBeUndefined()
+    expect(q.push({ text: 'Sí', locale: 'es', priority: 1, at: 0 })).toBe('play')
+    expect(q.push({ text: 'wait', locale: 'en', priority: 1, at: 0 })).toBe('queued')
+    expect(q.waiting[0]!.locale).toBe('en')
+    expect(q.next(10)?.locale).toBe('en')
+    // The same words in another language are another phrase.
+    expect(q.push({ text: 'wait', locale: 'es', priority: 1, at: 0 })).toBe('queued')
+    const a = monotonicNow()
+    const b = monotonicNow()
+    expect(b).toBeGreaterThanOrEqual(a)
+    expect(a).toBeLessThan(Date.now()) // not the wall clock (performance.now counts from page start)
+  })
+
+  it('B24: an urgent repeat of a phrase that waits at low priority is not lost', () => {
+    const q = new VoiceQueue(3, 10_000)
+    q.push({ text: 'playing', locale: 'en', priority: 1, at: 0 })
+    q.push({ text: 'turn', locale: 'en', priority: 1, at: 1 })
+    expect(q.push({ text: 'turn', locale: 'en', priority: 3, at: 2 })).toBe('interrupt')
+    expect(q.playing?.text).toBe('turn')
+    expect(q.waiting).toHaveLength(0)
+    // Waiting twins: the more important one stays, once.
+    const r = new VoiceQueue(3, 10_000)
+    r.push({ text: 'playing', locale: 'en', priority: 2, at: 0 })
+    r.push({ text: 'x', locale: 'en', priority: 1, at: 1 })
+    expect(r.push({ text: 'x', locale: 'en', priority: 2, at: 2 })).toBe('queued')
+    expect(r.push({ text: 'x', locale: 'en', priority: 1, at: 3 })).toBe('dropped')
+    expect(r.waiting.map((p) => p.priority)).toEqual([2])
+  })
+
+  it('keeps the oldest of equal priority first and never starves a phrase in the queue', () => {
+    const q = new VoiceQueue(3, 10_000)
+    q.push({ text: 'playing', locale: 'en', priority: 1, at: 0 })
+    q.push({ text: 'low', locale: 'en', priority: 1, at: 1 })
+    q.push({ text: 'turn a', locale: 'en', priority: 2, at: 2 })
+    q.push({ text: 'turn b', locale: 'en', priority: 2, at: 3 })
+    expect(q.next(10)?.text).toBe('turn a')
+    expect(q.next(11)?.text).toBe('turn b')
+    expect(q.next(12)?.text).toBe('low')
   })
 })

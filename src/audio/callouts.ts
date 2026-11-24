@@ -195,6 +195,20 @@ export class CalloutPlanner {
   }
 }
 
+/**
+ * Callouts whose words are known before they are due (distance marks, the turn
+ * warning, back on route), so the engine can render them while it is idle.
+ */
+export function predictableCallouts(): Callout[] {
+  const out: Callout[] = []
+  for (const m of DISTANCE_MARKS) {
+    for (const key of ['voice.distance', 'voice.distanceFlag'] as const) out.push({ key, vars: { m }, priority: PRIORITY[key] })
+  }
+  for (const key of ['voice.turnLeft', 'voice.turnRight'] as const) out.push({ key, vars: { m: TURN_WARN_M }, priority: PRIORITY[key] })
+  out.push({ key: 'voice.backOnRoute', vars: {}, priority: PRIORITY['voice.backOnRoute'] })
+  return out
+}
+
 /** Sound effects for quest events. */
 export function sfxFor(events: readonly QuestEvent[], next: QuestState): SfxName[] {
   const out: SfxName[] = []

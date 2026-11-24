@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { CalloutPlanner, calloutText, sfxFor, type Callout } from '../audio/callouts.ts'
+import { CalloutPlanner, calloutText, predictableCallouts, sfxFor, type Callout } from '../audio/callouts.ts'
 import { audioEngine } from '../audio/engine.ts'
 import { isStale, PaceTracker, tempoForSpeed } from '../audio/tempo.ts'
 import { useI18n } from '../i18n/index.ts'
@@ -52,9 +52,15 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
   const [wakeActive, setWakeActive] = useState(false)
   const { t, locale } = useI18n()
   const speakRef = useRef<(c: Callout) => void>(() => {})
+  const warmRef = useRef<() => void>(() => {})
   // Keep the speaker on the current language (callbacks below read it from the ref).
   useLayoutEffect(() => {
     speakRef.current = (c: Callout) => audioEngine().say(calloutText(c, t), locale, c.priority)
+    warmRef.current = () =>
+      audioEngine().prewarm(
+        predictableCallouts().map((c) => calloutText(c, t)),
+        locale,
+      )
   })
   const sessionRef = useRef<QuestSession | undefined>(undefined)
   const stopRef = useRef<(() => void) | undefined>(undefined)
@@ -152,6 +158,7 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
       if (q.finishedAt === undefined) {
         audio.startMusic(seedFor(q.id))
         if (!resumed) speakRef.current(planner.start(q))
+        warmRef.current()
       }
       const session = new QuestSession(q)
       sessionRef.current = session

@@ -119,8 +119,12 @@ export function makeSong(seed: number): Song {
     const base = bar * STEPS_PER_BAR
     const last = bar === BARS_PER_SONG - 1
     // Lead.
+    // The song ends on one held tonic: the first melody note from the middle of the last bar on.
+    let held = false
     for (const [onset, len, idx] of melody[bar]!) {
       const finalNote = last && onset >= 8
+      if (finalNote && held) continue
+      held ||= finalNote
       steps[base + onset]!.lead = { midi: scaleNote(root, finalNote ? 7 : idx), steps: finalNote ? STEPS_PER_BAR - onset : len }
     }
     // Arpeggio: chord tones cycling every sixteenth, one octave up, quiet.

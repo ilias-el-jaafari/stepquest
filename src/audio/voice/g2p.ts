@@ -19,7 +19,8 @@ export const EN_LEXICON: Record<string, string> = {
   fourteen: 'F AO R T IY1 N', fifteen: 'F IH F T IY1 N', sixteen: 'S IH K S T IY1 N', seventeen: 'S EH V AX N T IY1 N', eighteen: 'EY T IY1 N',
   nineteen: 'N AY N T IY1 N', twenty: 'T W EH1 N T IY', thirty: 'TH ER1 T IY', forty: 'F AO1 R T IY', fifty: 'F IH1 F T IY', sixty: 'S IH1 K S T IY',
   seventy: 'S EH1 V AX N T IY', eighty: 'EY1 T IY', ninety: 'N AY1 N T IY', hundred: 'HH AH1 N D R AX D', thousand: 'TH AW1 Z AX N D',
-  million: 'M IH1 L Y AX N',
+  million: 'M IH1 L Y AX N', point: 'P OY1 N T', percent: 'P ER S EH1 N T', kilometer: 'K IH L AA1 M AX T ER', kilometers: 'K IH L AA1 M AX T ER Z',
+  minute: 'M IH1 N AX T', minutes: 'M IH1 N AX T S', hour: 'AW1 ER', hours: 'AW1 ER Z', second: 'S EH1 K AX N D', seconds: 'S EH1 K AX N D Z',
 }
 
 const VOWEL_KINDS = new Set(['vowel'])
@@ -51,8 +52,9 @@ const EN_RULES: [RegExp, string][] = [
 ]
 
 export function englishWord(word: string): Phone[] {
-  const w = word.toLowerCase().replace(/[^a-z]/g, '')
-  const known = EN_LEXICON[w]
+  // Accented letters read as their base letter (café → cafe).
+  const w = word.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[^a-z]/g, '')
+  const known = Object.hasOwn(EN_LEXICON, w) ? EN_LEXICON[w] : undefined
   if (known) return parsePron(known)
   // Silent final e (but not in "the", "be").
   let rest = w.length > 3 && w.endsWith('e') ? w.slice(0, -1) : w
@@ -99,8 +101,18 @@ export function spanishStress(word: string): number {
   return g.find((i) => ES_STRONG.has(word[i]!)) ?? g[g.length - 1]!
 }
 
+/** Lower-case NFC word keeping only Spanish letters; other accents fall back to the base letter (ç → c, à → a). */
+function foldSpanish(raw: string): string {
+  let out = ''
+  for (const ch of raw.toLowerCase().normalize('NFC')) {
+    if (/[a-záéíóúüñ]/.test(ch)) out += ch
+    else out += ch.normalize('NFD').replace(/[^a-z]/g, '')
+  }
+  return out
+}
+
 export function spanishWord(raw: string): Phone[] {
-  const w = raw.toLowerCase().normalize('NFC').replace(/[^a-záéíóúüñ]/g, '')
+  const w = foldSpanish(raw)
   const stressAt = spanishStress(w)
   const out: Phone[] = []
   const push = (p: PhonemeSymbol, extra: Partial<Phone> = {}) => out.push({ p, ...extra })
@@ -186,17 +198,29 @@ export function spanishWord(raw: string): Phone[] {
   return out
 }
 
+/** Push a pause unless one is already there: repeated punctuation gives one pause, the longest. */
+function pushPause(out: Phone[], p: ',' | '.') {
+  const last = out[out.length - 1]
+  if (!last) return
+  if (last.p === '.') return
+  if (last.p === ',') {
+    if (p === '.') last.p = '.'
+    return
+  }
+  out.push({ p })
+}
+
 /** A whole phrase as phones, with word gaps and pauses at punctuation. */
 export function textToPhones(text: string, locale: Locale): Phone[] {
   const out: Phone[] = []
-  const tokens = text.toLowerCase().match(/[\p{L}']+|[.!?;:,]/gu) ?? []
+  const tokens = text.normalize('NFC').toLowerCase().match(/[\p{L}\p{M}']+|[.!?;:,]/gu) ?? []
   for (const tok of tokens) {
     if (/^[.!?]$/.test(tok)) {
-      if (out.length) out.push({ p: '.' })
+      pushPause(out, '.')
       continue
     }
     if (/^[,;:]$/.test(tok)) {
-      if (out.length) out.push({ p: ',' })
+      pushPause(out, ',')
       continue
     }
     const phones = locale === 'es' ? spanishWord(tok) : englishWord(tok)
@@ -212,5 +236,5 @@ export function textToPhones(text: string, locale: Locale): Phone[] {
 
 /** Every word in the text that the English dictionary does not know (for tests). */
 export function unknownEnglishWords(text: string): string[] {
-  return (text.toLowerCase().match(/[a-z']+/g) ?? []).filter((w) => !EN_LEXICON[w.replace(/[^a-z]/g, '')])
+  return (text.toLowerCase().match(/[a-z']+/g) ?? []).filter((w) => !Object.hasOwn(EN_LEXICON, w.replace(/[^a-z]/g, '')))
 }

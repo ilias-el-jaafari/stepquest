@@ -1,6 +1,6 @@
 import type { Locale } from '../../i18n/locale.ts'
 import { textToPhones } from './g2p.ts'
-import { spellNumbersInText } from './numbers.ts'
+import { limitSpokenText, normalizeSpeech } from './text.ts'
 import { PHONEMES, type Bank, type Formants, type Phone, type Phoneme } from './phonemes.ts'
 
 /**
@@ -47,6 +47,25 @@ export type VoiceOptions = {
 
 /** Voice "D": smooth robot (no pitch steps, no bit crushing), with soft, low-passed hiss. */
 export const VOICE_DEFAULTS: Required<VoiceOptions> = { sampleRate: 22050, pitch: 112, speed: 0.9, bits: 0, quantizePitch: false, lowpassHz: 5000, noiseLevel: 0.5, seed: 1 }
+
+/**
+ * Replace invalid options (zero, negative, NaN, Infinity, out of range) with safe
+ * values, so that no input can make the renderer throw or produce NaN.
+ */
+export function sanitizeOptions(options: VoiceOptions = {}): Required<VoiceOptions> {
+  const num = (v: number | undefined, fallback: number, min: number, max: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback)
+  const d = VOICE_DEFAULTS
+  return {
+    sampleRate: Math.round(num(options.sampleRate, d.sampleRate, 8000, 96000)),
+    pitch: num(options.pitch, d.pitch, 60, 400),
+    speed: num(options.speed, d.speed, 0.4, 2.5),
+    bits: Math.round(num(options.bits, d.bits, 0, 16)),
+    quantizePitch: options.quantizePitch ?? d.quantizePitch,
+    lowpassHz: num(options.lowpassHz, d.lowpassHz, 0, 20000),
+    noiseLevel: num(options.noiseLevel, d.noiseLevel, 0, 2),
+    seed: Math.round(num(options.seed, d.seed, 0, 2 ** 31)),
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Parameter tracks
@@ -198,7 +217,7 @@ function amps(g: Seg, o: Required<VoiceOptions>): number[] {
  * segments. Exported for tests: every track must be continuous.
  */
 export function buildTracks(phones: readonly Phone[], options: VoiceOptions = {}): Tracks & { segments: { start: number; length: number; kind: Phoneme['kind'] }[] } {
-  const o = { ...VOICE_DEFAULTS, ...options }
+  const o = sanitizeOptions(options)
   const sr = o.sampleRate
   const lead = ms(90, sr)
   const segs = layout(phones, o, lead)
@@ -341,6 +360,10 @@ class Resonator {
       this.a = Math.hypot(re, im)
     }
   }
+  reset() {
+    this.y1 = 0
+    this.y2 = 0
+  }
   run(x: number): number {
     const y = this.a * x + this.b * this.y1 + this.c * this.y2
     this.y2 = this.y1
@@ -369,6 +392,10 @@ class AntiResonator {
     this.a = 1 / a0
     this.b = -b0 / a0
     this.c = -c0 / a0
+  }
+  reset() {
+    this.x1 = 0
+    this.x2 = 0
   }
   run(x: number): number {
     const y = this.a * x + this.b * this.x1 + this.c * this.x2
@@ -416,7 +443,7 @@ let lastStats: RenderStats = { peakBeforeGain: 0, limited: 0 }
 export const renderStats = (): RenderStats => lastStats
 
 export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {}): Float32Array {
-  const o = { ...VOICE_DEFAULTS, ...options }
+  const o = sanitizeOptions(options)
   const sr = o.sampleRate
   const { frames, frameLen, total } = buildTracks(phones, o)
   const out = new Float32Array(total)
@@ -455,7 +482,7 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
   let te = 0.6 * period
   let ta = 0.05 * period
   const UPDATE = 4
-  let F = [0, 0, 0, 0, 0, 0, 0]
+  const F = [0, 0, 0, 0, 0, 0, 0]
   let av = 0
   let ah = 0
   let af = 0
@@ -464,7 +491,7 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
 
   for (let n = 0; n < total; n++) {
     if (n % UPDATE === 0) {
-      F = FORMANT_KEYS.map((p) => value(p, n))
+      for (let i = 0; i < 7; i++) F[i] = value(FORMANT_KEYS[i]!, n)
       for (let i = 0; i < 3; i++) casc[i]!.set(F[i]!, F[3 + i]!)
       nasalZero.set(F[6]!, 100)
       av = value(P.AV, n)
@@ -503,6 +530,12 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
       p += bankG[5]! * noise
       v += p * af * 3
     } else for (const r of par) r.run(0)
+    if (!Number.isFinite(v)) {
+      // Defence in depth: a non-finite value would poison every filter state for the rest of the phrase.
+      v = 0
+      for (const r of [...casc, r4, r5, nasalPole, ...par]) r.reset()
+      nasalZero.reset()
+    }
     out[n] = v
   }
 
@@ -538,13 +571,14 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
   // Fade the very ends so playback never clicks.
   const fade = Math.min(total >> 1, ms(6, sr))
   for (let i = 0; i < fade; i++) {
-    out[i]! *= i / fade
-    out[total - 1 - i]! *= i / fade
+    // (+ 0 turns a negative zero into a plain zero)
+    out[i] = out[i]! * (i / fade) + 0
+    out[total - 1 - i] = out[total - 1 - i]! * (i / fade) + 0
   }
   return out
 }
 
-/** Speak a phrase: numbers to words, words to phonemes, phonemes to samples. */
+/** Speak a phrase: limit its length, numbers to words, words to phonemes, phonemes to samples. */
 export function renderText(text: string, locale: Locale, options: VoiceOptions = {}): Float32Array {
-  return renderPhones(textToPhones(spellNumbersInText(text, locale), locale), options)
+  return renderPhones(textToPhones(normalizeSpeech(limitSpokenText(text), locale), locale), options)
 }

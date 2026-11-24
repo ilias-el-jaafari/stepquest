@@ -36,6 +36,15 @@ function esBelow1000(n: number): string {
   return parts.join(' ')
 }
 
+const EN_DIGITS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
+const ES_DIGITS = ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve']
+
+/** A string of digits read one by one (decimals, numbers too long to spell). */
+export function spellDigits(digits: string, locale: Locale): string {
+  const words = locale === 'es' ? ES_DIGITS : EN_DIGITS
+  return [...digits].map((d) => words[Number(d)] ?? '').filter(Boolean).join(' ')
+}
+
 /** "uno" → "un" before a noun or "mil" (veintiún mil, treinta y un metros). */
 function apocope(words: string): string {
   return words.replace(/veintiuno$/, 'veintiún').replace(/\buno$/, 'un')
@@ -48,7 +57,7 @@ function apocope(words: string): string {
 export function spellNumber(n: number, locale: Locale, beforeNoun = false): string {
   const v = Math.round(Math.abs(n))
   const sign = n < 0 ? (locale === 'es' ? 'menos ' : 'minus ') : ''
-  if (v >= 1e9) return sign + String(v)
+  if (v >= 1e9) return sign + spellDigits(String(v), locale)
   const millions = Math.floor(v / 1e6)
   const thousands = Math.floor((v % 1e6) / 1000)
   const rest = v % 1000
@@ -68,16 +77,50 @@ export function spellNumber(n: number, locale: Locale, beforeNoun = false): stri
 /** Masculine nouns that follow numbers in our phrases ("un metro", "veintiún pasos"). */
 const MASCULINE_NOUN = /^\s+(metros?|pasos?|kil[oó]metros?|minutos?|segundos?)\b/i
 
+type Unit = { en: [string, string]; es: [string, string]; feminine?: boolean }
+/** Units and abbreviations read in full: singular for exactly 1, plural otherwise. */
+const UNITS: Record<string, Unit> = {
+  km: { en: ['kilometer', 'kilometers'], es: ['kilómetro', 'kilómetros'] },
+  m: { en: ['meter', 'meters'], es: ['metro', 'metros'] },
+  min: { en: ['minute', 'minutes'], es: ['minuto', 'minutos'] },
+  h: { en: ['hour', 'hours'], es: ['hora', 'horas'], feminine: true },
+  s: { en: ['second', 'seconds'], es: ['segundo', 'segundos'] },
+  '%': { en: ['percent', 'percent'], es: ['por ciento', 'por ciento'] },
+}
+
+/** "uno" → "una" before a feminine noun (una hora, veintiuna horas). */
+function feminine(words: string): string {
+  return words.replace(/uno$/, 'una')
+}
+
+// A number: thousands groups (the locale's separator, or a no-break space) with an optional decimal part, or plain digits with
+// an optional decimal part; then an optional unit. An ordinary space is never a separator ("3 100" is two numbers).
+const NUMBER = {
+  en: String.raw`\d{1,3}(?:[,\u00a0\u202f]\d{3})+(?!\d)(?:\.\d+)?|\d+(?:\.\d+)?`,
+  es: String.raw`\d{1,3}(?:[.\u00a0\u202f]\d{3})+(?!\d)(?:,\d+)?|\d+(?:,\d+)?`,
+}
+const UNIT = String.raw`(?:\s?(km|min|m|h|s|%)(?![\p{L}\d]))?`
+const MATCHER = { en: new RegExp(`(${NUMBER.en})${UNIT}`, 'gu'), es: new RegExp(`(${NUMBER.es})${UNIT}`, 'gu') }
+
 /**
- * Text ready to speak: numbers become words (thousand separators allowed),
- * everything else is kept. In Spanish a number followed by a masculine noun gets
- * the short form ("un metro", "veintiún pasos").
+ * Text ready to speak: numbers become words, decimals read with "point" / "coma",
+ * numbers of a billion or more are read digit by digit, units (km, m, min, h, s, %)
+ * are read in full, and everything else is kept. In Spanish a number followed by a
+ * masculine noun gets the short form ("un metro", "veintiún pasos").
  */
 export function spellNumbersInText(text: string, locale: Locale): string {
-  return text.replace(/\d{1,3}(?:[.,\u00a0\u202f ]\d{3})+(?!\d)|\d+/g, (match, offset: number) => {
-    const n = Number(match.replace(/[^\d]/g, ''))
-    const after = text.slice(offset + match.length)
-    const beforeNoun = locale === 'es' && MASCULINE_NOUN.test(after)
-    return spellNumber(n, locale, beforeNoun)
+  return text.replace(MATCHER[locale], (match: string, num: string, unitKey: string | undefined, offset: number) => {
+    const [intRaw = '', frac] = num.split(locale === 'es' ? ',' : '.')
+    const intPart = intRaw.replace(/\D/g, '')
+    const unit = unitKey ? UNITS[unitKey] : undefined
+    const isOne = frac === undefined && Number(intPart) === 1
+    const fem = locale === 'es' && !!unit?.feminine
+    const masculineNoun = unit ? unitKey !== '%' && !unit.feminine : MASCULINE_NOUN.test(text.slice(offset + match.length))
+    const beforeNoun = locale === 'es' && !fem && frac === undefined && masculineNoun
+    let words = intPart.length > 9 ? spellDigits(intPart, locale) : spellNumber(Number(intPart), locale, beforeNoun)
+    if (fem) words = feminine(words)
+    if (frac !== undefined) words += ` ${locale === 'es' ? 'coma' : 'point'} ${spellDigits(frac, locale)}`
+    if (unit) words += ` ${unit[locale][isOne ? 0 : 1]}`
+    return words
   })
 }

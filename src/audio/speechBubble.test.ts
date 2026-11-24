@@ -23,3 +23,20 @@ describe('wrapBubbleText', () => {
     expect(wrapBubbleText('  ', 10)).toEqual([])
   })
 })
+
+describe('wrapBubbleText (review Nov 2026)', () => {
+  it('B16: terminates for a width below one, or not a number, and keeps every character', () => {
+    for (const width of [0, -3, NaN, 0.4, -Infinity]) {
+      const lines = wrapBubbleText('Turn left', width)
+      expect(lines.join('')).toBe('Turnleft')
+      expect(lines.every((l) => l.length === 1)).toBe(true)
+    }
+    expect(wrapBubbleText('abc', Infinity)).toEqual(['a', 'b', 'c'])
+  })
+  it('B16: never cuts a character outside the basic plane in half', () => {
+    const lines = wrapBubbleText('go 🚶🚶🚶 now', 2)
+    expect(lines.join('')).toBe('go🚶🚶🚶now')
+    for (const l of lines) expect(Array.from(l).length).toBeLessThanOrEqual(2)
+    expect(lines.every((l) => !/[\ud800-\udbff]$/.test(l) && !/^[\udc00-\udfff]/.test(l))).toBe(true)
+  })
+})

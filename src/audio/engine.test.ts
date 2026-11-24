@@ -1,17 +1,21 @@
+import fc from 'fast-check'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AudioEngine, lfsrNoise, pulseCoefficients } from './engine.ts'
 import { bubbleDurationMs } from './speechBubble.ts'
 import { AUDIO_STORAGE_KEY, DEFAULT_AUDIO } from './settings.ts'
+import type { VoiceQueue } from './voiceQueue.ts'
 
 /** Just enough of the Web Audio API to watch what the engine does. */
 class FakeParam {
   value = 1
   targets: number[] = []
+  linear: number[] = []
   setValueAtTime(v: number) {
     this.value = v
     return this
   }
   linearRampToValueAtTime(v: number) {
+    this.linear.push(v)
     this.value = v
     return this
   }
@@ -30,8 +34,12 @@ class FakeParam {
 }
 
 class FakeNode {
+  disconnected = 0
   connect<T>(n: T): T {
     return n
+  }
+  disconnect() {
+    this.disconnected++
   }
 }
 
@@ -47,8 +55,10 @@ class FakeContext {
   destination = new FakeNode()
   onstatechange: (() => void) | null = null
   oscillators = 0
-  sources: { buffer: { length: number } | null; started: boolean; stop(): void; onended: (() => void) | null }[] = []
+  sources: { buffer: { length: number } | null; started: boolean; stops: number; stop(): void; onended: (() => void) | null; disconnected: number }[] = []
+  gains: FakeGain[] = []
   buffers = 0
+  failBuffers = false
   constructor() {
     FakeContext.instances.push(this)
   }
@@ -58,27 +68,33 @@ class FakeContext {
     return Promise.resolve()
   }
   createGain() {
-    return new FakeGain()
+    const g = new FakeGain()
+    this.gains.push(g)
+    return g
   }
   createOscillator() {
     this.oscillators++
-    const osc = Object.assign(new FakeNode(), { type: 'sine', frequency: new FakeParam(), setPeriodicWave() {}, start() {}, stop() {} })
+    const osc = Object.assign(new FakeNode(), { type: 'sine', frequency: new FakeParam(), onended: null as (() => void) | null, setPeriodicWave() {}, start() {}, stop() {} })
     return osc
   }
   createBufferSource() {
     const src = Object.assign(new FakeNode(), {
       buffer: null as { length: number } | null,
       started: false,
+      stops: 0,
       onended: null as (() => void) | null,
       start() {
         src.started = true
       },
-      stop() {},
+      stop() {
+        src.stops++
+      },
     })
     this.sources.push(src)
     return src
   }
   createBuffer(_ch: number, length: number, sampleRate: number) {
+    if (this.failBuffers) throw new Error('NotSupportedError')
     this.buffers++
     const data = new Float32Array(length)
     return { length, sampleRate, getChannelData: () => data }
@@ -95,6 +111,10 @@ class FakeContext {
 
 function fakeWindow(navigator: object = {}): Window & typeof globalThis {
   return { AudioContext: FakeContext, navigator, document, addEventListener: () => {} } as unknown as Window & typeof globalThis
+}
+
+function hiddenWindow(): Window & typeof globalThis {
+  return { ...fakeWindow(), document: { visibilityState: 'hidden', addEventListener() {}, removeEventListener() {} } } as unknown as Window & typeof globalThis
 }
 
 function runner(ctx: FakeContext) {
@@ -174,9 +194,9 @@ describe('audio engine', () => {
     ctx.sources[ctx.sources.length - 1]!.onended?.()
     expect(engine.getSnapshot().speaking).toBe(false)
     // The same phrase again comes from the cache.
-    const buffers = ctx.buffers
+    const rendered = engine.voiceStats.rendered
     engine.say('Back on route.', 'en', 2)
-    expect(ctx.buffers).toBe(buffers)
+    expect(engine.voiceStats.rendered).toBe(rendered)
     engine.updateSettings({ muted: true })
     const n = ctx.sources.length
     engine.say('Something else.', 'en', 3)
@@ -360,5 +380,332 @@ describe('audio engine', () => {
     const noise = lfsrNoise(1000)
     expect(new Set(noise).size).toBe(2)
     expect(noise.filter((v) => v > 0).length).toBeGreaterThan(300)
+  })
+})
+
+/** The phrase queue behind the engine's voice player (for invariants). */
+function queueOf(engine: AudioEngine) {
+  return (engine as unknown as { voice: { queue: VoiceQueue } }).voice.queue
+}
+
+describe('voice player (review Nov 2026)', () => {
+  it('B9: speaks a queued phrase in the language it was queued in', () => {
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    engine.say('Gira a la izquierda.', 'es', 2)
+    engine.say('Turn left.', 'en', 1)
+    engine.say('Gira a la derecha.', 'es', 1)
+    // Spanish phrase on air; the app language changes to English while the others wait.
+    expect(queueOf(engine).waiting.map((p) => p.locale)).toEqual(['en', 'es'])
+    ctx.sources[ctx.sources.length - 1]!.onended?.()
+    expect(queueOf(engine).playing?.locale).toBe('en')
+  })
+
+  it('B10: a failing synthesis or buffer shows the phrase silently and never blocks the queue', () => {
+    vi.useFakeTimers()
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    ctx.failBuffers = true
+    expect(() => engine.say('Back on route.', 'en', 2)).not.toThrow()
+    expect(engine.getSnapshot().phrase?.text).toBe('Back on route.')
+    expect(engine.voiceStats.failures).toBe(1)
+    engine.say('Well done!', 'en', 1)
+    vi.advanceTimersByTime(bubbleDurationMs('Back on route.') + 1)
+    expect(engine.getSnapshot().phrase?.text).toBe('Well done!')
+    ctx.failBuffers = false
+    vi.advanceTimersByTime(bubbleDurationMs('Well done!') + 1)
+    expect(engine.getSnapshot().phrase).toBeUndefined()
+    engine.say('Turn left.', 'en', 2) // and speech works again
+    expect(engine.getSnapshot().speaking).toBe(true)
+  })
+
+  it('B11: gives up a phrase whose end is never reported, so the queue and bubble advance', () => {
+    vi.useFakeTimers()
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    engine.say('Back on route.', 'en', 2)
+    engine.say('Well done!', 'en', 1)
+    const first = ctx.sources[ctx.sources.length - 1]!
+    const samples = first.buffer!.length
+    vi.advanceTimersByTime((samples / 22050) * 1000 + 1000)
+    expect(engine.getSnapshot().phrase?.text).toBe('Back on route.') // not yet: the watchdog waits 1.5 s more
+    vi.advanceTimersByTime(700)
+    expect(engine.voiceStats.watchdog).toBe(1)
+    expect(engine.getSnapshot().phrase?.text).toBe('Well done!')
+    expect(first.stops).toBeGreaterThan(0)
+  })
+
+  it('B11: an interrupted or closed context turns the phrase on air into a silent bubble, and the queue goes on', () => {
+    vi.useFakeTimers()
+    for (const state of ['interrupted', 'suspended', 'closed'] as const) {
+      FakeContext.instances = []
+      // A hidden page: the engine does not try to resume the context by itself.
+      const engine = new AudioEngine(DEFAULT_AUDIO, hiddenWindow())
+      engine.unlock()
+      const ctx = FakeContext.instances[0]!
+      engine.say('Back on route.', 'en', 2)
+      engine.say('Well done!', 'en', 1)
+      const id = engine.getSnapshot().phrase!.id
+      ctx.state = state
+      ctx.onstatechange?.()
+      expect(engine.getSnapshot().speaking, state).toBe(false)
+      expect(engine.getSnapshot().phrase, state).toMatchObject({ id, text: 'Back on route.' }) // same phrase, still shown
+      vi.advanceTimersByTime(bubbleDurationMs('Back on route.') + 1)
+      expect(engine.getSnapshot().phrase?.text, state).toBe('Well done!')
+      vi.advanceTimersByTime(bubbleDurationMs('Well done!') + 1)
+      expect(engine.getSnapshot().phrase, state).toBeUndefined()
+      engine.dispose()
+    }
+  })
+
+  it('B12: a phrase that is cut in or muted fades out instead of stopping dead', () => {
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    engine.say('Keep going.', 'en', 1)
+    const first = ctx.sources[ctx.sources.length - 1]!
+    const gainsBefore = ctx.gains.length
+    engine.say('Off route.', 'en', 3)
+    expect(first.stops).toBe(1)
+    const phraseGain = ctx.gains[gainsBefore - 1]!
+    expect(phraseGain.gain.linear).toEqual([0]) // ramp to silence before the stop
+    // The cut source lets go of its nodes when it has ended.
+    first.onended?.()
+    expect(engine.getSnapshot().phrase?.text).toBe('Off route.') // the old source does not advance the queue
+    const second = ctx.sources[ctx.sources.length - 1]!
+    engine.updateSettings({ muted: true })
+    expect(second.stops).toBe(1)
+  })
+
+  it('releases the nodes of a phrase that ended', () => {
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    engine.say('Back on route.', 'en', 2)
+    const src = ctx.sources[ctx.sources.length - 1]!
+    src.onended?.()
+    expect(src.disconnected).toBe(1)
+  })
+
+  it('B14: the music is un-ducked when a cut-in phrase can only be shown silently', () => {
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    engine.say('Keep going.', 'en', 1)
+    ctx.state = 'suspended'
+    const duck = (engine as unknown as { graph: { duck: { gain: FakeParam } } }).graph.duck.gain
+    expect(duck.targets.at(-1)).toBe(0.3)
+    engine.say('Off route.', 'en', 3)
+    expect(duck.targets.at(-1)).toBe(1)
+  })
+
+  it('B20, B8: ignores blank phrases and shortens very long ones, bubble included', () => {
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    const n = ctx.sources.length
+    engine.say('   ', 'en')
+    engine.say('', 'es', 5)
+    expect(ctx.sources.length).toBe(n)
+    expect(engine.getSnapshot().phrase).toBeUndefined()
+    engine.say('Keep walking along the street. '.repeat(40), 'en')
+    const phrase = engine.getSnapshot().phrase!
+    expect(phrase.text.length).toBeLessThanOrEqual(280)
+    expect(phrase.text.endsWith('street.')).toBe(true)
+    expect(ctx.sources[ctx.sources.length - 1]!.buffer!.length).toBeLessThan(22050 * 40)
+  })
+
+  it('P2: pre-rendered phrases are ready when they are due, and the cache is bounded in bytes', () => {
+    vi.useFakeTimers()
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.prewarm(['50 meters to the next gem.', '100 meters to the next gem.', '50 meters to the next gem.'], 'en')
+    expect(engine.voiceStats.rendered).toBe(0) // nothing on the spot
+    vi.advanceTimersByTime(500)
+    expect(engine.voiceStats.rendered).toBe(2)
+    engine.unlock()
+    engine.say('50 meters to the next gem.', 'en')
+    expect(engine.voiceStats.rendered).toBe(2) // no synthesis at the moment it is due
+    engine.dispose()
+  })
+
+  it('P2: pre-rendering waits while a phrase is on air', () => {
+    vi.useFakeTimers()
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    engine.say('Back on route.', 'en', 2)
+    const rendered = engine.voiceStats.rendered
+    engine.prewarm(['Turn left.'], 'en')
+    vi.advanceTimersByTime(2000)
+    expect(engine.voiceStats.rendered).toBe(rendered)
+    engine.stopVoice()
+    vi.advanceTimersByTime(600)
+    expect(engine.voiceStats.rendered).toBe(rendered + 1)
+    engine.dispose()
+  })
+})
+
+describe('engine lifecycle (review Nov 2026)', () => {
+  it('B15: replaces a context the system has closed on the next tap, and the music goes on', () => {
+    vi.useFakeTimers()
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    engine.startMusic(7)
+    engine.setTempo(110)
+    const first = FakeContext.instances[0]!
+    runner(first)(500)
+    first.state = 'closed'
+    first.onstatechange?.()
+    expect(engine.getSnapshot().status).toBe('closed')
+    engine.unlock()
+    expect(FakeContext.instances).toHaveLength(2)
+    const second = FakeContext.instances[1]!
+    expect(engine.getSnapshot().status).toBe('running')
+    runner(second)(1000)
+    expect(second.oscillators).toBeGreaterThan(5)
+    // The old context's late events change nothing.
+    first.state = 'running'
+    first.onstatechange?.()
+    expect(engine.getSnapshot().status).toBe('running')
+    engine.dispose()
+  })
+
+  it('B17: a non-finite tempo means standing still, the music keeps working afterwards', () => {
+    vi.useFakeTimers()
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    engine.startMusic(3)
+    engine.setTempo(NaN)
+    expect(engine.getSnapshot().music).toBe('paused')
+    engine.setTempo(120)
+    runner(ctx)(1000)
+    expect(ctx.oscillators).toBeGreaterThan(5)
+    engine.setTempo(Infinity)
+    expect(engine.tempo).toBeLessThanOrEqual(300)
+    engine.setTempo(NaN)
+    engine.setTempo(100)
+    expect(Number.isFinite(engine.tempo)).toBe(true)
+    runner(ctx)(1000)
+    expect(Number.isFinite(engine.tempo)).toBe(true)
+    engine.dispose()
+  })
+
+  it('B21: schedules further ahead while the page is hidden', () => {
+    vi.useFakeTimers()
+    const hidden = hiddenWindow()
+    const count = (win: Window & typeof globalThis) => {
+      FakeContext.instances = []
+      const engine = new AudioEngine(DEFAULT_AUDIO, win)
+      engine.unlock()
+      const ctx = FakeContext.instances[0]!
+      engine.startMusic(5)
+      engine.setTempo(120)
+      ctx.currentTime += 0.025
+      vi.advanceTimersByTime(25) // a single timer tick
+      const n = ctx.oscillators
+      engine.dispose()
+      return n
+    }
+    expect(count(hidden)).toBeGreaterThan(count(fakeWindow()) * 3)
+  })
+
+  it('B22: music nodes are released when their note ends', () => {
+    vi.useFakeTimers()
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    engine.startMusic(9)
+    engine.setTempo(120)
+    runner(ctx)(300)
+    const oscs: { onended: (() => void) | null; disconnected: number }[] = []
+    const original = ctx.createOscillator.bind(ctx)
+    ctx.createOscillator = () => {
+      const o = original() as unknown as { onended: (() => void) | null; disconnected: number }
+      oscs.push(o)
+      return o as never
+    }
+    runner(ctx)(300)
+    expect(oscs.length).toBeGreaterThan(0)
+    for (const o of oscs) {
+      expect(o.onended).toBeTypeOf('function')
+      o.onended!()
+      expect(o.disconnected).toBe(1)
+    }
+    engine.dispose()
+  })
+
+  it('sound effects are played on a running context and release their nodes', () => {
+    const engine = new AudioEngine(DEFAULT_AUDIO, fakeWindow())
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    engine.playSfx('finish')
+    expect(ctx.oscillators).toBeGreaterThan(8)
+    ctx.state = 'suspended'
+    const n = ctx.oscillators
+    engine.playSfx('gem')
+    expect(ctx.oscillators).toBe(n)
+  })
+})
+
+describe('P-V5: the bubble always matches the phrase on air', () => {
+  type Act =
+    | { a: 'say'; text: string; locale: 'en' | 'es'; priority: number }
+    | { a: 'end' }
+    | { a: 'stop' }
+    | { a: 'mute'; on: boolean }
+    | { a: 'wait'; ms: number }
+    | { a: 'state'; state: 'running' | 'suspended' | 'interrupted' }
+  const act: fc.Arbitrary<Act> = fc.oneof(
+    { weight: 6, arbitrary: fc.record({ a: fc.constant('say' as const), text: fc.constantFrom('One.', 'Two!', 'Three, three.', 'Four four four four.', '   ', 'x'.repeat(400)), locale: fc.constantFrom('en' as const, 'es' as const), priority: fc.integer({ min: 1, max: 5 }) }) },
+    { weight: 4, arbitrary: fc.constant({ a: 'end' as const }) },
+    { weight: 1, arbitrary: fc.constant({ a: 'stop' as const }) },
+    { weight: 1, arbitrary: fc.record({ a: fc.constant('mute' as const), on: fc.boolean() }) },
+    { weight: 3, arbitrary: fc.record({ a: fc.constant('wait' as const), ms: fc.integer({ min: 100, max: 9000 }) }) },
+    { weight: 1, arbitrary: fc.record({ a: fc.constant('state' as const), state: fc.constantFrom('running' as const, 'suspended' as const, 'interrupted' as const) }) },
+  )
+
+  it('holds for any sequence of phrases, endings, stops, mutes, waits and context changes, and nothing gets stuck', () => {
+    vi.useFakeTimers()
+    fc.assert(
+      fc.property(fc.array(act, { maxLength: 40 }), (acts) => {
+        FakeContext.instances = []
+        const engine = new AudioEngine({ ...DEFAULT_AUDIO }, hiddenWindow())
+        engine.unlock()
+        const ctx = FakeContext.instances[0]!
+        const check = () => {
+          const snap = engine.getSnapshot()
+          const playing = queueOf(engine).playing
+          expect(snap.phrase?.text).toBe(playing?.text)
+          if (snap.speaking) expect(snap.phrase).toBeDefined()
+          if (snap.phrase) expect(snap.phrase.text.length).toBeLessThanOrEqual(280)
+        }
+        for (const x of acts) {
+          if (x.a === 'say') engine.say(x.text, x.locale, x.priority)
+          else if (x.a === 'end') ctx.sources[ctx.sources.length - 1]?.onended?.()
+          else if (x.a === 'stop') engine.stopVoice()
+          else if (x.a === 'mute') engine.updateSettings({ muted: x.on })
+          else if (x.a === 'wait') vi.advanceTimersByTime(x.ms)
+          else {
+            ctx.state = x.state
+            ctx.onstatechange?.()
+          }
+          check()
+        }
+        // Nothing is stuck: with time (and the sources ending), everything is spoken or dropped.
+        ctx.state = 'running'
+        for (let i = 0; i < 40; i++) {
+          ctx.sources[ctx.sources.length - 1]?.onended?.()
+          vi.advanceTimersByTime(8000)
+        }
+        expect(engine.getSnapshot().phrase).toBeUndefined()
+        expect(queueOf(engine).playing).toBeUndefined()
+        expect(queueOf(engine).size).toBe(0)
+        engine.dispose()
+      }),
+      { seed: 20261204, numRuns: 60 },
+    )
   })
 })

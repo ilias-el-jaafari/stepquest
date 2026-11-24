@@ -10,6 +10,14 @@ export const MAX_BPM = 150
 export const MENU_BPM = 80
 /** Below this speed (m/s) the walker counts as standing still. */
 export const STOP_SPEED = 0.35
+/** Hard limits of any tempo that reaches the scheduler (BPM). */
+export const TEMPO_FLOOR = 1
+export const TEMPO_CEIL = 300
+
+/** A usable tempo: finite numbers are clamped to 1…300 BPM; anything else (NaN, ±Infinity, not a number) is undefined. */
+export function sanitizeBpm(bpm: unknown): number | undefined {
+  return typeof bpm === 'number' && Number.isFinite(bpm) ? Math.min(TEMPO_CEIL, Math.max(TEMPO_FLOOR, bpm)) : undefined
+}
 
 /** Steps per minute for a speed and stride. */
 export function cadence(speedMps: number, strideM: number): number {
@@ -29,6 +37,11 @@ export function tempoForSpeed(speedMps: number, strideM: number): number | undef
  * and never by more than `maxPerSec` BPM a second, so changes are smooth.
  */
 export function glideTempo(current: number, target: number, dtSec: number, tau = 2.5, maxPerSec = 12): number {
+  const goal = sanitizeBpm(target)
+  const from = sanitizeBpm(current) ?? goal ?? MENU_BPM
+  if (goal === undefined) return from
+  target = goal
+  current = from
   if (!(dtSec > 0)) return current
   const k = 1 - Math.exp(-dtSec / tau)
   let step = (target - current) * k

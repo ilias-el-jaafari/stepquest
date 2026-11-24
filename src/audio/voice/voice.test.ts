@@ -4,8 +4,9 @@ import { es } from '../../i18n/es.ts'
 import { interpolate } from '../../i18n/locale.ts'
 import { englishWord, parsePron, spanishStress, spanishWord, textToPhones, unknownEnglishWords } from './g2p.ts'
 import { spellNumber, spellNumbersInText } from './numbers.ts'
+import { limitSpokenText, MAX_SPOKEN_CHARS } from './text.ts'
 import { PHONEMES } from './phonemes.ts'
-import { buildTracks, renderPhones, renderStats, renderText } from './synth.ts'
+import { buildTracks, renderPhones, renderStats, renderText, sanitizeOptions } from './synth.ts'
 
 const syms = (phones: { p: string }[]) => phones.map((p) => p.p).join(' ')
 
@@ -231,6 +232,96 @@ describe('formant synthesizer', () => {
       const x = renderText(text, locale)
       expect(renderStats().limited / x.length).toBeLessThan(0.002)
       expect(x.every((v) => Math.abs(v) <= 1)).toBe(true)
+    }
+  })
+})
+
+describe('speech text (review Nov 2026)', () => {
+  it('reads decimals as one number, in both languages (B1)', () => {
+    expect(spellNumbersInText('It is 1.5 km', 'en')).toBe('It is one point five kilometers')
+    expect(spellNumbersInText('Son 2,5 km', 'es')).toBe('Son dos coma cinco kilómetros')
+    expect(spellNumbersInText('1,5 pasos', 'es')).toBe('uno coma cinco pasos') // a decimal never takes the short "un"
+    const phones = textToPhones(spellNumbersInText('1.5 km', 'en'), 'en')
+    expect(phones.some((p) => p.p === '.' || p.p === ',')).toBe(false)
+  })
+
+  it('reads numbers of a billion or more digit by digit instead of dropping them (B2)', () => {
+    expect(spellNumbersInText('5000000000 steps', 'en')).toBe('five zero zero zero zero zero zero zero zero zero steps')
+    expect(spellNumber(1e9, 'es')).toBe('uno cero cero cero cero cero cero cero cero cero')
+    expect(renderText('5000000000 steps', 'en').length).toBeGreaterThan(renderText('steps', 'en').length * 3)
+  })
+
+  it('does not join separate numbers written with an ordinary space (B3)', () => {
+    expect(spellNumbersInText('Gem 3 100 times', 'en')).toBe('Gem three one hundred times')
+    // A no-break space is a thousands separator, as are "," in English and "." in Spanish.
+    expect(spellNumbersInText('12\u00a0000 steps', 'en')).toBe('twelve thousand steps')
+    expect(spellNumbersInText('1,500 steps', 'en')).toBe('one thousand five hundred steps')
+    expect(spellNumbersInText('1.500 pasos', 'es')).toBe('mil quinientos pasos')
+  })
+
+  it('reads decomposed and foreign accents like the base letter (B4)', () => {
+    const composed = textToPhones('mañana', 'es')
+    expect(textToPhones('man\u0303ana', 'es')).toEqual(composed)
+    expect(syms(composed)).toContain('NY')
+    expect(textToPhones('Ávila', 'es')).toEqual(textToPhones('ávila', 'es'))
+    expect(syms(textToPhones('café', 'en'))).toBe(syms(textToPhones('cafe', 'en')))
+    expect(syms(textToPhones('français', 'es'))).toBe(syms(textToPhones('francais', 'es')))
+    expect(syms(spanishWord('pingüino'))).toContain('G W I') // ü is sounded (a glide), not silent
+  })
+
+  it('makes one pause out of repeated punctuation (B5)', () => {
+    expect(syms(textToPhones('Hi!! Wait... ok?!, done', 'en'))).toBe('HH IH . W EY T . AA K . D AH N')
+    expect(syms(textToPhones('a, . b', 'en'))).toBe('AX . B')
+    expect(syms(textToPhones('...Now', 'en'))).toBe('N AW') // nothing to pause after yet
+  })
+
+  it('reads units and abbreviations in full, singular only for exactly one (B6)', () => {
+    expect(spellNumbersInText('5 km, 1 m, 30 min, 2 h, 10 s, 50 %', 'en')).toBe('five kilometers, one meter, thirty minutes, two hours, ten seconds, fifty percent')
+    expect(spellNumbersInText('5 km, 1 m, 21 min, 1 h, 21 h, 50%', 'es')).toBe('cinco kilómetros, un metro, veintiún minutos, una hora, veintiuna horas, cincuenta por ciento')
+    expect(spellNumbersInText('3 more meters', 'en')).toBe('three more meters') // "m" of "more" is not a unit
+    expect(spellNumbersInText('5 meters', 'en')).toBe('five meters')
+    expect(unknownEnglishWords(spellNumbersInText('5 km 30 min 2 h 10 s 50 % 1.5', 'en'))).toEqual([])
+  })
+
+  it('does not choke on words that are properties of every object', () => {
+    expect(() => textToPhones('constructor toString __proto__ valueOf', 'en')).not.toThrow()
+    expect(unknownEnglishWords('constructor')).toEqual(['constructor'])
+  })
+
+  it('limits the length of a spoken phrase at a sentence or word boundary (B8)', () => {
+    const sentence = 'Keep walking along the street. '
+    const long = sentence.repeat(30)
+    const cut = limitSpokenText(long)
+    expect(cut.length).toBeLessThanOrEqual(MAX_SPOKEN_CHARS)
+    expect(cut.endsWith('street.')).toBe(true)
+    expect(limitSpokenText('word '.repeat(100)).length).toBeLessThanOrEqual(MAX_SPOKEN_CHARS)
+    expect(limitSpokenText('x'.repeat(1000))).toHaveLength(MAX_SPOKEN_CHARS)
+    expect(limitSpokenText('  Turn   left.  ')).toBe('Turn left.')
+    const t0 = renderText(long, 'en').length
+    expect(t0).toBeLessThan(22050 * 40)
+  })
+})
+
+describe('synthesizer hardening (review Nov 2026)', () => {
+  const phones = textToPhones('hello there', 'en')
+
+  it('replaces invalid options with safe values instead of throwing (B7)', () => {
+    const base = renderPhones(phones)
+    for (const bad of [{ speed: 0 }, { speed: -1 }, { speed: Infinity }, { speed: NaN }, { pitch: 0 }, { pitch: NaN }, { sampleRate: 0 }, { sampleRate: NaN }, { bits: -3 }, { lowpassHz: NaN }, { noiseLevel: Infinity }]) {
+      const out = renderPhones(phones, bad)
+      expect(out.length, JSON.stringify(bad)).toBeGreaterThan(1000)
+      expect(out.every((v) => Number.isFinite(v) && Math.abs(v) <= 1), JSON.stringify(bad)).toBe(true)
+    }
+    expect(renderPhones(phones, { speed: NaN })).toEqual(base) // the default is used
+    expect(sanitizeOptions({ speed: 0 }).speed).toBeGreaterThan(0)
+  })
+
+  it('starts and ends at exactly zero, with finite samples inside [-1, 1]', () => {
+    for (const [text, locale] of [['Quest complete! Well done!', 'en'], ['¡Misión completada! ¡Muy bien!', 'es'], ['Go', 'en'], ['a', 'es']] as const) {
+      const out = renderText(text, locale)
+      expect(out[0]).toBe(0)
+      expect(out[out.length - 1]).toBe(0)
+      expect(out.every((v) => Number.isFinite(v) && Math.abs(v) <= 1)).toBe(true)
     }
   })
 })
