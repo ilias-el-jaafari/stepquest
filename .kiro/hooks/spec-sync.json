@@ -7,7 +7,7 @@
       "trigger": "Manual",
       "action": {
         "type": "agent",
-        "prompt": "Sync the spec in .kiro/specs/step-quest with the code. Look at `git status` and `git diff` (and recent commits if the tree is clean), list behaviour or structure that changed but is not in requirements.md, design.md or tasks.md, and update those three files: add or adjust acceptance criteria in requirements.md, update the design and module notes in design.md, and add or tick tasks in tasks.md with `_Requirements:_` references. Only tick a task when its code exists and `npm test`, `npx tsc -b`, `npm run lint` and `npm run build` pass. Do not change source code. Finish with a short list of what you changed in the spec."
+        "prompt": "Sync the feature specs in .kiro/specs (index in .kiro/specs/README.md) with the code. Look at `git status` and `git diff` (and recent commits if the tree is clean), list behaviour or structure that changed but is not in the owning feature spec's requirements.md, design.md or tasks.md, and update those files (keep original requirement ids and task numbers, put a change in exactly one spec, link to it from others): add or adjust acceptance criteria in requirements.md, update the design and module notes in design.md, and add or tick tasks in tasks.md with `_Requirements:_` references. Only tick a task when its code exists and `npm test`, `npx tsc -b`, `npm run lint` and `npm run build` pass. Do not change source code. Finish with a short list of what you changed in the spec."
       }
     }
   ]

@@ -6,7 +6,7 @@ Kiroween 2026 entry, **Resurrection** category.
 
 ## Status
 
-Phase 4 of 5 done: route planner and tile map, GPS tracking and checkpoints, the overworld look (houses, landmarks, a continuous route path, a walking character and dialogue boxes), and sound (a retro robot voice, chiptune music that follows your pace, sound effects), plus safer routes (lit, lively streets; a list of streets to avoid). See `.kiro/specs/step-quest/` for the full plan.
+Phase 4 of 5 done: route planner and tile map, GPS tracking and checkpoints, the overworld look (houses, landmarks, a continuous route path, a walking character and dialogue boxes), and sound (a retro robot voice, chiptune music that follows your pace, sound effects), plus safer routes (lit, lively streets; a list of streets to avoid). See `.kiro/specs/README.md` for the full plan.
 
 ## Walking a quest
 
@@ -69,7 +69,7 @@ Offline map extract: save Overpass responses for the demo area (the main query w
 
 The project is set up for [Kiro](https://kiro.dev). Everything lives in `.kiro/`.
 
-- **Specs** (`.kiro/specs/step-quest/`): `requirements.md`, `design.md` and `tasks.md`. Work is done task by task, and a task is ticked only when tests, type check, lint and build pass.
+- **Specs** (`.kiro/specs/`): one folder per feature (routing, safety-night, map-rendering, voice-audio, retro-ui, quest), each with `requirements.md`, `design.md` and `tasks.md`, indexed in `.kiro/specs/README.md`. Work is done task by task, and a task is ticked only when tests, type check, lint and build pass.
 - **Steering** (`.kiro/steering/`): project rules that Kiro reads before it works. `product.md`, `tech.md` and `structure.md` are always included. `visual-style.md` is included only when a file under `src/render/`, `src/ui/` or a `.css` file is in play. `routing.md` (OSM tags, safety weights, roundabouts, the ±5 % budget, rerouting, worker protocol) loads for `src/routing/`, `src/quest/`, `src/osm/` and `src/geo/`. `osm-etiquette.md` (Overpass caching, spacing, mirrors, ODbL attribution) loads for `src/osm/` and the fixture and probe scripts.
 - **Hooks** (`.kiro/hooks/`): `lint-on-save` and `run-tests-on-save` run after a TypeScript file in `src/` is saved. `build-on-tasks-save` runs `npx tsc -b && npm run build` when a spec's `tasks.md` is saved. `i18n-parity` asks the agent to compare `src/i18n/en.ts` and `es.ts` after either is saved. `assets-guard` reminds the agent of the no-external-assets rule when an image, audio or font file is created under `src/` or `public/`. `spec-sync` is a manual hook that updates the three spec files to match the code.
 - **Agent** (`.kiro/agents/qa-reviewer.json`): a read-only reviewer. It can read files and run `npm test`, `npx tsc -b`, `npm run lint`, `npm run build` and read-only git commands, and it checks a diff against the steering rules (original assets only, EN/ES parity, 48 px press areas, no co-author trailers, spec updated). Start it with `kiro-cli --agent qa-reviewer`; check the file with `kiro-cli agent validate --path .kiro/agents/qa-reviewer.json`.
