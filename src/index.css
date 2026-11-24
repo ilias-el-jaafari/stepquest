@@ -1211,12 +1211,25 @@ button.hud-msg.sound-resume {
 
 .planner-row {
   display: flex;
+  flex-wrap: wrap;
   margin-bottom: 8px;
 }
 
 .segmented.small {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   gap: 4px;
+}
+
+/* The chips never run out of the box: the groups wrap onto a second line, labels stay on one (routing requirement 12.6). */
+.segmented.small .pix-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.planner .msg .pix-btn {
+  margin-top: 6px;
 }
 
 .planner .field .box-title {

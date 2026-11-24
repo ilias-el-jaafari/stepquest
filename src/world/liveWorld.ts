@@ -9,6 +9,7 @@ import { cellCentre, cellDistanceM, cellKey, cellOf, neighbourhood, parseCellKey
 import { boxArea } from './coverage.ts'
 import { isComplete, sliceToCells, type CellRecord } from './slice.ts'
 import { TileWorld } from './tileWorld.ts'
+import { matchTags } from './enrich.ts'
 import { compact, WorldData } from './worldData.ts'
 
 /** A loaded map as the app uses it. `live` is set for a streamed world, whose snapshots share one `grid` until the frame moves. */
@@ -41,6 +42,11 @@ export class LiveWorld implements MapSource {
   /** Bumped by every `recentre`. */
   frameVersion = 0
   private readonly records = new Map<string, CellRecord>()
+  /** Walking records (vector-tile streets, requirement 23): in the data and the graph, never painted. */
+  private readonly walk = new Map<string, CellRecord>()
+  /** Overpass cells that enriched a walking record, kept so a rebuilt map gets the tags again. */
+  private readonly enriched = new Map<string, CellRecord>()
+  private walkSeq = 0
   private readonly drawn = new Map<string, CellRecord>()
   private readonly coarse = new Map<string, CellRecord>()
   /** What each cell of the frame shows now. */
@@ -146,8 +152,16 @@ export class LiveWorld implements MapSource {
   /** The cell has no complete graph record (the walking graph does not cover it). */
   needsGraph(c: CellId): boolean {
     if (!this.inFrame(c)) return false
-    const r = this.records.get(cellKey(c))
+    const k = cellKey(c)
+    if (this.walk.has(k)) return false
+    const r = this.records.get(k)
     return !r || !isComplete(r)
+  }
+
+  /** The cell is in the walking graph: a graph record (also a partial one, as at the edge of the bundled extract) or a walking record. */
+  hasGraph(c: CellId): boolean {
+    const k = cellKey(c)
+    return this.records.has(k) || this.walk.has(k)
   }
 
   /** The whole cell is painted now (requirement 21.14): a record that covers only part of it does not count. */
@@ -214,6 +228,11 @@ export class LiveWorld implements MapSource {
     for (const rec of records) {
       if (!this.inFrame(rec.cell)) continue
       const key = cellKey(rec.cell)
+      if (this.walk.has(key) && !this.records.has(key)) {
+        // The streets of this cell come from tiles: Overpass only adds tags (requirement 23.5).
+        if (rec.data.source !== 'fixture') this.enrich([rec])
+        continue
+      }
       const had = this.records.get(key)
       if (had && (isComplete(had) || boxArea(rec.coverage) <= boxArea(had.coverage))) continue
       this.records.set(key, rec)
@@ -227,6 +246,71 @@ export class LiveWorld implements MapSource {
       this.version++
     }
     return added
+  }
+
+  /**
+   * Add walking records (requirement 23.1): the streets of cells that have no graph record yet, built
+   * from vector tiles. They enter the merged data and the graph like any graph record, with way ids
+   * made unique per call so two loads never join their ways by accident, and are never painted.
+   * Out-of-frame cells and cells that already have a graph record are skipped. Returns the cells added.
+   */
+  addWalkNet(records: readonly CellRecord[]): CellId[] {
+    const added: CellId[] = []
+    let first = Infinity
+    const seq = ++this.walkSeq
+    for (const rec of records) {
+      const key = cellKey(rec.cell)
+      if (!this.inFrame(rec.cell) || this.records.has(key) || this.walk.has(key)) continue
+      const own: CellRecord = { ...rec, data: { ...rec.data, ways: rec.data.ways.map((w) => ({ ...w, id: seq * 1_000_000 + w.id })) } }
+      this.walk.set(key, own)
+      first = Math.min(first, this.data.addRecord(own).firstWay)
+      added.push(rec.cell)
+    }
+    if (added.length) {
+      this.acc.add(this.data.snapshot(), first)
+      for (const c of added) {
+        const e = this.enriched.get(cellKey(c))
+        if (e) this.applyTags(e)
+      }
+      this.snap = undefined
+      this.version++
+    }
+    return added
+  }
+
+  /**
+   * Enrich walking records from Overpass cells (requirement 23.5): tags only, geometry never changes.
+   * Their activity points and industrial rings join the data too. Makes a new snapshot when anything
+   * changed. Returns the number of ways that got tags.
+   */
+  enrich(records: readonly CellRecord[]): number {
+    let tagged = 0
+    let extras = false
+    for (const rec of records) {
+      const key = cellKey(rec.cell)
+      if (!this.walk.has(key) || this.enriched.has(key)) continue
+      this.enriched.set(key, rec)
+      tagged += this.applyTags(rec)
+      const extra = { ...rec, data: { ...rec.data, ways: [], pois: [], source: 'tiles' as const } }
+      if ((rec.data.activity?.length ?? 0) + (rec.data.industrial?.length ?? 0) > 0) {
+        this.data.addRecord(extra)
+        extras = true
+      }
+    }
+    if (tagged || extras) {
+      // Same graph (no new edges), new data: the safety context is built again from the tagged ways.
+      this.acc.add(this.data.snapshot(), this.data.ways.length)
+      this.snap = undefined
+      this.version++
+    }
+    return tagged
+  }
+
+  private applyTags(rec: CellRecord): number {
+    const matches = matchTags(this.data, this.data.tileWays, rec.data)
+    let n = 0
+    for (const [index, tags] of matches) if (this.data.retag(index, tags)) n++
+    return n
   }
 
   /**
@@ -402,7 +486,8 @@ export class LiveWorld implements MapSource {
         gone++
       }
       if (gone) {
-        this.data = compact([...this.records.values()])
+        this.data = compact([...this.records.values(), ...this.walk.values()])
+        for (const rec of this.enriched.values()) this.applyTags(rec)
         this.acc = new GraphAccumulator().add(this.data.snapshot(), 0)
         this.snap = undefined
       }

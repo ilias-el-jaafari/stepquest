@@ -209,3 +209,8 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
   - [x] 76.4 Tests: lamp property tests, fireflies, windows, render cost caps, reduced motion, new goldens
     - _Requirements: 22.2 to 22.9_
 
+
+## Walking records from vector tiles (task 78)
+
+- [x] 78. Walking graph from vector tiles, Overpass as enrichment: see [routing tasks](../routing/tasks.md) 78.1 to 78.9
+  - _Requirements: 23.1 to 23.6; 21.1, 21.7, 21.10 amended_

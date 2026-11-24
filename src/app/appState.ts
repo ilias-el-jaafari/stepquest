@@ -1,4 +1,6 @@
-import type { BBox, LatLon } from '../geo/geo.ts'
+import { haversine, type BBox, type LatLon } from '../geo/geo.ts'
+import { stepsToMetres } from '../geo/steps.ts'
+import { unionBox } from '../world/coverage.ts'
 import { DEMO_AREA } from '../osm/demoArea.ts'
 import type { PlanResult, RouteMode } from '../routing/planner.ts'
 import type { SafePlan } from '../routing/safePlanner.ts'
@@ -12,11 +14,18 @@ export type LocateStatus =
   | { state: 'idle' }
   | { state: 'locating' }
   | { state: 'loadingArea' }
+  /** The location was found but the streets around it did not load (requirement 6e.3). */
+  | { state: 'areaError' }
   | { state: 'ok'; accuracy: number; weak: boolean }
   | { state: 'error'; code: LocationErrorCode; accuracy?: number }
 
 /** `running` while a request is out; `failed` after the planner broke (not "no route": that is a result). */
 export type PlanStatus = 'idle' | 'running' | 'failed'
+
+/** What a running plan is doing: reading the streets of the area, or searching the route. */
+export type PlanPhase = 'streets' | 'route'
+/** Why a plan failed: the streets would not load, loading took too long, or the search itself broke. */
+export type PlanError = 'streets' | 'timeout' | 'failed'
 
 export type MapStatus = 'loading' | 'ready' | 'failed'
 
@@ -39,7 +48,7 @@ export type AppState = {
    * `token` numbers planning requests. Any change to the inputs bumps it, so an answer that
    * arrives for older inputs no longer matches and is dropped.
    */
-  plan: { status: PlanStatus; token: number; seed: number }
+  plan: { status: PlanStatus; token: number; seed: number; phase?: PlanPhase; progress?: { done: number; total: number }; error?: PlanError }
   plannerOpen: boolean
   pickingAvoid: boolean
   pickNote: { ok: boolean; name?: string } | undefined
@@ -70,7 +79,9 @@ export type AppAction =
   | { type: 'pickCancel' }
   | { type: 'planStart'; token: number; seed: number }
   | { type: 'planDone'; token: number; plan: SafePlan }
-  | { type: 'planFailed'; token: number }
+  | { type: 'planProgress'; token: number; phase: PlanPhase; progress?: { done: number; total: number } }
+  | { type: 'planFailed'; token: number; error?: PlanError }
+  | { type: 'areaGrown'; box: BBox }
   | { type: 'planCancelled'; token: number }
   | { type: 'useNormal' }
   | { type: 'togglePlanner' }
@@ -138,6 +149,12 @@ function clearPlan(s: AppState): AppState {
 
 const sameSettings = (a: Settings, b: Settings) => a.mode === b.mode && a.targetSteps === b.targetSteps && a.strideM === b.strideM
 
+/** A finish that no walk of the goal's length could reach from `start` is forgotten (requirement 12.7). */
+const reachable = (start: LatLon, end: LatLon | undefined, settings: Settings): boolean => !!end && haversine(start, end) <= stepsToMetres(settings.targetSteps, settings.strideM) / 1.3
+
+/** The finish the demo area starts with is a place in Benicalap, not one the player chose. */
+const isDemoEnd = (end: LatLon | undefined) => !!end && end.lat === DEMO_AREA.defaultEnd.lat && end.lon === DEMO_AREA.defaultEnd.lon
+
 const placingFor = (mode: RouteMode): 'start' | 'end' => (mode === 'oneway' ? 'end' : 'start')
 
 export function appReducer(s: AppState, a: AppAction): AppState {
@@ -153,7 +170,8 @@ export function appReducer(s: AppState, a: AppAction): AppState {
     case 'mode': {
       if (a.mode === s.settings.mode) return s
       const next = clearPlan({ ...s, settings: { ...s.settings, mode: a.mode } })
-      return a.mode === 'loop' ? { ...next, placing: 'start' } : next
+      // The next tap sets the finish in A → B (requirement 12.7), the start in a loop.
+      return { ...next, placing: placingFor(a.mode) }
     }
     case 'avoid':
       return clearPlan({ ...s, avoid: a.list })
@@ -172,16 +190,19 @@ export function appReducer(s: AppState, a: AppAction): AppState {
     case 'planStart':
       // One request at a time: a second press while one is out does nothing.
       if (s.plan.status === 'running') return s
-      return { ...s, plan: { status: 'running', token: a.token, seed: a.seed } }
+      return { ...s, plan: { status: 'running', token: a.token, seed: a.seed, phase: 'route' } }
+    case 'planProgress':
+      if (a.token !== s.plan.token || s.plan.status !== 'running') return s
+      return { ...s, plan: { ...s.plan, phase: a.phase, progress: a.progress } }
     case 'planDone':
       if (a.token !== s.plan.token || s.plan.status !== 'running') return s
-      return { ...s, safePlan: a.plan, usingNormal: false, result: a.plan.result, plannerOpen: false, plan: { ...s.plan, status: 'idle' } }
+      return { ...s, safePlan: a.plan, usingNormal: false, result: a.plan.result, plannerOpen: false, plan: { status: 'idle', token: s.plan.token, seed: s.plan.seed } }
     case 'planFailed':
       if (a.token !== s.plan.token || s.plan.status !== 'running') return s
-      return { ...s, plan: { ...s.plan, status: 'failed' } }
+      return { ...s, plan: { status: 'failed', token: s.plan.token, seed: s.plan.seed, error: a.error ?? 'failed' } }
     case 'planCancelled':
       if (a.token !== s.plan.token || s.plan.status !== 'running') return s
-      return { ...s, plan: { ...s.plan, status: 'idle' } }
+      return { ...s, plan: { status: 'idle', token: s.plan.token, seed: s.plan.seed } }
     case 'useNormal':
       if (!s.safePlan?.normal) return s
       return { ...s, usingNormal: true, result: s.safePlan.normal }
@@ -190,7 +211,9 @@ export function appReducer(s: AppState, a: AppAction): AppState {
     case 'locate':
       return { ...s, locate: a.status, askHere: a.status.state === 'locating' ? false : s.askHere }
     case 'located':
-      return clearPlan({ ...s, start: a.p, placing: placingFor(s.settings.mode) })
+      return clearPlan({ ...s, start: a.p, end: reachable(a.p, s.end, s.settings) && !isDemoEnd(s.end) ? s.end : undefined, placing: placingFor(s.settings.mode) })
+    case 'areaGrown':
+      return { ...s, isDemo: false, liveBox: s.liveBox ? unionBox([s.liveBox, a.box]) : a.box }
     case 'askHere':
       return s.askHere === a.on ? s : { ...s, askHere: a.on }
     case 'view':

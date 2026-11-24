@@ -3,32 +3,14 @@ import { formatKm, formatNumber, formatSignedPercent } from '../i18n/format.ts'
 import { STEPS_PER_CHECKPOINT } from '../routing/checkpoints.ts'
 import type { PlanResult } from '../routing/planner.ts'
 import { WALK_KMH } from '../app/constants.ts'
+import { feasibility } from './feasibility.ts'
 
 /** The quest log: distance, steps, checkpoints and time of the route, or why none fits. */
 export function ResultBox({ result, onUseSteps }: { result: PlanResult | undefined; onUseSteps: (steps: number) => void }) {
   const { t, locale } = useI18n()
   const route = result?.ok ? result.route : result?.closest
   const n = (v: number) => formatNumber(v, locale)
-  let message: { text: string; ok: boolean; suggest?: number } | undefined
-  if (result?.ok) message = { text: t('result.ready', { n: result.route.checkpoints.length }), ok: true }
-  else if (result) {
-    switch (result.reason) {
-      case 'tooShort':
-        message = { text: t(result.closest?.mode === 'loop' ? 'error.tooShortLoop' : 'error.tooShort', { min: n(result.minSteps ?? 0) }), ok: false, suggest: Math.ceil((result.minSteps ?? 0) / 100) * 100 }
-        break
-      case 'tooLong':
-        message = { text: t('error.tooLong', { max: n(result.maxSteps ?? 0) }), ok: false, suggest: Math.floor((result.maxSteps ?? 0) / 100) * 100 }
-        break
-      case 'outOfRange':
-        message = { text: t('error.outOfRange', { min: n(result.minSteps ?? 0), max: n(result.maxSteps ?? 0) }), ok: false }
-        break
-      case 'noMatch':
-        message = { text: t('error.noMatch', { steps: n(result.closest?.steps ?? 0) }), ok: false }
-        break
-      default:
-        message = { text: t(`error.${result.reason}`), ok: false }
-    }
-  }
+  const message = feasibility(result, t, locale)
   return (
     <div className="box result" aria-live="polite">
       <h2 className="box-title">{t('result.title')}</h2>

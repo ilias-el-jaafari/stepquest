@@ -37,12 +37,12 @@ function outOfRange(targetSteps: number): PlanResult | undefined {
   return { ok: false, reason: 'outOfRange', minSteps: MIN_STEPS, maxSteps: MAX_STEPS }
 }
 
-function snap(graph: WalkGraph, p: LatLon, area: BBox): number | undefined {
+function snap(graph: WalkGraph, p: LatLon, area: BBox, component: number): number | undefined {
   const clamped = {
     lat: Math.min(area.north, Math.max(area.south, p.lat)),
     lon: Math.min(area.east, Math.max(area.west, p.lon)),
   }
-  return graph.nearestNode(clamped)?.node
+  return graph.nearestNode(clamped, true, component)?.node
 }
 
 /**
@@ -62,6 +62,7 @@ export function planLoop(graph: WalkGraph, req: RouteRequest, area: BBox): PlanR
   const start = graph.nearestNode(req.start)
   if (!start || start.distance > MAX_SNAP_M) return { ok: false, reason: 'unreachable' }
 
+  const network = graph.component[start.node]!
   const seed = req.seed ?? 0
   const baseBearing = hash01(seed + 1) * 360
   const span = Math.max(area.north - area.south, area.east - area.west) * 111_000
@@ -72,8 +73,8 @@ export function planLoop(graph: WalkGraph, req: RouteRequest, area: BBox): PlanR
     const spread = 70 + hash01(seed * 31 + k) * 40
     const route = tune(
       (size) => {
-        const a = snap(graph, destination(req.start, bearing, size), area)
-        const b = snap(graph, destination(req.start, bearing + spread, size), area)
+        const a = snap(graph, destination(req.start, bearing, size), area, network)
+        const b = snap(graph, destination(req.start, bearing + spread, size), area, network)
         if (a === undefined || b === undefined || a === b || a === start.node || b === start.node) return undefined
         const joined = routeVia(graph, [start.node, a, b, start.node], req)
         return attempts.track(joined ? finish(graph, req, joined, targetM) : undefined)
@@ -105,9 +106,10 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
   const targetM = stepsToMetres(req.targetSteps, req.strideM)
   if (!bboxContains(area, req.start) || !bboxContains(area, end)) return { ok: false, reason: 'outsideArea' }
   const a = graph.nearestNode(req.start)
-  const b = graph.nearestNode(end)
+  const b = a && graph.nearestNode(end, true, graph.component[a.node])
   if (!a || !b || a.distance > MAX_SNAP_M || b.distance > MAX_SNAP_M) return { ok: false, reason: 'unreachable' }
   if (a.node === b.node) return { ok: false, reason: 'samePoint' }
+  const network = graph.component[a.node]!
   const direct = graph.shortestPath(a.node, b.node, req.cost, req.minCost ?? 1)
   if (!direct) return { ok: false, reason: 'unreachable' }
   const directRoute = finish(graph, req, direct, targetM)
@@ -134,7 +136,7 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
       const h0 = Math.sqrt(Math.max(1, half * half - (straight / 2) ** 2))
       const viaOne = tune(
         (h) => {
-          const w = snap(graph, destination(anchor, bearingAB + side, h), area)
+          const w = snap(graph, destination(anchor, bearingAB + side, h), area, network)
           if (w === undefined || w === a.node || w === b.node) return undefined
           const joined = routeVia(graph, [a.node, w, b.node], req)
           return joined ? track(finish(graph, req, joined, targetM)) : undefined
@@ -146,8 +148,8 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
       // Shape 2: a "bracket" with two via points, better for long targets.
       const viaTwo = tune(
         (h) => {
-          const w1 = snap(graph, destination(destination(req.start, bearingAB, straight * (fraction - 0.5)), bearingAB + side, h), area)
-          const w2 = snap(graph, destination(destination(end, bearingAB, straight * (fraction - 0.5)), bearingAB + side, h), area)
+          const w1 = snap(graph, destination(destination(req.start, bearingAB, straight * (fraction - 0.5)), bearingAB + side, h), area, network)
+          const w2 = snap(graph, destination(destination(end, bearingAB, straight * (fraction - 0.5)), bearingAB + side, h), area, network)
           if (w1 === undefined || w2 === undefined || w1 === w2) return undefined
           const joined = routeVia(graph, [a.node, w1, w2, b.node], req)
           return joined ? track(finish(graph, req, joined, targetM)) : undefined
@@ -171,8 +173,8 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
         const bearing = bearingAB + side - 45
         const loop = tune(
           (size) => {
-            const p1 = snap(graph, destination(mid, bearing, size), area)
-            const p2 = snap(graph, destination(mid, bearing + 90, size), area)
+            const p1 = snap(graph, destination(mid, bearing, size), area, network)
+            const p2 = snap(graph, destination(mid, bearing + 90, size), area, network)
             if (p1 === undefined || p2 === undefined || p1 === p2 || p1 === m || p2 === m) return undefined
             const joined = routeVia(graph, [a.node, m, p1, p2, m, b.node], req)
             return joined ? track(finish(graph, req, joined, targetM)) : undefined

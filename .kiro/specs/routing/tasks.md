@@ -56,3 +56,24 @@ Each bug task starts with a failing regression test (fixture-based, Benicalap, n
   - _Requirements: 11.1, 11.2, 11.3_
 - [x] 69.14 Property tests: projection round trip and distance accuracy against haversine
   - _Requirements: 11.4_
+
+## Planning that always answers (task 78, requirements 12 and 13)
+
+- [x] 78.1 Spec: routing requirements 12 and 13, quest 6e, map-rendering 23, design "Root cause" and "Walking graph from tiles"; `osm-etiquette.md` and `tech.md` amended
+  - _Requirements: 12, 13_
+- [x] 78.2 Evaluate the tile graph on real València tiles against Overpass (numbers in design.md); decision: tiles primary, Overpass enrichment
+  - _Requirements: 13.1, 13.2_
+- [x] 78.3 `walkNet.ts` with synthetic and real-fixture tests (snapping, seam joins, dead-end noding, bridges and tunnels left alone, ≥ 95 % main component, seam loop and A → B), `scripts/build-tile-fixture.ts`
+  - _Requirements: 13.1, 13.2_
+- [x] 78.4 `walkArea.ts` (≤ 4 tiles in flight, retries 1 s and 2 s, 40 s deadline, progress, abort) and `enrichFromOverpass`, with tests
+  - _Requirements: 13.5; map-rendering 23.2, 23.5_
+- [x] 78.5 `LiveWorld.addWalkNet`, `enrich`, `hasGraph`; `WorldData.retag`, `tileWays`, source `tiles`; `enrich.ts` matcher; tests
+  - _Requirements: 13.3, 13.4; map-rendering 23.1, 23.3, 23.5, 23.6_
+- [x] 78.6 `nearestNode` by network and planners that stay on the network of their start; test with two networks
+  - _Requirements: 3.8, 13.5_
+- [x] 78.7 `ensureWalk`, prefetch, locate that loads the streets, `areaGrown`; reducer actions `planProgress`, `planFailed` with a reason, A → B placing, located finish rule
+  - _Requirements: 12.1, 12.2, 12.7; quest 6e_
+- [x] 78.8 Planner panel: progress line, hints, error with Retry, infeasible result under the planner, chips that wrap; EN and ES copy
+  - _Requirements: 12.2 to 12.6_
+- [x] 78.9 App-level regression `AppPlanLive.test.tsx` (location outside the extract, Loop and A → B, busy at once, failure and Retry); fails on the code before the fix
+  - _Requirements: 12.1 to 12.4; quest 6e.1_

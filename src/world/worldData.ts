@@ -53,6 +53,8 @@ export class WorldData {
   readonly lon: number[] = []
   readonly ways: OsmWay[] = []
   readonly retired = new Set<number>()
+  /** Indices of the ways that came from vector-tile walking records (they carry no tags until enriched). */
+  readonly tileWays = new Set<number>()
   pois: Poi[] = []
   industrial: number[][] = []
   activity: number[] = []
@@ -94,7 +96,8 @@ export class WorldData {
         if (nodes[nodes.length - 1] !== m) nodes.push(m)
       }
       if (nodes.length < 2) continue
-      this.place({ ...way, nodes, ...(way.holes ? { holes: way.holes.map((h) => h.map(node)) } : {}) })
+      const at = this.place({ ...way, nodes, ...(way.holes ? { holes: way.holes.map((h) => h.map(node)) } : {}) })
+      if (at >= 0 && data.source === 'tiles') this.tileWays.add(at)
     }
     for (const ring of data.industrial ?? []) {
       const mapped = ring.map(node)
@@ -115,6 +118,7 @@ export class WorldData {
     const had = this.coverage.get(key)
     if (!had || boxArea(rec.coverage) > boxArea(had)) this.coverage.set(key, rec.coverage)
     if (data.source === 'overpass') this.source = 'overpass'
+    else if (data.source === 'tiles' && this.source !== 'overpass') this.source = 'tiles'
     if (data.timestamp > this.timestamp) this.timestamp = data.timestamp
     return { firstWay }
   }
@@ -132,13 +136,14 @@ export class WorldData {
     if (list) list.splice(list.indexOf(index), 1)
   }
 
-  private place(way: OsmWay): void {
+  /** Put a way in; returns its index, or -1 when it was already there (a piece of an existing run). */
+  private place(way: OsmWay): number {
     const key = `${way.kind}:${way.id}`
     let cur = way
     let list = this.byId.get(key)
     if (!list) this.byId.set(key, (list = []))
     for (;;) {
-      if (list.some((k) => this.contains(this.ways[k]!, cur))) return
+      if (list.some((k) => this.contains(this.ways[k]!, cur))) return -1
       for (const k of [...list]) if (this.contains(cur, this.ways[k]!)) this.retire(key, k)
       if (!isLine(cur) || closed(cur.nodes)) break
       let joined: { k: number; nodes: number[] } | undefined
@@ -157,6 +162,15 @@ export class WorldData {
     }
     list.push(this.ways.length)
     this.ways.push(cur)
+    return this.ways.length - 1
+  }
+
+  /** Replace a way by a copy with other tags (earlier snapshots keep the old object). Returns whether anything changed. */
+  retag(index: number, tags: { safety?: number; name?: string }): boolean {
+    const way = this.ways[index]
+    if (!way || ((tags.safety ?? way.safety) === way.safety && (tags.name ?? way.name) === way.name)) return false
+    this.ways[index] = { ...way, ...(tags.safety !== undefined ? { safety: tags.safety } : {}), ...(tags.name !== undefined ? { name: tags.name } : {}) }
+    return true
   }
 
   /** The ways that count: everything except the retired slots. */

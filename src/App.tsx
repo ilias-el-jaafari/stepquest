@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { bboxContains, type LatLon } from './geo/geo.ts'
-import { formatDecimal } from './i18n/format.ts'
 import { useI18n } from './i18n/index.ts'
 import { nearestStreet, avoidedPolylines, streetNames } from './routing/safety.ts'
 import { addAvoid, removeAvoid, saveAvoid } from './ui/avoidList.ts'
@@ -39,7 +38,7 @@ type Reroute = (q: QuestState) => Promise<ReroutePatch | undefined>
 
 /** Screen layout and wiring. State lives in `app/` (reducer and hooks); the pieces on screen are in `ui/`. */
 export default function App() {
-  const { t, locale } = useI18n()
+  const { t } = useI18n()
   // `?demo=1` plays a whole quest by itself (for recording); read once per visit.
   const [demo] = useState(() => typeof location !== 'undefined' && parseDemo(location.search) !== undefined)
   const walkerArt = walkerFor(useLook()).down[0]!
@@ -62,9 +61,10 @@ export default function App() {
   const runner = useQuestRunner(reroute, { persist: !demo })
   const questActive = !!runner.quest
   const keep = runner.quest?.route.points ?? (state.result?.ok ? state.result.route.points : undefined)
-  const { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot, onViewBox, load } = useArea({ state, latest, dispatch, beginQuest: runner.begin, questActive, keep, online, demo })
+  const { world, live, ensureWalk, locateMe, loadLiveAround, loadView, backToDemo, retryBoot, onViewBox, load } = useArea({ state, latest, dispatch, beginQuest: runner.begin, questActive, keep, online, demo })
   const planner = usePlanner({
     world,
+    ensureWalk: demo ? undefined : ensureWalk,
     latest,
     dispatch,
     commitFields,
@@ -129,7 +129,7 @@ export default function App() {
   const focusKey = shown ? `route:${shown.nodes.length}:${shown.distanceM}` : `pts:${settings.mode}:${end ? 'e' : ''}:${world ? 'w' : ''}`
 
   const outsideView = !!world && !!state.viewCentre && !bboxContains(worldBox(world), state.viewCentre)
-  const loadingMb = live.status.state === 'loading' ? formatDecimal(live.status.bytes / 1e6, locale, 1) : undefined
+  const loading = live.status.state === 'loading' ? { done: live.status.done, total: live.status.total } : undefined
   const locating = state.locate.state === 'locating' || state.locate.state === 'loadingArea'
 
   // Leaving a quest: the session adds the real steps still unpaid to today's total (the rest was added as they were walked).
@@ -239,7 +239,7 @@ export default function App() {
             <MapBanners
               picking={state.pickingAvoid}
               noStreet={state.pickNote?.ok === false}
-              loadingMb={loadingMb}
+              loading={loading}
               outsideView={outsideView}
               askHere={state.askHere}
               errorCode={live.status.state === 'error' ? live.status.code : undefined}
@@ -259,6 +259,11 @@ export default function App() {
               result={result}
               planning={state.plan.status === 'running'}
               planFailed={state.plan.status === 'failed'}
+              planError={state.plan.error}
+              planPhase={state.plan.phase}
+              planProgress={state.plan.progress}
+              onRetryArea={onLocate}
+              onUseSteps={(steps) => fields.setSteps(clampSteps(steps))}
               folded={plannerFolded}
               locate={state.locate}
               simulate={sim.simulate}

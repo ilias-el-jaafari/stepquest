@@ -10,12 +10,19 @@ import type { QuestState } from '../quest/quest.ts'
 import { clearQuest, loadQuest } from '../quest/storage.ts'
 import { AUTO_LOAD_SETTLE_MS, shouldAutoLoad } from '../ui/autoLoad.ts'
 import { loadDemoWorld, useLiveLoader, type World } from '../ui/useMapData.ts'
-import { cellKey, cellOf } from '../world/cells.ts'
+import { cellKey, cellOf, cellsInBBox } from '../world/cells.ts'
+import { enrichFromOverpass, type WalkProgress } from '../world/walkArea.ts'
 import type { CellRecord } from '../world/slice.ts'
 import type { AppAction, AppState } from './appState.ts'
 import { VectorTileClient } from '../vector/client.ts'
 import { IDLE_LOAD, type MapLoad } from '../world/streamer.ts'
-import { useStreaming } from './useStreaming.ts'
+import { STREAMING_ENABLED, useStreaming } from './useStreaming.ts'
+
+/** A start that rests this long (a tap, a fix) starts loading its streets. */
+const WALK_PREFETCH_DELAY_MS = 600
+
+/** What a plan needs on the device: the start, the finish for A → B, and the goal that sets the size of the walk. */
+export type WalkNeed = { start: LatLon; end?: LatLon; targetSteps: number; strideM: number }
 
 type Args = {
   state: AppState
@@ -72,8 +79,11 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
     worldRef.current = w
     setWorldState(w)
   }, [])
-  const live = useLiveLoader()
+  const tiles = useMemo(() => new VectorTileClient({ cache: defaultCache() }), [])
+  useEffect(() => () => tiles.dispose(), [tiles])
+  const live = useLiveLoader(tiles)
   const liveLoad = live.load
+  const liveGrow = live.grow
   const client = live.client
   // Cells arriving give a new snapshot of the same streamed world; one that was replaced meanwhile is ignored.
   const onStreamed = useCallback(
@@ -86,22 +96,74 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
   // With a route planned or a quest running the frame follows the view; otherwise a view that rests
   // outside it gets the "load this area" behaviour below (requirement 20.17).
   const reanchor = !!state.result?.ok || questActive
-  const tiles = useMemo(() => new VectorTileClient({ cache: defaultCache() }), [])
-  useEffect(() => () => tiles.dispose(), [tiles])
   const onViewBox = useStreaming({ world, tiles, graph: client, onWorld: onStreamed, keep, online, onLoad: setLoad, reanchor, enabled: demo ? false : undefined })
+
+  /** Overpass adds lit, sidewalk and name tags to the streets of the cells, from the device first (requirement 23.5). Never waited for. */
+  const enrichAround = useCallback(
+    (w: World, box: BBox) => {
+      const lv = w.live
+      if (!lv) return
+      void enrichFromOverpass(cellsInBBox(box), client, lv, { network: STREAMING_ENABLED, changed: () => onStreamed(lv.world()) })
+    },
+    [client, onStreamed],
+  )
+
+  /**
+   * Make sure the walking graph covers the start (and the finish): nothing to do when their cells are in
+   * the graph (the bundled extract included); else load the cells of the walk from tiles, into the world on
+   * screen when they are in its frame, else into a new world centred on the walk. Joins a load already
+   * running. Throws `WalkAreaError`. Resolves with the world to plan on.
+   */
+  const ensureWalk = useCallback(
+    async (need: WalkNeed, onProgress?: (p: WalkProgress) => void): Promise<World | undefined> => {
+      const w = worldRef.current
+      const lv = w?.live
+      if (!w || !lv) return w
+      const covered = (p: LatLon) => lv.hasGraph(cellOf(p))
+      if (covered(need.start) && (!need.end || covered(need.end))) return w
+      const box = areaForWalk(need.start, stepsToMetres(need.targetSteps, need.strideM), need.end)
+      const cells = cellsInBBox(box)
+      let next: World
+      if (cells.every((c) => lv.inFrame(c))) {
+        next = await liveGrow(
+          lv,
+          cells.filter((c) => !lv.hasGraph(c)),
+          onProgress,
+        )
+        if (worldRef.current?.live === lv) setWorld(next)
+      } else {
+        next = await liveLoad(box, onProgress)
+        setWorld(next)
+      }
+      dispatch({ type: 'areaGrown', box })
+      enrichAround(next, box)
+      return next
+    },
+    [liveGrow, liveLoad, setWorld, dispatch, enrichAround],
+  )
+
+  /** The area a plan from the newest state needs. */
+  const needNow = useCallback((): WalkNeed => {
+    const s = latest.current
+    return { start: s.start, end: s.settings.mode === 'oneway' ? s.end : undefined, targetSteps: s.settings.targetSteps, strideM: s.settings.strideM }
+  }, [latest])
 
   /** Load the live OSM area around a point and make it the start. */
   const loadLiveAround = useCallback(
     async (coords: LatLon): Promise<boolean> => {
       const { settings } = latest.current
       const box = areaForWalk(coords, stepsToMetres(settings.targetSteps, settings.strideM))
-      const w = await liveLoad(box)
-      if (!w) return false
-      setWorld(w)
-      dispatch({ type: 'areaLoaded', box, at: coords })
-      return true
+      try {
+        const w = await liveLoad(box)
+        setWorld(w)
+        dispatch({ type: 'areaLoaded', box, at: coords })
+        enrichAround(w, box)
+        return true
+      } catch {
+        return false
+      }
     },
-    [latest, dispatch, liveLoad, setWorld],
+    [latest, dispatch, liveLoad, setWorld, enrichAround],
   )
 
   /** `loaded` is the world just loaded at start-up (state is not updated yet then). */
@@ -116,18 +178,21 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
       }
       const p = { lat: res.fix.lat, lon: res.fix.lon }
       dispatch({ type: 'coords', text: formatCoordPair(p) })
-      if (current && bboxContains(worldBox(current), p)) {
-        dispatch({ type: 'located', p })
-      } else {
+      // The start is the fix, whatever the map holds; the streets around it come next (requirement 6e).
+      dispatch({ type: 'located', p })
+      const covered = current ? (current.live ? current.live.hasGraph(cellOf(p)) : bboxContains(worldBox(current), p)) : false
+      if (!covered) {
         dispatch({ type: 'locate', status: { state: 'loadingArea' } })
-        if (!(await loadLiveAround(p))) {
-          dispatch({ type: 'locate', status: { state: 'idle' } })
+        try {
+          await ensureWalk({ ...needNow(), start: p, end: undefined })
+        } catch {
+          dispatch({ type: 'locate', status: { state: 'areaError' } })
           return
         }
       }
       dispatch({ type: 'locate', status: { state: 'ok', accuracy: res.fix.accuracy, weak: res.weak } })
     },
-    [dispatch, loadLiveAround],
+    [dispatch, ensureWalk, needNow],
   )
   const locateRef = useRef(locateMe)
   useEffect(() => {
@@ -141,7 +206,7 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
       const saved = demo ? undefined : loadQuest(Date.now())
       let w: World | undefined
       if (saved?.area.kind === 'live') {
-        w = await liveLoad(saved.area.bbox)
+        w = await liveLoad(saved.area.bbox).catch(() => undefined)
         if (w) dispatch({ type: 'liveRestored', box: saved.area.bbox })
       }
       w ??= await loadDemoWorld()
@@ -209,5 +274,23 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
     return () => clearTimeout(timer)
   }, [bbox, viewCentre, busy, hasPlan, loadLiveAround, demo])
 
-  return { world, live, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot, onViewBox, load }
+  // Prefetch (requirement 6e.2): as soon as the start is known, load the streets the plan will need, so the plan button
+  // usually finds them. A start that failed to load is not tried again until it, the finish or the goal changes.
+  const failedWalk = useRef<string>(undefined)
+  const { start, end } = state
+  const { mode, targetSteps, strideM } = state.settings
+  const ready = !!world
+  useEffect(() => {
+    if (demo || !STREAMING_ENABLED || !ready || !online) return
+    const key = `${start.lat},${start.lon},${mode === 'oneway' ? `${end?.lat},${end?.lon}` : ''},${targetSteps},${strideM}`
+    if (failedWalk.current === key) return
+    const timer = setTimeout(() => {
+      ensureWalk(needNow()).catch(() => {
+        failedWalk.current = key
+      })
+    }, WALK_PREFETCH_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [demo, ready, online, start, end, mode, targetSteps, strideM, ensureWalk, needNow])
+
+  return { world, live, ensureWalk, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot, onViewBox, load }
 }

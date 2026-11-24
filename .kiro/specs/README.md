@@ -18,12 +18,12 @@ Each folder holds `requirements.md`, `design.md` and `tasks.md`. Requirement ids
 
 | Spec | Covers | Requirements | Tasks |
 | --- | --- | --- | --- |
-| [routing](routing/requirements.md) | planner, ±5 % budget, loop and A→B, checkpoints, roundabouts, fast rerouting, worker | 3, 4, 7b, 7c, 8, 9, 10, 11 | 8, 33, 49d, 51b, 54, 56, 61, 69 |
-| [map-rendering](map-rendering/requirements.md) | OSM data, Overpass client and cache, tiles, auto-tiling, chunks, town and landmarks, route path, walker, no black areas, auto-load, streaming multi-area world, map loading v2 (coarse layer first), drawing from OpenFreeMap vector tiles | 1, 2, 6a, 7a, 9, 10 to 21 | 3 to 7, 10, 22 to 27, 31, 32, 50b, 51, 58, 60, 63, 66, 69, 70, 72, 73, 74 |
+| [routing](routing/requirements.md) | planner, ±5 % budget, loop and A→B, checkpoints, roundabouts, fast rerouting, worker | 3, 4, 7b, 7c, 8, 9, 10, 11, 12, 13 | 8, 33, 49d, 51b, 54, 56, 61, 69, 78 |
+| [map-rendering](map-rendering/requirements.md) | OSM data, Overpass client and cache, tiles, auto-tiling, chunks, town and landmarks, route path, walker, no black areas, auto-load, streaming multi-area world, map loading v2 (coarse layer first), drawing from OpenFreeMap vector tiles | 1, 2, 6a, 7a, 9, 10 to 21, 23 | 3 to 7, 10, 22 to 27, 31, 32, 50b, 51, 58, 60, 63, 66, 69, 70, 72, 73, 74, 78 |
 | [safety-night](safety-night/requirements.md) | safety weights, night lighting from sunset, avoid-streets list | S1 to S10 | 43 to 48, 49b, 68 |
 | [voice-audio](voice-audio/requirements.md) | formant speech, callouts, speech bubbles, chiptune, effects, sound settings, audio engine robustness | 7, 7d, 7e, 7f | 34 to 42, 50, 59, 62 |
 | [retro-ui](retro-ui/requirements.md) | planner and app frame, console buttons, dialogue box, hero, i18n EN/ES and plurals, engineering rules, submission | 5, 5b, 5c, 8, 15 | 1, 2, 9, 21a, 28, 29, 49, 49e, 52, 53, 55, 57, 65, 67, 69 |
-| [quest](quest/requirements.md) | GPS and filter, snapping, gems, quest state, persistence, wake lock, simulation, finish | 6, 6b, 6c, 6d | 11 to 21, 30, 49c, 64, 69, 75 |
+| [quest](quest/requirements.md) | GPS and filter, snapping, gems, quest state, persistence, wake lock, simulation, finish | 6, 6b, 6c, 6d, 6e | 11 to 21, 30, 49c, 64, 69, 75, 78 |
 | [demo-mode](demo-mode/requirements.md) | self-playing `?demo=1` run for the video: auto plan and walk, camera script, dusk-to-night clock, summary | D1 to D6 | 77 |
 
 Where a requirement touches another spec (for example the speech bubble is voice behaviour drawn by the map renderer), the owning spec holds it and the others link to it.

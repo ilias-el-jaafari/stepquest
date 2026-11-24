@@ -9,11 +9,11 @@ src/
   config/brand.ts        APP_NAME and storage keys (rename the app here only)
   geo/                   geodesy helpers and step maths
   osm/                   tag classification, Overpass client (walking graph), cache, compact codec, demo area
-  vector/                OpenFreeMap vector tiles: tile maths, OpenMapTiles mapping and clipping, cell assembly, tile client (drawing)
+  vector/                OpenFreeMap vector tiles: tile maths, OpenMapTiles mapping and clipping, cell assembly, tile client (drawing), walking network from tiles (walkNet)
   data/                  bundled OSM extract (ODbL)
   tiles/                 TileGrid, rasterization, auto-tiling masks, diagonal smoothing
   town/                  lots, houses, gardens and landmark placement (town layout)
-  world/                 streamed multi-area world: 0.01° cells, per-cell records, merge and stitching, frame tiles, live world, cell streamer
+  world/                 streamed multi-area world: 0.01° cells, per-cell records, merge and stitching, frame tiles, live world, cell streamer, walking-area loader, Overpass tag enrichment
   routing/               walking graph, A*, loop and A→B planners, checkpoints
   render/                palette, tile painter, structure painters, route path, sprites, MapRenderer (canvas)
   app/                   app state reducer (appState.ts) and the hooks around it: planning, map area and location, number fields, today's steps, online status

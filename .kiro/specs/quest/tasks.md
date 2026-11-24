@@ -84,3 +84,8 @@ Findings and rationale: see "Architecture review (Nov 2026)" in [design.md](desi
 - [x] 75.5 `QuestScreen`: paused variant on "End", "Back to map", "Plan another quest"; App flow tests
   - _Requirements: 6d.2, 6d.3_
 
+
+## Location prepares the walk (task 78)
+
+- [x] 78.7 "Use my location" loads the streets around the fix before it reports success, a placed start prefetches them, a failed load says so with Retry (see [routing tasks](../routing/tasks.md) 78.7 and 78.9)
+  - _Requirements: 6e.1 to 6e.4_

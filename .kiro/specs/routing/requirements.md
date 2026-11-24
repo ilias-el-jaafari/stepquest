@@ -100,3 +100,33 @@ Related: [safety-night](../safety-night/requirements.md) (edge weights), [quest]
 2. THE SYSTEM SHALL keep longitudes inside [-180, 180] when computing a destination, and SHALL take the short way across the antimeridian when projecting.
 3. WHEN a point or a box is at or near a pole, THE SYSTEM SHALL return finite coordinates inside the valid ranges (boxes are clamped, never wrapped).
 4. THE SYSTEM SHALL project a point and back to within 1 mm for walk-sized offsets, and the projected distance SHALL be within 0.5 % of the great-circle distance up to 4 km at latitudes up to 60°.
+
+### Requirement 12 (task 78): Planning always answers
+
+**User Story:** As a walker who presses "Plan quest" anywhere (here, in the middle of València, or a few kilometres from the bundled demo), I want the button to react at once and to end with a route or with a clear message and a way to try again, so that the app never looks frozen.
+
+Related: [quest](../quest/requirements.md) requirement 6e (locating), [map-rendering](../map-rendering/requirements.md) requirement 23 (where the streets come from), `.kiro/steering/copy-voice.md`.
+
+#### Acceptance Criteria
+
+1. WHEN the player presses the plan button, THE SYSTEM SHALL show the busy state (button "Planning…", disabled, `aria-busy`) in the same render, before any street data is read or any request is sent.
+2. WHILE the walking graph of the area the walk needs is not on the device, THE SYSTEM SHALL name the step under the button ("Loading streets…" with the number of map pieces in: "3 of 9"), and SHALL show "Planning…" only for the search itself.
+3. WHEN planning cannot start (the map is not ready, or A → B has no finish yet), THE SYSTEM SHALL say why in a visible message next to the button; a press SHALL never end without a change on screen.
+4. IF loading the streets fails, takes longer than 40 s, or the planner worker breaks, THEN THE SYSTEM SHALL end the busy state and show an in-game message with a "Retry" button, in English and Spanish, in the voice of `copy-voice.md` (no mention of servers, tiles, graphs or caches). The Retry button SHALL run the same plan again.
+5. WHEN a plan has no route (outside the map, no street within 150 m, goal too short or too long, no match), THE SYSTEM SHALL show the reason on the Map tab, under the planner, as well as in the quest log; a "Use N steps" button SHALL be offered where the reason has a nearest feasible number.
+6. THE SYSTEM SHALL keep the mode chips, the placing chips ("Start" / "Finish") and the step presets inside the planner box at 320 px and up (they wrap onto a second line, nothing is cut off), and the "A → B" label SHALL stay on one line.
+7. WHEN the player switches to A → B, THE SYSTEM SHALL make the next map tap set the finish, and a finish that no walk of the goal's length could reach from the start SHALL be forgotten when the start moves (the planner never keeps a finish from another place).
+
+### Requirement 13 (task 78): The walking graph comes from the vector tiles
+
+**User Story:** As a walker, I want routes to appear wherever the map is drawn, without waiting for a public map server that is often overloaded, so that planning works the first time.
+
+Related: [map-rendering](../map-rendering/requirements.md) requirement 23, [safety-night](../safety-night/requirements.md) (weights unchanged), design.md "Walking graph from tiles (task 78)" for the measurements.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL build the walking graph of a live area from the z14 `transportation` layer of OpenFreeMap tiles: only ways that `isWalkable` accepts, with vertices snapped to a 1e-6° grid so that equal points are one node, with the pieces of a street cut at a tile edge joined into one way when exactly two ends of the same kind of way meet, and with every dead end within 3 m of another walkable way (not a bridge or a tunnel) connected to it (the way is split at the meeting point).
+2. THE SYSTEM SHALL pass a connectivity test on real València tiles kept as a fixture (`src/vector/__fixtures__`): at least 95 % of the graph's length in the main component, and a loop and an A → B walk across a tile seam planned within ±5 %.
+3. THE SYSTEM SHALL keep the safety and night weights as they are: a way from tiles has no `safety` flags until enrichment, which is the same as an Overpass way without `lit`, `sidewalk` or `service` tags.
+4. THE SYSTEM SHALL use Overpass only to enrich that graph (requirement 23.5), never to decide whether planning can start.
+5. THE SYSTEM SHALL plan on the graph of the cells that cover the walk (`areaForWalk` for a loop, the start-to-finish box for A → B); cells already in the graph (the bundled extract included) are not loaded again.

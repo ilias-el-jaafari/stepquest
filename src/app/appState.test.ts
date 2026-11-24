@@ -143,3 +143,50 @@ describe('app state reducer', () => {
     })
   })
 })
+
+describe('planning that always answers (routing requirement 12)', () => {
+  const running = () => appReducer(initialAppState(), { type: 'planStart', token: 1, seed: 0 })
+
+  it('a plan starts busy in the route phase and takes progress while the streets load', () => {
+    const s = running()
+    expect(s.plan).toMatchObject({ status: 'running', phase: 'route' })
+    const loading = appReducer(s, { type: 'planProgress', token: 1, phase: 'streets', progress: { done: 3, total: 9 } })
+    expect(loading.plan).toMatchObject({ phase: 'streets', progress: { done: 3, total: 9 } })
+    expect(appReducer(s, { type: 'planProgress', token: 7, phase: 'streets' })).toBe(s)
+  })
+
+  it('a failure keeps its reason, and the next plan starts clean', () => {
+    const failed = appReducer(running(), { type: 'planFailed', token: 1, error: 'timeout' })
+    expect(failed.plan).toMatchObject({ status: 'failed', error: 'timeout' })
+    const again = appReducer(failed, { type: 'planStart', token: 2, seed: 0 })
+    expect(again.plan.status).toBe('running')
+    expect(again.plan.error).toBeUndefined()
+    expect(appReducer(running(), { type: 'planFailed', token: 1 }).plan.error).toBe('failed')
+  })
+
+  it('A → B makes the next tap the finish; a loop makes it the start', () => {
+    const s = appReducer(initialAppState(), { type: 'mode', mode: 'oneway' })
+    expect(s.placing).toBe('end')
+    expect(appReducer(s, { type: 'mode', mode: 'loop' }).placing).toBe('start')
+  })
+
+  it('a located start forgets the demo finish and any finish no walk of the goal could reach', () => {
+    const base = appReducer(initialAppState(), { type: 'mode', mode: 'oneway' })
+    const far = appReducer(base, { type: 'located', p: { lat: 39.4697, lon: -0.3774 } })
+    expect(far.start).toEqual({ lat: 39.4697, lon: -0.3774 })
+    expect(far.end).toBeUndefined()
+    const chosen = { lat: 39.4765, lon: -0.3705 }
+    const kept = appReducer({ ...base, end: chosen }, { type: 'located', p: { lat: 39.4697, lon: -0.3774 } })
+    expect(kept.end).toEqual(chosen)
+    const tooFar = appReducer({ ...base, end: { lat: 39.9, lon: -0.1 } }, { type: 'located', p: { lat: 39.4697, lon: -0.3774 } })
+    expect(tooFar.end).toBeUndefined()
+  })
+
+  it('a grown map is a live map and keeps the plan', () => {
+    const s = appReducer(initialAppState(), { type: 'areaGrown', box })
+    expect(s).toMatchObject({ isDemo: false, liveBox: box })
+    const wider = appReducer(s, { type: 'areaGrown', box: { ...box, east: -0.2 } })
+    expect(wider.liveBox?.east).toBe(-0.2)
+    expect(wider.plan).toEqual(s.plan)
+  })
+})

@@ -13,7 +13,7 @@ import { QUEST_STORAGE_KEY, saveQuest } from './quest/storage.ts'
 import { WalkGraph } from './routing/graph.ts'
 import { planRoute } from './routing/planner.ts'
 import { PlanClient } from './routing/planClient.ts'
-import { OverpassClient } from './osm/overpass.ts'
+import { VectorTileClient } from './vector/client.ts'
 import { loadDemoWorld } from './ui/useMapData.ts'
 
 // Regression tests for the app shell review (task 67): each one failed before its fix.
@@ -144,7 +144,7 @@ describe('start-up', () => {
   it('B5: a saved quest on a live map that cannot load tells the user and keeps the save', async () => {
     const q = createQuest(demoRoute(), { strideM: 0.75, area: { kind: 'live', bbox: DEMO_AREA.bbox }, simulated: true, now: Date.now(), sim: { timeScale: 1, noiseM: 0 } })
     saveQuest(q)
-    vi.spyOn(OverpassClient.prototype, 'loadArea').mockRejectedValue(new Error('offline'))
+    vi.spyOn(VectorTileClient.prototype, 'loadTile').mockRejectedValue(new Error('offline'))
     await render()
     await waitFor(() => !!host.querySelector('[data-testid="resume-failed"]'))
     expect(localStorage.getItem(QUEST_STORAGE_KEY)).not.toBeNull()

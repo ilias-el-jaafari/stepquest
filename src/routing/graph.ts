@@ -6,6 +6,11 @@ import { MinHeap } from './heap.ts'
 import { plazaChords } from './plazaChords.ts'
 
 
+/** A network of at least this many nodes is a place to walk, not a fragment (see `nearestNode`). */
+export const NETWORK_NODES = 200
+/** The main network is the answer when it has a node this close (metres). */
+export const NEAR_MAIN_M = 100
+
 /** A size of a growing graph (see `GraphAccumulator.mark`). */
 export type GraphMark = { nodes: number; edges: number; bbox: BBox }
 
@@ -129,6 +134,8 @@ export class WalkGraph {
   readonly edgeWay: Int32Array
   /** Connected component label per node; component 0 is the largest. */
   readonly component: Int32Array
+  /** Nodes per component (index = label). */
+  readonly componentSizes: number[]
   private readonly projection: LocalProjection
   private readonly x: Float64Array
   private readonly y: Float64Array
@@ -189,7 +196,9 @@ export class WalkGraph {
       this.x[i] = p.x
       this.y[i] = p.y
     }
-    this.component = this.labelComponents()
+    const labelled = this.labelComponents()
+    this.component = labelled.label
+    this.componentSizes = labelled.sizes
     this.gScore = new Float64Array(this.size)
     this.prevNode = new Int32Array(this.size)
     this.prevEdge = new Int32Array(this.size)
@@ -201,7 +210,7 @@ export class WalkGraph {
     return { lat: this.lat[n] ?? 0, lon: this.lon[n] ?? 0 }
   }
 
-  private labelComponents(): Int32Array {
+  private labelComponents(): { label: Int32Array; sizes: number[] } {
     const label = new Int32Array(this.size).fill(-1)
     const sizes: number[] = []
     const stack: number[] = []
@@ -229,23 +238,42 @@ export class WalkGraph {
     const rank = new Int32Array(sizes.length)
     order.forEach((c, r) => (rank[c] = r))
     for (let i = 0; i < this.size; i++) label[i] = rank[label[i]!]!
-    return label
+    return { label, sizes: order.map((c) => sizes[c]!) }
   }
 
-  /** Nearest node in the main connected network (brute force; ~50k nodes is fast enough). */
-  nearestNode(p: LatLon, mainOnly = true): { node: number; distance: number } | undefined {
+  /**
+   * Nearest node of the walking network (brute force; ~50k nodes is fast enough). Tiny islands (a
+   * fragment of footpath) never count. The main network (component 0, the largest) is the answer,
+   * unless it is farther than `NEAR_MAIN_M` and another network of at least `NETWORK_NODES` nodes is
+   * nearer: a map that grew over a second area (the bundled extract plus the streets around the
+   * walker) holds two networks, and the walker is on the one they stand in. With `component` given,
+   * only that network is searched (a loop stays on the network of its start).
+   */
+  nearestNode(p: LatLon, mainOnly = true, component?: number): { node: number; distance: number } | undefined {
     const { x, y } = this.projection.toXY(p)
     let best = -1
     let bestD = Infinity
+    let other = -1
+    let otherD = Infinity
     for (let i = 0; i < this.size; i++) {
-      if (mainOnly && this.component[i] !== 0) continue
+      const c = this.component[i]!
+      if (component !== undefined ? c !== component : mainOnly && c !== 0 && this.componentSizes[c]! < NETWORK_NODES) continue
       const dx = this.x[i]! - x
       const dy = this.y[i]! - y
       const d = dx * dx + dy * dy
-      if (d < bestD) {
+      if (component === undefined && mainOnly && c !== 0) {
+        if (d < otherD) {
+          otherD = d
+          other = i
+        }
+      } else if (d < bestD) {
         bestD = d
         best = i
       }
+    }
+    if (other >= 0 && (best < 0 || (bestD > NEAR_MAIN_M * NEAR_MAIN_M && otherD < bestD))) {
+      best = other
+      bestD = otherD
     }
     return best < 0 ? undefined : { node: best, distance: Math.sqrt(bestD) }
   }

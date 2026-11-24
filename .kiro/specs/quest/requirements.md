@@ -71,3 +71,14 @@ Related: [routing](../routing/requirements.md) (rerouting, Requirement 7c), [voi
 7. WHEN the summary opens, THE SYSTEM SHALL play a short synthesised chiptune fanfare (a softer two-note phrase for the paused variant) through the sound effects bus, so the sound settings (mute, voice only) silence it.
 8. THE SYSTEM SHALL write the summary in English and Spanish in the game voice of `copy-voice.md`, name the dialog for assistive technology, move focus into it, and fit at 320×568 and 390×844 (the content scrolls if a short screen needs it).
 
+
+### Requirement 6e (task 78): "Use my location" prepares the walk
+
+**User Story:** As a walker who taps "Use my location" far from the demo area, I want the first plan to work straight away, so that I am not left on a map I cannot plan on.
+
+#### Acceptance Criteria
+
+1. WHEN a location fix is accepted, THE SYSTEM SHALL set the start to it and check whether the walking graph of the walk around it is on the device (the cells of the graph, not the drawn frame, which is larger); IF not, THE SYSTEM SHALL load it ("Loading streets…" in the locate message) before showing the location as found.
+2. WHEN the start is placed by a map tap, by typed coordinates or by a saved quest, THE SYSTEM SHALL start the same load at once, in the background, so that the plan button usually finds the streets already there; a press while it still runs joins it instead of starting another.
+3. IF that load fails, THEN the locate message SHALL say so with a "Retry" button, and the plan button SHALL still try again on its own when pressed (requirement 12.4 of [routing](../routing/requirements.md)).
+4. THE SYSTEM SHALL keep the start the fix gave: a loaded area SHALL NOT move the start to another place.

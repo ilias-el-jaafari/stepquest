@@ -7,7 +7,9 @@ import { planWithSafety } from '../routing/safePlanner.ts'
 import type { RouteRequest } from '../routing/planner.ts'
 import type { World } from '../ui/useMapData.ts'
 import { WALK_KMH } from './constants.ts'
-import type { AppAction, AppState } from './appState.ts'
+import { WalkAreaError, type WalkProgress } from '../world/walkArea.ts'
+import type { AppAction, AppState, PlanError } from './appState.ts'
+import type { WalkNeed } from './useArea.ts'
 
 /** Whether the walk starts or ends after sunset (from the start point's sun), so lighting counts more. */
 export function walkIsAtNight(start: LatLon, now: number, steps: number, strideM: number): boolean {
@@ -15,8 +17,22 @@ export function walkIsAtNight(start: LatLon, now: number, steps: number, strideM
   return isNightWalk(now, walkMs, start)
 }
 
+/** The route search itself (not the streets) is given this long before the player is told (requirement 12.4). */
+export const SEARCH_DEADLINE_MS = 60_000
+
+/** What a failed plan tells the player: the streets would not load, took too long, or the search broke. */
+export function planErrorOf(error: unknown): PlanError {
+  if (error instanceof WalkAreaError) return error.code === 'timeout' ? 'timeout' : 'streets'
+  if (error instanceof PlanTimeout) return 'timeout'
+  return 'failed'
+}
+
+class PlanTimeout extends Error {}
+
 type Args = {
   world: World | undefined
+  /** Makes sure the streets the walk needs are on the device; resolves with the world to plan on (requirement 12.2). */
+  ensureWalk?: (need: WalkNeed, onProgress?: (p: WalkProgress) => void) => Promise<World | undefined>
   latest: RefObject<AppState>
   dispatch: (action: AppAction) => void
   /** Validates the number fields and returns what to plan with. */
@@ -31,7 +47,7 @@ type Args = {
  * Planning and rerouting run in a Web Worker (or on the main thread where there is none).
  * `plan` is safe to call twice in a row: the second call finds a request already out.
  */
-export function usePlanner({ world, latest, dispatch, commitFields, onPlanned, night: fixedNight }: Args) {
+export function usePlanner({ world, ensureWalk, latest, dispatch, commitFields, onPlanned, night: fixedNight }: Args) {
   const client = useRef<PlanClient>(undefined)
   client.current ??= new PlanClient()
   useEffect(() => {
@@ -61,22 +77,36 @@ export function usePlanner({ world, latest, dispatch, commitFields, onPlanned, n
       const opts = { safe: true, night, avoid: [...s.avoid] }
       void (async () => {
         try {
+          // The streets of the walk first (nothing to do when they are on the device), then the search.
+          let map = world
+          if (ensureWalk) {
+            const need: WalkNeed = { start: s.start, end: req.end, targetSteps, strideM }
+            const loaded = await ensureWalk(need, (progress) => dispatch({ type: 'planProgress', token, phase: 'streets', progress }))
+            if (loaded) map = loaded
+            dispatch({ type: 'planProgress', token, phase: 'route' })
+          }
           // The search runs in the worker, so the button repaints and the map keeps moving meanwhile.
-          const outcome = await planClient.plan(world, req, world.data.bbox, opts)
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const outcome = await Promise.race([
+            planClient.plan(map, req, map.data.bbox, opts),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new PlanTimeout('The search took too long')), SEARCH_DEADLINE_MS)
+            }),
+          ]).finally(() => clearTimeout(timer))
           if (outcome.status === 'stale') {
             dispatch({ type: 'planCancelled', token })
             return
           }
-          const sp = outcome.status === 'ok' ? outcome.value : planWithSafety(world.graph, world.safety, req, world.data.bbox, opts)
+          const sp = outcome.status === 'ok' ? outcome.value : planWithSafety(map.graph, map.safety, req, map.data.bbox, opts)
           dispatch({ type: 'planDone', token, plan: sp })
           // Only when the answer was still wanted (the reducer drops it otherwise).
           if (latest.current.plan.token === token && latest.current.result === sp.result) planned.current?.()
-        } catch {
-          dispatch({ type: 'planFailed', token })
+        } catch (error) {
+          dispatch({ type: 'planFailed', token, error: planErrorOf(error) })
         }
       })()
     },
-    [world, latest, dispatch, commitFields, fixedNight],
+    [world, ensureWalk, latest, dispatch, commitFields, fixedNight],
   )
 
   const reroute = useCallback(

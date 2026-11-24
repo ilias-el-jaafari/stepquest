@@ -5,8 +5,8 @@ type Props = {
   picking: boolean
   /** The last avoid-street tap found no street. */
   noStreet: boolean
-  /** Megabytes text while a download runs. */
-  loadingMb: string | undefined
+  /** Map pieces in, of all, while the streets of an area load. */
+  loading: { done: number; total: number } | undefined
   outsideView: boolean
   askHere: boolean
   errorCode: OverpassErrorCode | undefined
@@ -20,7 +20,7 @@ type Props = {
 export function MapBanners(p: Props) {
   const { t } = useI18n()
   const pickBanner = p.picking || p.noStreet
-  const areaBanner = !p.picking && !p.noStreet && (p.loadingMb !== undefined || p.outsideView || p.askHere)
+  const areaBanner = !p.picking && !p.noStreet && (p.loading !== undefined || p.outsideView || p.askHere)
   return (
     <>
       {pickBanner && (
@@ -33,8 +33,8 @@ export function MapBanners(p: Props) {
       )}
       {areaBanner && (
         <div className="map-banner area-toast" role="status" data-testid="area-toast">
-          {p.loadingMb !== undefined ? (
-            <span>{t('area.loading', { mb: p.loadingMb })}</span>
+          {p.loading !== undefined ? (
+            <span>{p.loading.total > 0 ? t('area.loading', { done: p.loading.done, total: p.loading.total }) : t('plan.streetsStart')}</span>
           ) : p.outsideView ? (
             <>
               <span>{t('area.outside')}</span>

@@ -1,12 +1,13 @@
 import type { KeyboardEvent } from 'react'
 import { STEP_PRESETS } from '../app/constants.ts'
-import type { LocateStatus } from '../app/appState.ts'
+import type { LocateStatus, PlanError, PlanPhase } from '../app/appState.ts'
 import type { useNumberFields } from '../app/useNumberFields.ts'
 import { MAX_STEPS, MIN_STEPS } from '../geo/steps.ts'
 import { formatKm, formatNumber } from '../i18n/format.ts'
 import { useI18n } from '../i18n/index.ts'
 import type { PlanResult, RouteMode } from '../routing/planner.ts'
 import { FieldNote } from './FieldNote.tsx'
+import { feasibility } from './feasibility.ts'
 import { LocateMessage } from './LocateMessage.tsx'
 import { SLIDER_MAX, SLIDER_MIN, SLIDER_STEP, liveSteps, sliderValue } from './numberInput.ts'
 import type { Settings } from './settings.ts'
@@ -20,6 +21,12 @@ type Props = {
   result: PlanResult | undefined
   planning: boolean
   planFailed: boolean
+  planError?: PlanError
+  /** What a running plan is doing, and how many map pieces are in (requirement 12.2). */
+  planPhase?: PlanPhase
+  planProgress?: { done: number; total: number }
+  onRetryArea: () => void
+  onUseSteps: (steps: number) => void
   /** The planner is folded down to the route line (phones, once a route is ready). */
   folded: boolean
   locate: LocateStatus
@@ -47,6 +54,8 @@ export function PlannerPanel(p: Props) {
   const stepRange = { min: formatNumber(MIN_STEPS, locale), max: formatNumber(MAX_STEPS, locale) }
   const shownRoute = result?.ok ? result.route : result?.closest
   const format = (v: number) => formatNumber(v, locale)
+  const note = feasibility(result, t, locale)
+  const hint = !p.mapReady ? t('plan.hintMap') : settings.mode === 'oneway' && !p.hasEnd ? t('plan.hintEnd') : undefined
   return (
     <div className={`box planner-box ${p.folded ? 'folded' : ''}`} data-testid="planner">
       {result?.ok && (
@@ -110,7 +119,7 @@ export function PlannerPanel(p: Props) {
           ))}
         </div>
       </div>
-      <LocateMessage status={p.locate} />
+      <LocateMessage status={p.locate} onRetry={p.onRetryArea} />
       {shownRoute && (
         <p className={`route-line ${result?.ok ? 'ok' : 'bad'}`} data-testid="route-line">
           {t('result.short', { km: formatKm(shownRoute.distanceM, locale), steps: formatNumber(shownRoute.steps, locale), n: shownRoute.steps })}
@@ -118,15 +127,38 @@ export function PlannerPanel(p: Props) {
           {result?.ok && p.simulate && <> · {t('bag.demo')}</>}
         </p>
       )}
-      {p.planFailed && (
-        <p className="msg bad" role="alert" data-testid="plan-error">
-          {t('error.planFailed')}
+      {p.planning && p.planPhase === 'streets' && (
+        <p className="hint" role="status" data-testid="plan-progress">
+          {p.planProgress && p.planProgress.total > 0 ? t('plan.streets', { done: p.planProgress.done, total: p.planProgress.total }) : t('plan.streetsStart')}
         </p>
+      )}
+      {p.planFailed && (
+        <div className="msg bad" role="alert" data-testid="plan-error">
+          <p>{t(p.planError === 'streets' ? 'error.planStreets' : p.planError === 'timeout' ? 'error.planTimeout' : 'error.planFailed')}</p>
+          <button type="button" className="pix-btn small-text" data-testid="plan-retry" onClick={() => p.onPlan(false)}>
+            {t('action.retry')}
+          </button>
+        </div>
+      )}
+      {note && !note.ok && (
+        <div className="msg bad" role="status" data-testid="plan-note">
+          <p>{note.text}</p>
+          {note.suggest ? (
+            <button type="button" className="pix-btn small-text" onClick={() => p.onUseSteps(note.suggest!)}>
+              {t('action.useSteps', { steps: format(note.suggest) })}
+            </button>
+          ) : null}
+        </div>
       )}
       {result?.ok && (
         <button type="button" className="pix-btn primary big start-btn" onClick={p.onStart}>
           ▶ {t('quest.start')}
         </button>
+      )}
+      {hint && !p.planning && (
+        <p className="hint" role="status" data-testid="plan-hint">
+          {hint}
+        </p>
       )}
       <div className="actions">
         <button

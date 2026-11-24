@@ -250,3 +250,40 @@ describe('robustness across the demo area', () => {
     expect(Math.max(...overlaps)).toBeLessThan(0.08)
   })
 })
+
+describe('two walking networks in one graph (the bundled extract plus the streets around the walker)', () => {
+  it('snaps to the network the point stands in, not to the larger one far away', async () => {
+    const { WalkGraph, NETWORK_NODES } = await import('./graph.ts')
+    const ways = (rows: number, lat0: number, lon0: number, id0: number) => {
+      const out: { lat: number[]; lon: number[]; w: import('../osm/types.ts').OsmWay[] } = { lat: [], lon: [], w: [] }
+      for (let r = 0; r < rows; r++) {
+        const nodes: number[] = []
+        for (let c = 0; c < 40; c++) {
+          out.lat.push(lat0 + r * 0.0005)
+          out.lon.push(lon0 + c * 0.0005)
+          nodes.push(out.lat.length - 1)
+        }
+        out.w.push({ id: id0 + r, kind: 'road', highway: 'residential', walkable: true, area: false, tunnel: false, crossing: false, nodes })
+      }
+      return out
+    }
+    const a = ways(12, 39.5, -0.4, 1)
+    const b = ways(6, 39.4, -0.3, 100)
+    // Join the rows of each block with columns so each block is one network.
+    const lat = [...a.lat, ...b.lat]
+    const lon = [...a.lon, ...b.lon]
+    const all = [...a.w, ...b.w.map((w) => ({ ...w, nodes: w.nodes.map((n) => n + a.lat.length) }))]
+    const col = (rows: number, base: number, id: number) => ({ id, kind: 'road' as const, highway: 'residential', walkable: true, area: false, tunnel: false, crossing: false, nodes: Array.from({ length: rows }, (_, r) => base + r * 40) })
+    all.push(col(12, 0, 900), col(6, a.lat.length, 901))
+    const graph = new WalkGraph({ bbox: { south: 39.39, west: -0.41, north: 39.51, east: -0.27 }, lat: Float64Array.from(lat), lon: Float64Array.from(lon), ways: all, pois: [], source: 'tiles', timestamp: '' })
+    expect(graph.componentSizes.length).toBe(2)
+    expect(graph.componentSizes[1]).toBeGreaterThanOrEqual(NETWORK_NODES)
+    const inSmall = graph.nearestNode({ lat: 39.4, lon: -0.29 })!
+    expect(graph.component[inSmall.node]).toBe(1)
+    expect(inSmall.distance).toBeLessThan(100)
+    // Near the large one the large one wins, as before.
+    expect(graph.component[graph.nearestNode({ lat: 39.5, lon: -0.39 })!.node]).toBe(0)
+    // A component can be asked for by label.
+    expect(graph.component[graph.nearestNode({ lat: 39.5, lon: -0.39 }, true, 1)!.node]).toBe(1)
+  })
+})

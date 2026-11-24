@@ -147,3 +147,46 @@ Tests: `geo/review.test.ts`.
 ## Streamed world (map-rendering requirement 19)
 
 The walking graph can grow: `GraphAccumulator` (in `graph.ts`) holds the node map and the edge list, and `new WalkGraph(data)` is `add(data)` plus the CSR build. A streamed world adds the ways of new cells only and retries the edges that were outside the loaded cells before; "inside" is `OsmData.coverage` (the loaded cells) when present, else the bbox. Node and edge ids already issued never change while cells are only added, and a `WalkGraph` built from an accumulator mark is the graph as it was at that mark. The planners are unchanged; a reroute uses the graph of the newest snapshot. See [map-rendering design](../map-rendering/design.md#streaming-multi-area-world-requirement-19-task-70).
+
+## Root cause: "Plan quest" did nothing outside the bundled map (task 78)
+
+Field test, iPhone, Chrome mobile 390 × 844, ES, location 39.4697, -0.3774 (central València, 3 km south of the bundled Benicalap extract). "Use my location", then "Circular" (or "A → B" and a tap for the finish), then "Planear misión": no Overpass request, no "Planeando…" that stays, no error, for over 60 s. Reproduced on the live build with Playwright (`/tmp/planrepro.mjs`); in the quest-log tab the text "Ese punto aún no está en el mapa. Carga antes esta zona." was there all the time.
+
+Three causes met:
+
+1. **The frame was taken for the graph.** `locateMe` asked `bboxContains(worldBox(world), fix)`. For a streamed world `worldBox` is the drawn frame (9 × 9 cells, about 10 km around the extract), which has held València centre since the map is drawn from vector tiles. So the fix counted as "inside the loaded map", the area download was skipped, and nothing ever asked for the streets around the walker. The walking graph still held only Benicalap.
+2. **The planner answered, and nobody saw it.** `planRoute` returned `{ ok: false, reason: 'outsideArea' }` (A → B) or `unreachable` (loop) within a second. The Map tab shows only `plan.status === 'failed'`; an infeasible result is drawn by `ResultBox` in the Bag tab. The button went back to "Plan quest" after one frame, so nothing seemed to happen. No request was sent because none was needed to produce that answer.
+3. **A → B kept a finish from another city.** `located` did not touch `end`, so the finish stayed at the demo point in Benicalap; the tap the player thought set the finish set the start, because switching to A → B did not make the next tap the finish. The chips ("Meta" cut off at 390 px, "A → B" on two lines) also hid the placing buttons.
+
+A fourth fault sat behind them: with two separate networks in one graph (the extract and any streets added around the walker) `nearestNode` snapped only to the largest one, so a start in the new streets was "more than 150 m from any street" while the extract, 3 km away, won.
+
+### Fix
+
+- The graph, not the frame, decides: `LiveWorld.hasGraph(cell)` (graph record or walking record). `ensureWalk` loads the cells the walk needs when the start or the finish has none; "Use my location", a start placed by tap, and the plan button all go through it, and a load already running is joined (`useLiveLoader.run`, keyed by cells).
+- `usePlanner.plan` dispatches `planStart` before anything is awaited (immediate busy), reports `planProgress` (streets n of m), and ends every failure in `planFailed` with a reason (`streets`, `timeout`, `failed`); the Map tab shows the message and a Retry button. A search that takes more than 60 s counts as failed. An infeasible result is shown under the planner too (`feasibility.ts`, shared with `ResultBox`).
+- `nearestNode(p, mainOnly, component)` takes the network of at least 200 nodes that the point stands in when the largest one is more than 100 m away; planners keep a plan on the network of its start.
+- Switching to A → B makes the next tap the finish; a located start forgets the demo finish and any finish a walk of the goal's length cannot reach.
+
+## Walking graph from tiles (task 78)
+
+Question: can the z14 `transportation` layer replace Overpass as the source of the walking graph? Tiles lack `lit`, `sidewalk`, per-way names and node ids, and their lines are cut at tile edges. Measured on real data (9 z14 tiles, 8173 to 8175 by 6233 to 6235, 3 km × 3.3 km of central València, 9 cells), compared with one Overpass `out geom` extract of the same cells (OSM ways, real node ids):
+
+| Graph | Walkable length | Main component | Components | Random A to B pairs connected | Path length vs Overpass (median, 5th to 95th) |
+| --- | --- | --- | --- | --- | --- |
+| Overpass | 679 km | 97.3 % | 21 | reference | 1 |
+| Tiles, points shared only when equal (what a naive reader does) | 596 km | 52.9 % | 1,517 | not measured (23 % of sample points had no street in the main component within 40 m) | not measured |
+| Tiles, with `buildWalkNet` (1e-6° snapping, seam joins, dead ends within 3 m connected) | 431 km | 98.7 % | 57 | 98.6 % (284 of 288 pairs 300 m or longer; 4 had no node within 40 m) | 1.04 (1.00 to 1.35) |
+
+Plans on the tile graph from the middle of the 9 cells: a 3,000-step loop 2,975 steps (-0.8 %), a 6,000-step loop 6,111 (+1.9 %); the Overpass graph gave 3,013 and 5,953.
+
+Why raw tiles fall apart: tile generation simplifies lines, so the junction vertex a street ends on is often missing from the street it meets (a T-junction without a shared node). Of 16,118 lines in the 9 tiles, `buildWalkNet` joined 2,254 pieces cut at tile edges, connected 10,699 dead ends to a street and had to split a street for 10,017 of them. Snapping alone (shared equal points) does not fix that; the dead-end step does.
+
+What is missing: 248 km (36 %) of Overpass length, mostly separately mapped sidewalks and crossings (not in the tile layer at z14), a little service and footway detail. A walker loses nothing on the road network; the routes are not longer (median ratio 1.04). Names, `lit`, sidewalks and alleys are missing on the tile streets until Overpass enriches them.
+
+Decision: the tile graph is the primary source (it is as connected as Overpass, arrives with the map in seconds from a CDN and from the device cache, while one 1 km² Overpass query took 38 s that day and the other mirrors answered 502 or nothing for 40 s). Overpass becomes enrichment: cached cells at once, network cells in the background under the rules of `osm-etiquette.md`, matched by geometry (6 m, 25°, at least half of the way) to give `safety` flags and names. Tile ways with no match keep flags 0, the same as an Overpass way without tags, so the safety and night weights are unchanged.
+
+Costs and limits: 9 tiles for a 10,000-step loop (about 4 MB decoded; cached per tile for 7 days), up to 16 for the largest walk. A street that OpenFreeMap omits is not routable. Names for "streets to avoid" arrive only with enrichment. Plazas (pedestrian areas) are not in the graph from tiles (streets around them are).
+
+Fixture: `src/vector/__fixtures__/valencia-z14.json` (177 KB, four z14 tiles around a corner, walkable lines within 1 km, rebuilt by `scripts/build-tile-fixture.ts`): 2,858 lines to 179 km, 99.0 % in the main component, 18 components, a loop and an A → B walk across the seam within ±5 % (`walkNet.test.ts`).
+
+Where it lives: `vector/walkNet.ts` (pure network), `world/walkArea.ts` (tile scheduling, ≤ 4 in flight, retries, deadline, progress; Overpass enrichment), `world/enrich.ts` (matching), `LiveWorld.addWalkNet` and `enrich`, `app/useArea.ts` (`ensureWalk`, prefetch), `app/usePlanner.ts`.
