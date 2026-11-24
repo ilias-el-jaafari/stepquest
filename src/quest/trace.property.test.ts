@@ -90,6 +90,11 @@ describe('random GPS traces (64.12)', () => {
     )
   })
 
+  it('regression: a raw first fix 5 m off does not add a chunk once the smoother settles (seed 433283, sigma 2.95)', () => {
+    const { fixes } = trace({ seed: 433283, speed: 0, sigma: 2.9470214383982762, seconds: 600, pauseEvery: 0, glitchEvery: 0, dupEvery: 5, badAccuracy: false, walkTo: 0 })
+    expect(replay(fixes).q.odometer.totalM).toBeLessThan(15)
+  })
+
   it('collects gems once, in route order, and finishes only after the flag', () => {
     fc.assert(
       fc.property(params, (p) => {

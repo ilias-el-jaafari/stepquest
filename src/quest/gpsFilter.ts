@@ -128,7 +128,19 @@ export function filterFix(prev: FilterState | undefined, fix: GpsFix, cfg: Filte
  * nothing (see the design notes for the measurements); the last, incomplete
  * stretch of a walk is not counted until it is. The total never decreases.
  */
-export type Odometer = { anchor: LatLon | undefined; totalM: number }
+export type Odometer = {
+  anchor: LatLon | undefined
+  totalM: number
+  /** Fixes still to pass while the smoother settles; if nothing was counted by then, the anchor moves from the raw first fix to the smoothed position. */
+  settle?: number
+}
+
+/**
+ * The first fix is a raw reading and the smoother needs a few fixes to converge on the true position.
+ * Anchoring on the raw fix let a standing walker gain the raw error (up to 2 to 3 accuracy radii) as soon as
+ * the smoothed position settled, and that offset then made a second chunk likely (property test 64.12).
+ */
+export const ODO_SETTLE_FIXES = 3
 
 export const ODO_NOISE_FACTOR = 2
 export const ODO_MIN_STEP_M = 4
@@ -139,9 +151,14 @@ export const ODO_MAX_STEP_M = 30
  * `maxAddM`: the most one move may add (for a position accepted after a jump).
  */
 export function advanceOdometer(odo: Odometer, position: LatLon, accuracyM: number, maxAddM = Infinity): Odometer {
-  if (!odo.anchor) return { anchor: position, totalM: odo.totalM }
+  if (!odo.anchor) return { anchor: position, totalM: odo.totalM, settle: ODO_SETTLE_FIXES - 1 }
   const d = haversine(odo.anchor, position)
   const threshold = Math.max(ODO_MIN_STEP_M, Math.min(ODO_MAX_STEP_M, effectiveAccuracy(accuracyM) * ODO_NOISE_FACTOR))
-  if (!(d >= threshold)) return odo
+  if (!(d >= threshold)) {
+    if (!odo.settle) return odo
+    // Settling ends with nothing counted: the walker stood still, so move the anchor off the raw first fix.
+    return odo.settle === 1 ? { anchor: position, totalM: odo.totalM } : { ...odo, settle: odo.settle - 1 }
+  }
+  // A real move (even while settling) is counted as usual and ends the settling.
   return { anchor: position, totalM: odo.totalM + Math.max(0, Math.min(d, maxAddM)) }
 }
