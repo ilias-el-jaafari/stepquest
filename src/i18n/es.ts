@@ -62,6 +62,7 @@ export const es: Record<MessageKey, string> = {
   'map.home': 'Ir a la salida',
   'map.me': 'Centrar en mí y seguir',
   'map.loading': 'Construyendo el mapa…',
+  'map.canvas': 'Mapa. Las flechas lo mueven, más y menos acercan.',
   'map.attribution': 'Datos del mapa © colaboradores de OpenStreetMap (ODbL)',
   'safety.avoid': 'Calles a evitar',
   'safety.search': 'Buscar una calle',

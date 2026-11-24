@@ -40,7 +40,7 @@ Related: [routing](../routing/requirements.md), [quest](../quest/requirements.md
 1. THE SYSTEM SHALL split building footprints into small lots and draw separate houses with varied roof and wall colours, doors, windows, gardens, trees, fences and hedges, using only original pixel art.
 2. THE SYSTEM SHALL draw distinct parks (flowers, tall grass, pitches, woods), water with a shore, and squares, and SHALL soften the steps of diagonal streets.
 3. WHEN the map data has a hospital or public health centre, a metro or train station, a school, a park entrance or a supermarket, THE SYSTEM SHALL draw a matching special building near it. Supermarkets of one chain SHALL get a green special shop; THE SYSTEM SHALL NOT draw any brand name, logo or trademark, nor any design taken from a commercial game.
-4. THE SYSTEM SHALL draw the route as a continuous path with direction arrows, and the walker SHALL face its direction of movement with a walk animation (static when the user prefers reduced motion).
+4. THE SYSTEM SHALL draw the route as a continuous trail of footprints that follows the street, and the walker SHALL face its direction of movement with a walk animation (static when the user prefers reduced motion).
 5. THE SYSTEM SHALL show quest messages (start, pickup, finish) in a retro dialogue box that types out, can be skipped with a tap or key, and closes by itself while walking.
 6. THE SYSTEM SHALL use correct singular and plural forms in English and Spanish for every count.
 7. WHEN the quest is finished, THE SYSTEM SHALL stop location tracking and SHALL NOT show signal or route warnings.
@@ -93,3 +93,58 @@ Owner: this spec. The night-from-sunset rule (`isDark`, sunrise/sunset in `src/g
 7. THE SYSTEM SHALL NOT animate the lights (no flicker, nothing that moves with panning), so that reduced-motion preferences need no special case and nothing shimmers when panning.
 8. WHERE the page URL has `?time=HH:MM`, THE SYSTEM SHALL use that local time of today for the lighting only, and SHALL leave routing, night safety and the quest untouched.
 9. THE SYSTEM SHALL NOT change any routing weight or planner behaviour.
+
+
+### Requirement 10 (task 63): Camera and viewport
+
+**User Story:** As a walker on any phone or desktop, I want the map to stay sharp and in the right place when the window, the screen or the zoom changes, so that it never goes blank or jumps.
+
+#### Acceptance Criteria
+
+1. WHEN the canvas changes size, OR the device pixel ratio changes without a size change (a window moved to another screen, browser zoom), THE SYSTEM SHALL resize the backing store, re-clamp the camera and repaint within one frame.
+2. THE SYSTEM SHALL limit the backing store to 8192 px per side and 16 777 216 px in total by lowering the effective pixel ratio (never the CSS size), and SHALL draw with that effective ratio.
+3. IF the canvas has no layout size (hidden or not laid out yet), THEN THE SYSTEM SHALL keep the last CSS size it saw (before any layout: the canvas's own size divided by the pixel ratio), SHALL NOT resize the backing store, and SHALL NOT treat the backing-store size as a CSS size.
+4. THE SYSTEM SHALL convert between screen and tile coordinates as exact inverses (error under 1e-6 tile) at every zoom level and at any camera position the clamp allows, and zooming SHALL keep the point under the pointer fixed (before clamping).
+5. WHEN stepping the zoom ladder from a zoom that is not a ladder level, THE SYSTEM SHALL go to the next level in that direction (never skip one).
+6. THE SYSTEM SHALL cover every device pixel of the loaded area with a painted chunk or a stand-in: neighbouring chunks share the same rounded edge, a stand-in fills exactly its chunk's rectangle, and tile blits are aligned to whole tiles so that chunks and animated water tiles line up at any pixel ratio.
+7. THE SYSTEM SHALL draw only the part of a chunk that touches the screen, so a blit never has a destination larger than the screen plus one tile at any zoom.
+
+### Requirement 11 (task 63): Map input
+
+**User Story:** As a walker using a thumb, a mouse or a trackpad, I want pan and zoom gestures to feel like every other map, so that I never fight the map.
+
+#### Acceptance Criteria
+
+1. WHEN wheel or trackpad scroll events arrive, THE SYSTEM SHALL add their vertical delta (lines and pages normalised to pixels) and zoom one ladder level per 100 px, forgetting a partial amount after 250 ms of silence; a purely horizontal wheel event SHALL NOT zoom.
+2. WHILE two fingers are down, THE SYSTEM SHALL zoom to the ladder level nearest (on a log scale, with 8 % hysteresis) to the start zoom times the finger-distance ratio, without flicker between two levels, and SHALL pan with the midpoint of the fingers.
+3. WHEN a one-finger or mouse drag ends faster than 0.05 px/ms, THE SYSTEM SHALL keep gliding with an exponential decay (time constant 250 ms) until under 0.02 px/ms, SHALL stop at a new touch, and SHALL NOT glide when the user prefers reduced motion.
+4. WHEN a second tap or click lands within 300 ms and 24 px of the first, THE SYSTEM SHALL zoom in one level at that point and SHALL NOT report the second tap as a placed point.
+5. THE SYSTEM SHALL react only to the primary button of a mouse, SHALL survive a refused pointer capture, and SHALL NOT count a cancelled pointer as a tap.
+6. WHILE the canvas has keyboard focus, THE SYSTEM SHALL pan 64 px per arrow key press and zoom one level for `+` and `-`.
+7. THE SYSTEM SHALL keep the gesture decisions (wheel steps, pinch level, velocity, tap pairing) in pure modules with unit tests, and the DOM binding thin.
+
+### Requirement 12 (task 63): Frame cost, memory and repaint
+
+**User Story:** As a walker whose phone has little memory and battery, I want the map to cost as little as it can, so that a 10 000 step walk does not heat the phone.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL draw the route with at most one canvas call per footprint (cached footprint stamps), SHALL compute the footprint layout only when the route or the zoom changes, and SHALL skip footprints outside the screen, so a 7.5 km route costs under 1500 fill or draw calls per frame at every zoom.
+2. THE SYSTEM SHALL NOT draw window or lamp light over a chunk that is not painted yet (a stand-in).
+3. WHEN a chunk is evicted from the cache, or the renderer is disposed, THE SYSTEM SHALL release its canvas (width and height 0) and the entries kept for it (water tiles).
+4. THE SYSTEM SHALL NOT recurse when a frame asks for another frame in an environment without `requestAnimationFrame`; the next frame SHALL run after the current one returns.
+5. WHEN the page becomes visible again, THE SYSTEM SHALL repaint, so the sky matches the real time without waiting for the 60 s timer.
+6. THE SYSTEM SHALL allocate no per-frame keys for chunk lookups (numeric keys) and SHALL reuse the chunk plan while camera, zoom and screen size are unchanged.
+7. THE SYSTEM SHALL keep the approved look: the golden frames (day, night, dusk with water and tracks, far zoom, avoided streets) stay pixel-identical, and any visible change SHALL be listed in `design.md` ("Architecture review").
+8. THE SYSTEM SHALL keep street lamp positions independent of the chunk size used to ask for them.
+
+### Requirement 13 (task 63): Renderer structure
+
+**User Story:** As the maintainer, I want the map renderer split into small modules with one job each, so that a change to the sky cannot break the camera.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL keep `MapRenderer` as a thin facade with its current public API, wiring these modules: `camera.ts` (pure view maths), `viewport.ts` (backing store and pixel ratio), `chunkLayer.ts` with `atlas.ts` and `overview.ts` (terrain, structures, water, stand-ins, caches), `lightingLayer.ts` (clock, tint, window and lamp light), `overlayLayer.ts` with `footprintLayer.ts`, `walkerMotion.ts`, `bubble.ts` (route, tape, tracks, gems, walker, speech bubble, pickups), `frameScheduler.ts`, and `gestures.ts` with `src/ui/mapInput.ts` (input).
+2. THE SYSTEM SHALL keep Web Audio, React and routing out of these modules; the pure ones SHALL NOT touch the DOM.
+3. THE SYSTEM SHALL contain no code that nothing calls (route chevrons, unused getters and constants).
+

@@ -7,6 +7,7 @@ import { MapRenderer, type Markers, type QuestOverlay, type RouteShape } from '.
 import type { TileGrid } from '../tiles/grid.ts'
 import { walkerFor } from '../hero/look.ts'
 import { useLook } from '../hero/useLook.ts'
+import { attachMapInput } from './mapInput.ts'
 
 type Props = {
   grid: TileGrid
@@ -37,8 +38,6 @@ type Props = {
   bubble?: string
 }
 
-const TAP_SLOP_PX = 8
-
 export function MapView({ grid, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -66,77 +65,14 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => renderer.requestRender())
     observer?.observe(canvas)
 
-    // Pointer gestures: one finger pans, two fingers pinch, a short tap places a point.
-    const pointers = new Map<number, { x: number; y: number }>()
-    let moved = 0
-    let pinchStart = 0
-    let pinchZoom = renderer.zoom
-    let viewTimer: ReturnType<typeof setTimeout> | undefined
-    const reportView = () => {
-      clearTimeout(viewTimer)
-      viewTimer = setTimeout(() => onViewRef.current?.(renderer.screenToLatLon(renderer.cssWidth / 2, renderer.cssHeight / 2)), 150)
-    }
-    const local = (e: PointerEvent) => {
-      const r = canvas.getBoundingClientRect()
-      return { x: e.clientX - r.left, y: e.clientY - r.top }
-    }
-    const down = (e: PointerEvent) => {
-      canvas.setPointerCapture(e.pointerId)
-      pointers.set(e.pointerId, local(e))
-      if (pointers.size === 1) moved = 0
-      if (pointers.size === 2) {
-        const [a, b] = [...pointers.values()] as [{ x: number; y: number }, { x: number; y: number }]
-        pinchStart = Math.hypot(a.x - b.x, a.y - b.y)
-        pinchZoom = renderer.zoom
-        moved = TAP_SLOP_PX + 1
-      }
-    }
-    const move = (e: PointerEvent) => {
-      const prev = pointers.get(e.pointerId)
-      if (!prev) return
-      const now = local(e)
-      pointers.set(e.pointerId, now)
-      if (pointers.size === 1) {
-        moved += Math.abs(now.x - prev.x) + Math.abs(now.y - prev.y)
-        if (moved > TAP_SLOP_PX) {
-          renderer.panBy(now.x - prev.x, now.y - prev.y)
-          onUserPanRef.current?.()
-        }
-      } else if (pointers.size === 2 && pinchStart > 0) {
-        const [a, b] = [...pointers.values()] as [{ x: number; y: number }, { x: number; y: number }]
-        const ratio = Math.hypot(a.x - b.x, a.y - b.y) / pinchStart
-        const target = pinchZoom * ratio
-        if (target > renderer.zoom * 1.4) renderer.zoomStep(1, (a.x + b.x) / 2, (a.y + b.y) / 2)
-        else if (target < renderer.zoom / 1.4) renderer.zoomStep(-1, (a.x + b.x) / 2, (a.y + b.y) / 2)
-      }
-    }
-    const up = (e: PointerEvent) => {
-      const p = pointers.get(e.pointerId)
-      pointers.delete(e.pointerId)
-      if (p && pointers.size === 0 && moved <= TAP_SLOP_PX && e.type === 'pointerup') {
-        onTapRef.current(renderer.screenToLatLon(p.x, p.y))
-      } else if (pointers.size === 0) reportView()
-      if (pointers.size < 2) pinchStart = 0
-    }
-    const wheel = (e: WheelEvent) => {
-      e.preventDefault()
-      const r = canvas.getBoundingClientRect()
-      renderer.zoomStep(e.deltaY < 0 ? 1 : -1, e.clientX - r.left, e.clientY - r.top)
-      reportView()
-    }
-    canvas.addEventListener('pointerdown', down)
-    canvas.addEventListener('pointermove', move)
-    canvas.addEventListener('pointerup', up)
-    canvas.addEventListener('pointercancel', up)
-    canvas.addEventListener('wheel', wheel, { passive: false })
+    const detach = attachMapInput(canvas, renderer, () => ({
+      tap: (p) => onTapRef.current(p),
+      userPan: () => onUserPanRef.current?.(),
+      view: (c) => onViewRef.current?.(c),
+    }))
     return () => {
       observer?.disconnect()
-      canvas.removeEventListener('pointerdown', down)
-      canvas.removeEventListener('pointermove', move)
-      canvas.removeEventListener('pointerup', up)
-      canvas.removeEventListener('pointercancel', up)
-      canvas.removeEventListener('wheel', wheel)
-      clearTimeout(viewTimer)
+      detach()
       renderer.dispose()
       rendererRef.current = undefined
     }
@@ -209,7 +145,7 @@ export function MapView({ grid, route, markers, focus, focusKey, onTap, home, qu
 
   return (
     <div className="map">
-      <canvas ref={canvasRef} className="map-canvas" data-testid="map-canvas" />
+      <canvas ref={canvasRef} className="map-canvas" data-testid="map-canvas" tabIndex={0} role="application" aria-label={t('map.canvas')} />
       <div className="map-buttons">
         <button type="button" className="pix-btn round" onClick={() => zoom(1)} aria-label={t('map.zoomIn')} title={t('map.zoomIn')}>
           <PixelIcon name="plus" />

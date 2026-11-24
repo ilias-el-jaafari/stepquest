@@ -61,6 +61,7 @@ export const en = {
   'map.home': 'Go to the start',
   'map.me': 'Centre on me and follow',
   'map.loading': 'Building the overworld…',
+  'map.canvas': 'Map. Arrow keys move it, plus and minus zoom.',
   'map.attribution': 'Map data © OpenStreetMap contributors (ODbL)',
   'safety.avoid': 'Streets to avoid',
   'safety.search': 'Search a street',

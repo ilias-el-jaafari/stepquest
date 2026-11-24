@@ -5,7 +5,7 @@ import { loadDemoOsm } from '../osm/demo.ts'
 import { dedupePois, isGreenMarket, landmarkKind } from '../osm/landmarks.ts'
 import { normalizeOverpass } from '../osm/normalize.ts'
 import type { OsmData } from '../osm/types.ts'
-import { ARROW_PATTERNS, chevrons, dir8, routeCells, smoothPolyline } from '../render/routePath.ts'
+import { routeCells, smoothPolyline } from '../render/routePath.ts'
 import { facingFrom, spriteIsValid, WALKER, walkFrame } from '../render/sprites.ts'
 import { paintFrontFence, paintGardenTree, paintHouse, paintLandmark } from '../render/structures.ts'
 import { Corner, decodeRamp, diagonalCorners, rampAt } from '../tiles/diagonal.ts'
@@ -285,23 +285,6 @@ describe('route path', () => {
       const b = cells[i]!
       expect(Math.abs(a.x - b.x) + Math.abs(a.y - b.y)).toBe(1)
       expect(b.along).toBeGreaterThanOrEqual(a.along - 1e-6)
-    }
-  })
-
-  it('points arrows along the walking direction', () => {
-    expect(dir8(1, 0)).toBe(0)
-    expect(dir8(0, 1)).toBe(2)
-    expect(dir8(-1, 0)).toBe(4)
-    expect(dir8(0, -1)).toBe(6)
-    expect(dir8(-1, 1)).toBe(3)
-    const arrows = chevrons(cells, 6)
-    expect(arrows.length).toBeGreaterThan(3)
-    expect(arrows[0]!.dir).toBe(0) // first leg goes east
-    const last = arrows[arrows.length - 1]!
-    expect([2, 3, 4]).toContain(last.dir) // last leg goes south-west
-    for (const p of ARROW_PATTERNS) {
-      expect(p).toHaveLength(9)
-      for (const row of p) expect(row).toMatch(/^[wk.]{9}$/)
     }
   })
 

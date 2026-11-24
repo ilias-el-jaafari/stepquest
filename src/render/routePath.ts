@@ -27,30 +27,6 @@ export function routeCells(points: readonly Pt[], cumulative: readonly number[])
   return out
 }
 
-/** 8-way direction index (0 = east, then clockwise: 1 SE, 2 S, … 7 NE) for a step (dx, dy). */
-export function dir8(dx: number, dy: number): number {
-  const a = Math.atan2(dy, dx)
-  return ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8
-}
-
-export type Chevron = { x: number; y: number; dir: number; along: number }
-
-/**
- * Direction arrows along the route: one every `every` tiles, pointing from
- * the tile `lookahead` steps back to the one `lookahead` steps ahead.
- */
-export function chevrons(cells: readonly RouteCell[], every = 6, lookahead = 2): Chevron[] {
-  const out: Chevron[] = []
-  for (let i = Math.floor(every / 2); i < cells.length; i += every) {
-    const a = cells[Math.max(0, i - lookahead)]!
-    const b = cells[Math.min(cells.length - 1, i + lookahead)]!
-    if (a.x === b.x && a.y === b.y) continue
-    const c = cells[i]!
-    out.push({ x: c.x, y: c.y, dir: dir8(b.x - a.x, b.y - a.y), along: c.along })
-  }
-  return out
-}
-
 /**
  * Centre points for drawing the band: staircase corners (where the tiles
  * before and after are diagonal neighbours) are dropped, so the band runs
@@ -67,42 +43,6 @@ export function smoothPolyline(cells: readonly RouteCell[]): (RouteCell & { cx: 
   }
   return out
 }
-
-/**
- * Arrow-head patterns (9×9, w = fill, k = outline, . = clear) for each dir8
- * index, rasterised from one triangle so diagonals look as solid as cardinals.
- */
-export const ARROW_PATTERNS: readonly (readonly string[])[] = Array.from({ length: 8 }, (_, d) => {
-  const a = (d * Math.PI) / 4
-  const cos = Math.cos(a)
-  const sin = Math.sin(a)
-  // Triangle pointing along +x: tip and two back corners.
-  const tri = [
-    [3.6, 0],
-    [-2.6, -3.6],
-    [-2.6, 3.6],
-  ].map(([x, y]) => [x! * cos - y! * sin, x! * sin + y! * cos] as const)
-  const inside = (px: number, py: number) => {
-    let sign = 0
-    for (let i = 0; i < 3; i++) {
-      const [x1, y1] = tri[i]!
-      const [x2, y2] = tri[(i + 1) % 3]!
-      const cross = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
-      if (cross !== 0) {
-        if (sign === 0) sign = Math.sign(cross)
-        else if (Math.sign(cross) !== sign) return false
-      }
-    }
-    return true
-  }
-  const fill = (x: number, y: number) => x >= 0 && y >= 0 && x < 9 && y < 9 && inside(x - 4, y - 4)
-  return Array.from({ length: 9 }, (_, y) =>
-    Array.from({ length: 9 }, (_, x) => {
-      if (fill(x, y)) return 'w'
-      return fill(x + 1, y) || fill(x - 1, y) || fill(x, y + 1) || fill(x, y - 1) ? 'k' : '.'
-    }).join(''),
-  )
-})
 
 /** One footprint along the route, in screen px. `angle` is the walking direction (radians). */
 export type Footprint = { x: number; y: number; angle: number; left: boolean; along: number }

@@ -81,4 +81,3 @@ export function paintGlow(ctx: CanvasRenderingContext2D, size: number, rgb: read
 export const LAMP_RGB = [255, 190, 90] as const
 export const WALKER_RGB = [255, 236, 170] as const
 export const WINDOW_RGB = '#ffd36b'
-export const WINDOW_RGB_COOL = '#ffe9a8'

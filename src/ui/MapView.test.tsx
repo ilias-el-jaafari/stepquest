@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../i18n/index.ts'
+import { drawBubble } from '../render/bubble.ts'
 import { MapRenderer } from '../render/MapRenderer.ts'
 import { TileGrid } from '../tiles/grid.ts'
 import { MapView } from './MapView.tsx'
@@ -110,9 +111,7 @@ describe('speech bubble drawing', () => {
       get: (o, k) => (k in o ? o[k as string] : () => {}),
       set: () => true,
     })
-    const r = new MapRenderer(document.createElement('canvas'), grid)
-    const draw = (r as unknown as { drawBubble(c: unknown, t: string, at: object, dpr: number, w: number, h: number): void }).drawBubble.bind(r)
-    draw(ctx, 'Checkpoint 3 of 10. Next one in 400 metres.', { x: 290, y: 200, size: 48 }, 1, 300, 400)
+    drawBubble(ctx as never, 'Checkpoint 3 of 10. Next one in 400 metres.', { x: 290, y: 200, size: 48 }, 1, 300, 400)
     expect(texts.join(' ')).toBe('Checkpoint 3 of 10. Next one in 400 metres.')
     for (const [x, , w] of rects) expect(x! >= 0 && x! + w! <= 300 + 2).toBe(true)
   })
@@ -161,13 +160,14 @@ describe('map drawing without holes', () => {
     r.camY = big.rows / 2
     r.render()
     expect(r.chunkCount).toBe(1)
-    const standIns = images.filter((a) => a.length === 9).length
+    const isStandIn = (a: unknown[]) => a.length === 9 && (a[0] as HTMLCanvasElement).width === big.cols && (a[0] as HTMLCanvasElement).height === big.rows
+    const standIns = images.filter(isStandIn).length
     expect(standIns).toBeGreaterThan(5)
     for (let i = 0; i < 80; i++) r.render()
     // The whole screen and its ring are painted; nothing is left as a stand-in.
     images.length = 0
     r.render()
-    expect(images.filter((a) => a.length === 9)).toHaveLength(0)
+    expect(images.filter(isStandIn)).toHaveLength(0)
     expect(r.chunkCount).toBeGreaterThan(20)
   })
 

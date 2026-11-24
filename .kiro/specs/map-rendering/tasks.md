@@ -39,3 +39,27 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 ## Day-cycle lighting
 
 - [x] 60. Day-cycle lighting on the map (requirement 9): `daylight.ts` model from solar altitude, multiply tint, lit windows from the real painters, street lamps from `lit` tags or main streets, walker and gem glow, `?time=HH:MM` preview, README section; unit, property (P-L1 to P-L4) and renderer tests. Routing untouched.
+
+## Map renderer rework (Nov 2026, requirements 10 to 13)
+
+- [x] 63.1 Safety net: software canvas test helper, golden frame snapshots of the approved look (5 scenes, day, night at 2×, dusk with water frame and tracks, far zoom with tape and walker, wide detail), counting benchmark with a 7.5 km route (before numbers)
+  - _Requirements: 12.7_
+- [x] 63.2 `camera.ts` and `viewport.ts`: pure camera (screen ↔ tile, pan, zoom around a point, ladder step, fit, clamp), backing-store limits, hidden canvas, pixel-ratio watcher, clamp on resize (B3, B4, B5, B12, B14); round-trip, zoom-anchor and clamp properties
+  - _Requirements: 10.1 to 10.5_
+- [x] 63.3 `gestures.ts` and `ui/mapInput.ts`: wheel accumulator, pinch level with hysteresis and pan, inertia, double tap, primary button, safe pointer capture, keyboard; `MapView` only creates the input (B1, B2, B13)
+  - _Requirements: 11.1 to 11.7_
+- [x] 63.4 `atlas.ts`, `overview.ts`, `chunkLayer.ts`: numeric chunk keys, plan memo, tile-aligned visible-part blits, exact stand-in rectangles, release on eviction and dispose, water entries dropped with their chunk (B7, B8, B9, B16); chunk coverage property at any zoom and pan
+  - _Requirements: 10.6, 10.7, 12.3, 12.6_
+- [x] 63.5 `lightingLayer.ts`: clock and cache moved out, light only over painted chunks, lamps asked per chunk size, repaint on visibility change (B6, B11, B15); lighting continuity test
+  - _Requirements: 12.2, 12.5, 12.8, 9.6_
+- [x] 63.6 `overlayLayer.ts`, `footprintLayer.ts`, `walkerMotion.ts`, `bubble.ts`: route layout cached per zoom in world pixels, footprints as cached stamps, culling, rails and tape moved; the route costs under 1500 calls per frame (P1, P2)
+  - _Requirements: 12.1, 12.7_
+- [x] 63.7 `frameScheduler.ts` and the thin `MapRenderer` facade (B10); public API unchanged
+  - _Requirements: 12.4, 13.1, 13.2_
+- [x] 63.8 Auto-tile and tile-spec property tests on random grids: reduced masks stay in the 47, map edge counts as connected, 90° rotation symmetry, locality (3 × 3), uniform area is 255
+  - _Requirements: 2.4_
+- [x] 63.9 Dead code removed (`chevrons`, `ARROW_PATTERNS`, `dir8`, `WINDOW_RGB_COOL`, unused getters, duplicate fill branches); requirement 6a.4 text matches footprints
+  - _Requirements: 13.3_
+- [x] 63.10 Spec results (before and after timings, visible changes), README index, final `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
+  - _Requirements: 12.7_
+

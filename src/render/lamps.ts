@@ -1,4 +1,5 @@
 import { Layer, Terrain, type TileGrid } from '../tiles/grid.ts'
+import { chunkKey } from './chunkPlan.ts'
 
 /**
  * Street lamp positions, derived from the tile grid (deterministic, so nothing
@@ -14,22 +15,28 @@ export type Lamp = { x: number; y: number }
 
 const isRoad = (t: number) => t === Terrain.road || t === Terrain.crossing
 
-const cache = new WeakMap<TileGrid, Map<string, Lamp[]>>()
+const lampsByGrid = new WeakMap<TileGrid, Lamp[]>()
+/** Lamps bucketed by chunk, per grid and per chunk size (a different size never reuses another size's buckets). */
+const cache = new WeakMap<TileGrid, Map<number, Map<number, Lamp[]>>>()
+const NONE: Lamp[] = []
 
-/** Lamps of one chunk (chunk of `size` tiles). */
+/** Lamps of one chunk (chunk of `size` tiles). Allocation-free after the first call for a grid and size. */
 export function lampsInChunk(grid: TileGrid, cx: number, cy: number, size: number): Lamp[] {
-  let byChunk = cache.get(grid)
+  let sizes = cache.get(grid)
+  if (!sizes) cache.set(grid, (sizes = new Map()))
+  let byChunk = sizes.get(size)
   if (!byChunk) {
-    byChunk = bucket(streetLamps(grid), size)
-    cache.set(grid, byChunk)
+    let all = lampsByGrid.get(grid)
+    if (!all) lampsByGrid.set(grid, (all = streetLamps(grid)))
+    sizes.set(size, (byChunk = bucket(all, size)))
   }
-  return byChunk.get(`${cx},${cy}`) ?? []
+  return byChunk.get(chunkKey(cx, cy)) ?? NONE
 }
 
-function bucket(lamps: Lamp[], size: number): Map<string, Lamp[]> {
-  const map = new Map<string, Lamp[]>()
+function bucket(lamps: Lamp[], size: number): Map<number, Lamp[]> {
+  const map = new Map<number, Lamp[]>()
   for (const l of lamps) {
-    const key = `${Math.floor(l.x / size)},${Math.floor(l.y / size)}`
+    const key = chunkKey(Math.floor(l.x / size), Math.floor(l.y / size))
     const list = map.get(key)
     if (list) list.push(l)
     else map.set(key, [l])

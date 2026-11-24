@@ -1,0 +1,15 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden frames > detail zoom with the avoided street tape and a wide window 1`] = `"400x300:1e5326e3"`;
+
+exports[`golden frames > dusk, water frame 1, and tracks 1`] = `"240x180:31065e39"`;
+
+exports[`golden frames > dusk, water frame 1, and tracks 2`] = `"240x180:708997b6"`;
+
+exports[`golden frames > far zoom town map with route, avoided street and walker 1`] = `"240x180:b302f144"`;
+
+exports[`golden frames > far zoom town map with route, avoided street and walker 2`] = `"240x180:23e2e9c8"`;
+
+exports[`golden frames > night with lamps, windows, walker, bubble and a pickup, at 2x density 1`] = `"480x360:496103c0"`;
+
+exports[`golden frames > planning map in daylight at detail zoom 1`] = `"240x180:e17e0e7f"`;

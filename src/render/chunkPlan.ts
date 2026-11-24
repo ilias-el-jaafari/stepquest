@@ -24,6 +24,10 @@ export type PlanInput = {
   margin: number
 }
 
+/** Cache and plan key of a chunk: one number, so lookups allocate nothing. */
+export const CHUNK_KEY_STRIDE = 1 << 15
+export const chunkKey = (cx: number, cy: number): number => cy * CHUNK_KEY_STRIDE + cx
+
 export function planChunks(p: PlanInput): ChunkPlan {
   const maxCx = Math.ceil(p.cols / p.chunk) - 1
   const maxCy = Math.ceil(p.rows / p.chunk) - 1
@@ -48,12 +52,17 @@ export function planChunks(p: PlanInput): ChunkPlan {
   return { visible, ring }
 }
 
-/** Least-recently-used cache with a size limit that skips protected keys (the chunks on screen). */
-export class LruCache<V> {
-  private readonly map = new Map<string, V>()
+/**
+ * Least-recently-used cache with a size limit that skips protected keys (the chunks on screen).
+ * `onEvict` runs for every value that leaves the cache (eviction or `clear`), so canvases can be released.
+ */
+export class LruCache<V, K = string> {
+  private readonly map = new Map<K, V>()
   private limit: number
-  constructor(limit: number) {
+  private readonly onEvict: ((key: K, value: V) => void) | undefined
+  constructor(limit: number, onEvict?: (key: K, value: V) => void) {
     this.limit = limit
+    this.onEvict = onEvict
   }
 
   setLimit(limit: number): void {
@@ -64,11 +73,11 @@ export class LruCache<V> {
     return this.map.size
   }
 
-  has(key: string): boolean {
+  has(key: K): boolean {
     return this.map.has(key)
   }
 
-  get(key: string): V | undefined {
+  get(key: K): V | undefined {
     const v = this.map.get(key)
     if (v !== undefined) {
       this.map.delete(key)
@@ -77,18 +86,26 @@ export class LruCache<V> {
     return v
   }
 
-  set(key: string, value: V, protectedKeys: ReadonlySet<string> = new Set()): void {
+  set(key: K, value: V, protectedKeys: ReadonlySet<K> = new Set()): void {
+    const old = this.map.get(key)
     this.map.delete(key)
+    if (old !== undefined && old !== value) this.onEvict?.(key, old)
     this.map.set(key, value)
     if (this.map.size <= this.limit) return
     for (const k of this.map.keys()) {
       if (this.map.size <= this.limit) break
-      if (k !== key && !protectedKeys.has(k)) this.map.delete(k)
+      if (k !== key && !protectedKeys.has(k)) {
+        const v = this.map.get(k)!
+        this.map.delete(k)
+        this.onEvict?.(k, v)
+      }
     }
   }
 
   clear(): void {
+    const all = [...this.map]
     this.map.clear()
+    for (const [k, v] of all) this.onEvict?.(k, v)
   }
 }
 
