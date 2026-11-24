@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEMO_AREA } from '../osm/demoArea.ts'
 import { loadDemoOsm } from '../osm/demo.ts'
-import { offRouteQuest } from '../quest/testWalk.ts'
+import { offRouteQuest } from '../quest/testWalk.testutil.ts'
 import { WalkGraph } from './graph.ts'
 import { inlineBackend, PlanClient, type Backend, type PlanSource } from './planClient.ts'
 import type { PlanRequest } from './planProtocol.ts'

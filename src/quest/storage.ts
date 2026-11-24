@@ -1,5 +1,6 @@
 import { APP_SLUG } from '../config/brand.ts'
-import { QUEST_VERSION, type QuestState } from './quest.ts'
+import { migrateQuest } from './migrate.ts'
+import type { QuestState } from './state.ts'
 
 export const QUEST_STORAGE_KEY = `${APP_SLUG}.activeQuest`
 /** A quest untouched for this long is considered abandoned. */
@@ -33,26 +34,10 @@ export function clearQuest(store: StorageLike | undefined = storage()): void {
   }
 }
 
-function isQuest(value: unknown): value is QuestState {
-  if (!value || typeof value !== 'object') return false
-  const q = value as Partial<QuestState>
-  return (
-    q.v === QUEST_VERSION &&
-    typeof q.id === 'string' &&
-    typeof q.startedAt === 'number' &&
-    typeof q.collected === 'number' &&
-    typeof q.strideM === 'number' &&
-    !!q.route &&
-    Array.isArray(q.route.points) &&
-    q.route.points.length >= 2 &&
-    Array.isArray(q.route.checkpoints) &&
-    !!q.odometer &&
-    typeof q.odometer.totalM === 'number' &&
-    !!q.area
-  )
-}
-
-/** Load a saved quest if it is valid and recent; otherwise clear it. */
+/**
+ * Load a saved quest: older versions are migrated, a newer version is left in storage and ignored,
+ * anything invalid or older than a day is cleared.
+ */
 export function loadQuest(now: number, store: StorageLike | undefined = storage()): QuestState | undefined {
   if (!store) return undefined
   let raw: string | null
@@ -63,8 +48,11 @@ export function loadQuest(now: number, store: StorageLike | undefined = storage(
   }
   if (!raw) return undefined
   try {
-    const parsed: unknown = JSON.parse(raw)
-    if (!isQuest(parsed)) throw new Error('invalid')
+    const migrated = migrateQuest(JSON.parse(raw))
+    // A newer app wrote this (we were downgraded): leave it alone so that app can resume it.
+    if (!migrated.ok && migrated.reason === 'newer') return undefined
+    if (!migrated.ok) throw new Error('invalid')
+    const parsed = migrated.quest
     const last = parsed.finishedAt ?? parsed.lastFixAt ?? parsed.startedAt
     if (now - last > QUEST_MAX_AGE_MS) throw new Error('stale')
     // Walked footprints from before a reroute are only decoration: drop them if malformed.

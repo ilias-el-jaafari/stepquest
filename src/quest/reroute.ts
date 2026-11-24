@@ -1,4 +1,4 @@
-import type { BBox, LatLon } from '../geo/geo.ts'
+import { haversine, type BBox, type LatLon } from '../geo/geo.ts'
 import { metresToSteps, TARGET_TOLERANCE } from '../geo/steps.ts'
 import { isDark } from '../geo/sun.ts'
 import type { OsmData } from '../osm/types.ts'
@@ -26,6 +26,10 @@ export type ReroutePatch = {
   questId: string
   /** `rerouted` of the state it was computed from; the patch is refused once that has changed. */
   base: number
+  /** Gems collected in the state it was computed from; the patch is refused once another gem was collected. */
+  collected: number
+  /** Where the walker was when it was computed; the patch is refused once the walker is far from there. */
+  from: LatLon
   /** `local`: reconnected to the planned route; `full`: the whole remainder was replanned. */
   kind: 'local' | 'full'
   route: QuestRoute
@@ -92,6 +96,8 @@ function reconnect(state: QuestState, world: RerouteWorld, here: LatLon, remaini
       patch: {
         questId: state.id,
         base: state.rerouted ?? 0,
+        collected: state.collected,
+        from: here,
         kind: 'local',
         route: { ...route, points, distanceM, steps: Math.round(metresToSteps(state.odometer.totalM, state.strideM) + steps), checkpoints },
         walked: headOf(route.points, state.alongM),
@@ -134,15 +140,33 @@ export function planReroute(state: QuestState, world: RerouteWorld, opts: { avoi
   return {
     questId: state.id,
     base: state.rerouted ?? 0,
+    collected: state.collected,
+    from: here,
     kind: 'full',
     route: { ...route, points: r.points, distanceM: r.distanceM, steps: Math.round(walkedSteps + r.steps), checkpoints: [...done, ...next] },
     walked: headOf(route.points, state.alongM),
   }
 }
 
-/** Whether a patch still belongs to this quest state (same quest, no reroute applied since). */
+/** A patch is refused when the walker is further than this from where it was computed. */
+export const PATCH_MAX_DRIFT_M = 60
+
+/**
+ * Whether a patch still belongs to this quest state: same quest, no reroute applied since, the
+ * same number of gems collected, the walker still off the route and still near the position the
+ * patch starts from. Otherwise the answer is stale; the next off-route stretch asks again.
+ */
 export function patchFits(state: QuestState | undefined, patch: ReroutePatch): state is QuestState {
-  return !!state && state.id === patch.questId && (state.rerouted ?? 0) === patch.base && state.finishedAt === undefined
+  return (
+    !!state &&
+    state.id === patch.questId &&
+    (state.rerouted ?? 0) === patch.base &&
+    state.collected === patch.collected &&
+    state.finishedAt === undefined &&
+    state.offRoute &&
+    !!state.player &&
+    haversine(state.player, patch.from) <= PATCH_MAX_DRIFT_M
+  )
 }
 
 /** Merge a patch into the (possibly newer) quest state. Undefined when it no longer fits. */

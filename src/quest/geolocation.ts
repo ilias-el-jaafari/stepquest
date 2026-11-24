@@ -1,3 +1,4 @@
+import { isFreshFix } from './fixFreshness.ts'
 import type { GpsFix } from './types.ts'
 
 export type LocationErrorCode = 'unsupported' | 'insecure' | 'denied' | 'unavailable' | 'timeout' | 'inaccurate'
@@ -58,8 +59,8 @@ export function judgeStartFix(fix: GpsFix): LocateResult {
   return { ok: true, fix, weak: fix.accuracy > WEAK_START_ACCURACY_M }
 }
 
-/** Continuous high-accuracy tracking through the browser. */
-export function browserSource(e: GeoEnv = env()): LocationSource {
+/** Continuous high-accuracy tracking through the browser. Cached or future-dated fixes are dropped (`isFreshFix`). */
+export function browserSource(e: GeoEnv = env(), now: () => number = Date.now): LocationSource {
   return {
     start(onFix, onError) {
       if (!e.secure) {
@@ -72,7 +73,10 @@ export function browserSource(e: GeoEnv = env()): LocationSource {
       }
       const geo = e.geolocation
       const id = geo.watchPosition(
-        (pos) => onFix(toFix(pos)),
+        (pos) => {
+          const fix = toFix(pos)
+          if (isFreshFix(fix, now())) onFix(fix)
+        },
         (err) => onError(mapGeoError(err)),
         { enableHighAccuracy: true, timeout: 20_000, maximumAge: 2_000 },
       )

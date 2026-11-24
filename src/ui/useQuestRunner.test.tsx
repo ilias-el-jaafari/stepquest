@@ -1,6 +1,6 @@
 import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AudioEngine, setAudioEngineForTests } from '../audio/engine.ts'
 import { loadAudioSettings } from '../audio/settings.ts'
 import { destination, type LatLon } from '../geo/geo.ts'
@@ -21,6 +21,7 @@ const route: QuestRoute = { mode: 'oneway', points, distanceM: 1000, steps: 1333
 
 type Watch = (pos: { coords: { latitude: number; longitude: number; accuracy: number }; timestamp: number }) => void
 let watcher: Watch | undefined
+let watchError: ((e: { code: number }) => void) | undefined
 let host: HTMLDivElement
 let root: Root
 let api: ReturnType<typeof useQuestRunner> | undefined
@@ -35,14 +36,17 @@ function Probe() {
 }
 
 beforeEach(() => {
+  // The browser source drops fixes that are old against the device clock, so the clock follows the fixes.
+  vi.useFakeTimers({ toFake: ['Date'] })
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   localStorage.clear()
   setAudioEngineForTests(new AudioEngine(loadAudioSettings()))
   watcher = undefined
+  watchError = undefined
   asked = []
   Object.defineProperty(navigator, 'geolocation', {
     configurable: true,
-    value: { watchPosition: (cb: Watch) => ((watcher = cb), 1), clearWatch: () => {}, getCurrentPosition: () => {} },
+    value: { watchPosition: (cb: Watch, err: (e: { code: number }) => void) => ((watcher = cb), (watchError = err), 1), clearWatch: () => {}, getCurrentPosition: () => {} },
   })
   host = document.createElement('div')
   document.body.append(host)
@@ -50,12 +54,18 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  vi.useRealTimers()
   await act(async () => root.unmount())
   host.remove()
 })
 
 let clock = 0
-const fix = (p: LatLon) => act(async () => watcher?.({ coords: { latitude: p.lat, longitude: p.lon, accuracy: 5 }, timestamp: (clock += 8000) }))
+const fix = (p: LatLon) =>
+  act(async () => {
+    const timestamp = (clock += 8000)
+    vi.setSystemTime(timestamp + 500)
+    watcher?.({ coords: { latitude: p.lat, longitude: p.lon, accuracy: 5 }, timestamp })
+  })
 
 /** 100 m along the route, then a block north and on east: a quiet-reroute situation. */
 async function walkOffRoute() {
@@ -72,7 +82,7 @@ async function start(): Promise<QuestState> {
   return q
 }
 
-const patchFor = (state: QuestState, distanceM: number): ReroutePatch => ({ questId: state.id, base: state.rerouted ?? 0, kind: 'local', route: { ...route, distanceM }, walked: [] })
+const patchFor = (state: QuestState, distanceM: number): ReroutePatch => ({ questId: state.id, base: state.rerouted ?? 0, collected: state.collected, from: state.player!, kind: 'local', route: { ...route, distanceM }, walked: [] })
 
 describe('quest runner rerouting', () => {
   it('asks for a reroute without waiting, and merges the answer when it arrives', async () => {
@@ -116,5 +126,35 @@ describe('quest runner rerouting', () => {
     await act(async () => asked[0]!.settle(undefined))
     expect(api!.quest!.route.distanceM).toBe(1000)
     expect(api!.quest!.rerouted).toBeUndefined()
+  })
+})
+
+describe('quest runner cleanup', () => {
+  it('ignores a location error that arrives after the quest ended', async () => {
+    await start()
+    const report = watchError!
+    await act(async () => api!.end())
+    await act(async () => report({ code: 1 }))
+    expect(api!.error).toBeUndefined()
+  })
+
+  it('shows a location error while the quest runs and clears it with the next fix', async () => {
+    await start()
+    await act(async () => watchError!({ code: 3 }))
+    expect(api!.error).toBe('timeout')
+    await fix(destination(origin, 90, 10))
+    expect(api!.error).toBeUndefined()
+  })
+
+  it('does not write the quest back to storage after unmount', async () => {
+    await start()
+    await walkOffRoute()
+    const pending = asked[0]!
+    await act(async () => root.unmount())
+    localStorage.clear()
+    pending.settle({ questId: pending.state.id, base: 0, collected: pending.state.collected, from: pending.state.player!, kind: 'local', route: { ...route, distanceM: 1500 }, walked: [] })
+    await Promise.resolve()
+    expect(localStorage.length).toBe(0)
+    root = createRoot(host)
   })
 })

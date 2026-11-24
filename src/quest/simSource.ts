@@ -18,11 +18,12 @@ export function simulatedSource(track: RouteTrack, opts: SimSourceOptions): Loca
       const walker = new SimWalker(track, opts)
       const tickMs = opts.tickMs ?? 250
       const every = opts.fixEverySimS ?? 2
+      let stopped = false
       let simS = 0
       let emittedUpTo = -every
       const timer = setInterval(() => {
         simS += (tickMs / 1000) * opts.timeScale
-        while (emittedUpTo + every <= simS) {
+        while (!stopped && emittedUpTo + every <= simS) {
           emittedUpTo += every
           onFix(walker.fixAt(emittedUpTo))
           // Keep a couple of fixes after arriving, then stop moving.
@@ -32,7 +33,10 @@ export function simulatedSource(track: RouteTrack, opts: SimSourceOptions): Loca
           }
         }
       }, tickMs)
-      return () => clearInterval(timer)
+      return () => {
+        stopped = true
+        clearInterval(timer)
+      }
     },
   }
 }

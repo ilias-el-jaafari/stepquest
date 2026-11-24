@@ -19,7 +19,8 @@ import { hasSeenOnboarding, markOnboardingSeen } from './ui/onboarding.ts'
 import { locateOnce, type LocationErrorCode } from './quest/geolocation.ts'
 import { createQuest, type AreaRef, type QuestState } from './quest/quest.ts'
 import { audioEngine } from './audio/engine.ts'
-import { loadQuest } from './quest/storage.ts'
+import { routeNearBbox } from './quest/migrate.ts'
+import { clearQuest, loadQuest } from './quest/storage.ts'
 import { MapView } from './ui/MapView.tsx'
 import { QuestScreen } from './ui/QuestScreen.tsx'
 import { SoundControls } from './ui/SoundMenu.tsx'
@@ -31,8 +32,7 @@ import { useLook } from './hero/useLook.ts'
 import { HeroEditor } from './ui/HeroEditor.tsx'
 import { StepMeter } from './ui/StepMeter.tsx'
 import { deviceVibrate, installPressFeedback } from './ui/pressFeedback.ts'
-import { addStepsToday, stepsToday } from './quest/dailySteps.ts'
-import { questStats } from './quest/quest.ts'
+import { stepsToday } from './quest/dailySteps.ts'
 import { useQuestRunner } from './ui/useQuestRunner.ts'
 import { commitSteps, commitStride, formatStride, liveSteps, liveStride, parseStepsText, parseStrideText, SLIDER_MAX, SLIDER_MIN, SLIDER_STEP, sliderValue, type Committed } from './ui/numberInput.ts'
 import { clampSteps, loadSettings, parseCoords, saveSettings, type Settings } from './ui/settings.ts'
@@ -129,11 +129,15 @@ export default function App() {
       }
       w ??= await loadDemoWorld()
       setWorld(w)
-      if (saved && (saved.area.kind === 'demo' || !isDemoWorld(w))) {
+      // Resume only on a map that holds the route (a quest saved on another map, or on a demo
+      // extract that changed, is not drawn on the wrong one). A live map that failed to load is retried next time.
+      const mapFits = !!saved && routeNearBbox(saved.route, w.data.bbox)
+      if (saved && mapFits && (saved.area.kind === 'demo' || !isDemoWorld(w))) {
         setResumed(true)
         beginQuest(saved, true)
         return
       }
+      if (saved && saved.area.kind === 'demo' && !mapFits) clearQuest()
       // No quest to resume: load the map around the walker when location is already allowed,
       // otherwise offer it (the browser asks for permission on that tap).
       const permission = await navigator.permissions?.query({ name: 'geolocation' }).catch(() => undefined)
@@ -371,12 +375,10 @@ export default function App() {
   }, [bbox, viewCentre, busy, hasPlan])
   const loadingMb = live.status.state === 'loading' ? (live.status.bytes / 1e6).toFixed(1) : undefined
 
-  // Leaving a quest: real (not simulated) steps add to today's total.
+  // Leaving a quest: the session adds the real steps still unpaid to today's total (the rest was added as they were walked).
   const endQuest = () => {
-    const q = runner.quest
-    const now = Date.now()
-    if (q && !q.simulated) setTodaySteps(addStepsToday(questStats(q, now).steps, now))
     runner.end()
+    setTodaySteps(stepsToday(Date.now()))
   }
 
   const startQuest = () => {

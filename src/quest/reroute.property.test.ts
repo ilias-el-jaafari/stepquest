@@ -10,7 +10,7 @@ import { planRoute } from '../routing/planner.ts'
 import { safetyContext } from '../routing/safety.ts'
 import { applyFix, createQuest, trackFor, type QuestState } from './quest.ts'
 import { planReroute } from './reroute.ts'
-import { pointAt } from './testWalk.ts'
+import { pointAt } from './testWalk.testutil.ts'
 import type { QuestRoute } from './types.ts'
 
 const SEED = 20261204

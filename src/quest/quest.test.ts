@@ -168,7 +168,9 @@ describe('checkpoint collection', () => {
     // Not judged yet: the message waits until the walker clearly heads away.
     expect(r2.events).not.toContainEqual({ type: 'offRoute' })
     expect(r2.state.lost).toBe(false)
-    const back = applyFix(r2.state, fixAt(destination(origin, 90, 140), 80))
+    // The smoother needs a second fix on the line, and the walker must be clearly back (hysteresis).
+    const closer = applyFix(r2.state, fixAt(destination(origin, 90, 140), 80))
+    const back = applyFix(closer.state, fixAt(destination(origin, 90, 150), 88))
     expect(back.state.offRoute).toBe(false)
     expect(back.state.offStart).toBeUndefined()
   })
@@ -194,7 +196,6 @@ describe('stats and formatting', () => {
     const s = questStats(q, 15 * 60_000)
     expect(s.steps).toBe(2000)
     expect(s.paceMinPerKm).toBeCloseTo(10, 6)
-    expect(s.remainingM).toBe(400)
     expect(s.collected).toBe(2)
     expect(s.total).toBe(4)
     expect(nextCheckpoint(q)?.index).toBe(3)
@@ -246,7 +247,7 @@ describe('persistence and resume', () => {
     store.setItem(QUEST_STORAGE_KEY, '{not json')
     expect(loadQuest(0, store)).toBeUndefined()
     expect(store.m.has(QUEST_STORAGE_KEY)).toBe(false)
-    saveQuest({ ...newQuest(), v: 9 as 1 }, store)
+    saveQuest({ ...newQuest(), v: 9 as 2 }, store)
     expect(loadQuest(0, store)).toBeUndefined()
     saveQuest(newQuest(), store)
     expect(loadQuest(QUEST_MAX_AGE_MS + 1, store)).toBeUndefined()

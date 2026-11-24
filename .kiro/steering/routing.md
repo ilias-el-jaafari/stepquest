@@ -42,10 +42,10 @@ Read this before changing the planners, the safety weights, the reroute logic or
 
 ## Rerouting
 
-- Triggered by the quest reducer (`src/quest/quest.ts`) when the walker is off the line and still heading toward the next checkpoint. Retry only after `retryM` more walking.
+- Triggered by the quest reducer (`applyFix` in `src/quest/machine.ts`, re-exported by `quest.ts`) when the walker is off the line and still heading toward the next checkpoint. Retry only after `retryM` more walking.
 - `planReroute` first tries a local reconnection to the planned route (rejoin points ahead of the walker, not past the next checkpoint). If that breaks the ±5 % budget of the steps left, it replans the remainder to the finish, spreading the uncollected checkpoints evenly and avoiding the street just left.
 - Collected checkpoints, walked distance and walked footprints are kept. Below `MIN_REMAINING_STEPS` (150) no replan is attempted.
-- A patch is valid only for the quest and reroute count it was computed from (`patchFits`); otherwise drop it.
+- A patch is valid only for the quest, reroute count and collected-gem count it was computed from, while the walker is still off the route and within 60 m of the position it was computed for (`patchFits`); otherwise drop it. `QuestSession` also drops all but the newest request.
 
 ## Worker protocol
 

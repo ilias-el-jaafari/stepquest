@@ -8,7 +8,7 @@ import { planRoute } from '../routing/planner.ts'
 import { safetyContext } from '../routing/safety.ts'
 import { applyReroute, patchFits, planReroute, rerouteQuest } from './reroute.ts'
 import { makeTrack, snapToRoute } from './snap.ts'
-import { offRouteQuest } from './testWalk.ts'
+import { offRouteQuest } from './testWalk.testutil.ts'
 import type { QuestRoute } from './types.ts'
 
 const NOW = Date.UTC(2026, 10, 22, 12)

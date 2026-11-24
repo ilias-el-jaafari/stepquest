@@ -11,7 +11,7 @@ import { routeCells, smoothPolyline } from '../render/routePath.ts'
 import { TileGrid } from '../tiles/grid.ts'
 import { trackFor } from './quest.ts'
 import { planReroute, rerouteQuest } from './reroute.ts'
-import { offRouteQuest } from './testWalk.ts'
+import { offRouteQuest } from './testWalk.testutil.ts'
 import type { QuestRoute } from './types.ts'
 
 const NOW = Date.UTC(2026, 10, 22, 12)

@@ -32,3 +32,34 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 ## Mobile design
 
 - [x] 49c. Field test fixes B: footprints route (walked prints darker), follow mode, adaptive rerouting, map-area loading (auto-load around GPS, "Load this area", mirror race, worker, area cache, progress)
+
+## Architecture review follow-up (Nov 2026)
+
+Findings and rationale: see "Architecture review (Nov 2026)" in [design.md](design.md) and Requirement 6b. Every bug fix starts with a failing regression test.
+
+- [x] 64.1 Split `quest.ts` into `state.ts`, `deviation.ts`, `collect.ts`, `machine.ts`, `stats.ts`; `quest.ts` re-exports them (no behaviour change; existing tests stay green)
+  - _Requirements: 6b.15_
+- [x] 64.2 Filter hardening: `invalid` reason, unknown accuracy (0, NaN, missing) as 20 m, agreeing outliers, accuracy of both readings in the speed gate, clock set back, age check of browser fixes (`fixFreshness.ts`)
+  - _Requirements: 6b.1, 6b.2, 6b.3, 6b.4, 6b.5_
+- [x] 64.3 Odometer: no drift while standing (threshold 2 × accuracy, 4 to 30 m), capped share for accepted jumps, never decreases
+  - _Requirements: 6b.6_
+- [x] 64.4 Gems: time-aware passing, exactly once and in order, finish only after the flag (`collect.ts`)
+  - _Requirements: 6b.7, 6b.8_
+- [x] 64.5 Off-route hysteresis and `backOnRoute` when the message ends
+  - _Requirements: 6b.9_
+- [x] 64.6 Reroute race: patch bound to the collected count, to a walker still off the route and near the planned position; rejected requests ignored
+  - _Requirements: 6b.10_
+- [x] 64.7 Persistence: quest version 2, `migrate.ts` (v1 to v2, newer kept, validation), saved route must fit the loaded map
+  - _Requirements: 6b.8, 6b.11_
+- [x] 64.8 Steps today credited as walked, for the day of the fix, once (`creditedSteps`)
+  - _Requirements: 6b.12_
+- [x] 64.9 Wake lock: one sentinel, release after a late resolve, `onChange` for the HUD
+  - _Requirements: 6b.13_
+- [x] 64.10 Simulator source: stop in the middle of a tick; demo ×20 end to end with noise and glitches
+  - _Requirements: 6b.16, 6b.17_
+- [x] 64.11 `QuestSession` (pure controller: fixes, save throttle, step credit, reroute tickets) and a thin `useQuestRunner`; `signalStatus` out of `QuestScreen`; hook cleanup (late errors, unmount, timers)
+  - _Requirements: 6b.14, 6b.15, 6b.16_
+- [x] 64.12 Property tests on random noisy traces: odometer never decreases, no counting while standing, gems once and in order, finish only after the flag, persistence round trip, migration
+  - _Requirements: 6b.6, 6b.7, 6b.8, 6b.11_
+- [x] 64.13 Dead code (`remainingM`, unused sentinel listener type, `testWalk.ts` renamed `testWalk.testutil.ts`), spec and README sync
+  - _Requirements: 6b.15_

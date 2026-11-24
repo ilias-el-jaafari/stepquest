@@ -5,14 +5,13 @@ import { isStale, PaceTracker, tempoForSpeed } from '../audio/tempo.ts'
 import { useI18n } from '../i18n/index.ts'
 import type { LatLon } from '../geo/geo.ts'
 import { browserSource, type LocationErrorCode, type LocationSource } from '../quest/geolocation.ts'
-import { applyFix, trackFor, type QuestState } from '../quest/quest.ts'
-import { applyReroute, type ReroutePatch } from '../quest/reroute.ts'
+import { trackFor, type QuestState } from '../quest/quest.ts'
+import type { ReroutePatch } from '../quest/reroute.ts'
+import { QuestSession } from '../quest/session.ts'
 import { simulatedSource } from '../quest/simSource.ts'
-import { clearQuest, saveQuest } from '../quest/storage.ts'
 import type { GpsFix } from '../quest/types.ts'
 import { keepScreenOn, type WakeLockHandle } from '../quest/wakeLock.ts'
 
-const SAVE_EVERY_MS = 1000
 /** How often the music checks that fixes still arrive (to pause when they stop). */
 const PACE_CHECK_MS = 2000
 
@@ -37,14 +36,16 @@ function sourceFor(q: QuestState): LocationSource {
   })
 }
 
-/** Drives an active quest: location source, events, sounds, wake lock and persistence. */
+/**
+ * Connects an active quest to the outside world: the location source, sound, the wake lock
+ * and React state. The rules (filter, gems, saving, step credit, reroute tickets) live in
+ * `QuestSession` and `applyFix`; nothing here decides what a fix means.
+ */
 export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch | undefined>) {
   const rerouteRef = useRef(reroute)
   useLayoutEffect(() => {
     rerouteRef.current = reroute
   })
-  /** Numbers the reroute requests: only the newest answer is applied (latest wins). */
-  const rerouteTicket = useRef(0)
   const [quest, setQuest] = useState<QuestState>()
   const [pickup, setPickup] = useState<Pickup>()
   const [error, setError] = useState<LocationErrorCode>()
@@ -55,10 +56,9 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
   useLayoutEffect(() => {
     speakRef.current = (c: Callout) => audioEngine().say(calloutText(c, t), locale, c.priority)
   })
-  const questRef = useRef<QuestState | undefined>(undefined)
+  const sessionRef = useRef<QuestSession | undefined>(undefined)
   const stopRef = useRef<(() => void) | undefined>(undefined)
   const wakeRef = useRef<WakeLockHandle | undefined>(undefined)
-  const lastSaveRef = useRef(0)
   const pickupCount = useRef(0)
   const plannerRef = useRef<CalloutPlanner | undefined>(undefined)
   const paceRef = useRef(new PaceTracker())
@@ -72,33 +72,31 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
     setWakeActive(false)
   }, [])
 
-  const startReroute = useCallback((snapshot: QuestState) => {
+  const startReroute = useCallback(() => {
+    const session = sessionRef.current
     const run = rerouteRef.current
-    if (!run) return
-    const ticket = ++rerouteTicket.current
-    void run(snapshot).then((patch) => {
-      if (!patch || ticket !== rerouteTicket.current) return
-      const next = applyReroute(questRef.current, patch)
-      if (!next) return
-      questRef.current = next
-      setQuest(next)
-      lastSaveRef.current = Date.now()
-      saveQuest(next)
-    })
+    if (!session || !run) return
+    const { ticket, snapshot } = session.startReroute()
+    // The session numbers requests and refuses answers that are stale or no longer fit.
+    run(snapshot)
+      .then((patch) => {
+        const next = session.settleReroute(ticket, patch)
+        if (next) setQuest(next)
+      })
+      .catch(() => {
+        // A failed request changes nothing; the next off-route stretch asks again.
+      })
   }, [])
 
   const onFix = useCallback(
     (fix: GpsFix) => {
-      const current = questRef.current
+      const session = sessionRef.current
       // A finished quest ignores late fixes (the watch is stopped, but one may already be queued).
-      if (!current || current.finishedAt !== undefined) return
-      const applied = applyFix(current, fix)
-      const events = applied.events
-      let state = applied.state
-      questRef.current = state
+      if (!session?.running) return
+      const { prev: current, state, events, wantsReroute } = session.handleFix(fix)
       // Still heading for the goal off the line: quietly recalculate the rest of the route
       // (in the worker; the answer is merged in when it arrives, the fix handler never waits).
-      if (events.some((e) => e.type === 'reroute')) startReroute(state)
+      if (wantsReroute) startReroute()
       setError(undefined)
       const audio = audioEngine()
       // Sound: effects, spoken callouts and the music tempo from the walking pace.
@@ -107,15 +105,12 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
       lastFixWallRef.current = Date.now()
       paceRef.current.push(state.odometer.totalM, fix.timestamp)
       if (state.finishedAt === undefined) audio.setTempo(tempoForSpeed(paceRef.current.speed(), state.strideM))
-      let important = false
       for (const e of events) {
         if (e.type === 'collected') {
-          important = true
           pickupCount.current++
           setPickup({ n: pickupCount.current, point: e.point, index: e.index, total: state.route.checkpoints.length })
         }
         if (e.type === 'finished') {
-          important = true
           audio.stopMusic()
           // Stop watchPosition (and the wake lock) as soon as the quest is complete.
           stopTracking()
@@ -123,11 +118,6 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
         }
       }
       setQuest(state)
-      const now = Date.now()
-      if (important || now - lastSaveRef.current > SAVE_EVERY_MS) {
-        lastSaveRef.current = now
-        saveQuest(state)
-      }
     },
     [stopTracking, startReroute],
   )
@@ -137,11 +127,10 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
       stopTracking()
       if (q.finishedAt !== undefined) return
       stopRef.current = sourceFor(q).start(onFix, (code) => {
-        if (questRef.current?.finishedAt === undefined) setError(code)
+        // Late errors after the quest ended or finished are ignored.
+        if (sessionRef.current?.running) setError(code)
       })
-      wakeRef.current = keepScreenOn()
-      // The lock resolves asynchronously; reflect it shortly after.
-      setTimeout(() => setWakeActive(!!wakeRef.current?.active()), 500)
+      wakeRef.current = keepScreenOn(undefined, undefined, setWakeActive)
     },
     [onFix, stopTracking],
   )
@@ -155,7 +144,7 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
       if (resumed) audio.armUnlock()
       else audio.unlock()
       audio.stopVoice()
-      rerouteTicket.current++
+      sessionRef.current?.cancelReroute()
       paceRef.current.reset()
       lastFixWallRef.current = undefined
       const planner = new CalloutPlanner(q)
@@ -164,12 +153,13 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
         audio.startMusic(seedFor(q.id))
         if (!resumed) speakRef.current(planner.start(q))
       }
-      questRef.current = q
-      setQuest(q)
+      const session = new QuestSession(q)
+      sessionRef.current = session
+      session.save()
+      setQuest(session.state)
       setPickup(undefined)
       setError(undefined)
-      saveQuest(q)
-      startTracking(q)
+      startTracking(session.state)
     },
     [startTracking],
   )
@@ -177,14 +167,14 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
   /** Switch a running quest to the simulator (e.g. after permission was denied). */
   const switchToSimulation = useCallback(
     (timeScale = 20) => {
-      const q = questRef.current
-      if (!q) return
+      const session = sessionRef.current
+      const q = session?.state
+      if (!session || !q) return
       audioEngine().unlock()
       const next: QuestState = { ...q, simulated: true, sim: { timeScale, noiseM: 0 }, startedAt: q.lastFixAt === undefined ? Date.now() : q.startedAt }
-      questRef.current = next
-      setQuest(next)
-      saveQuest(next)
-      startTracking(next)
+      session.replace(next)
+      setQuest(session.state)
+      startTracking(session.state)
     },
     [startTracking],
   )
@@ -194,10 +184,9 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
     audioEngine().playMenuMusic()
     audioEngine().stopVoice()
     plannerRef.current = undefined
-    rerouteTicket.current++
     stopTracking()
-    clearQuest()
-    questRef.current = undefined
+    sessionRef.current?.end()
+    sessionRef.current = undefined
     setQuest(undefined)
     setPickup(undefined)
     setError(undefined)
@@ -215,16 +204,17 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
 
   // Save when the page is hidden or closed, and stop everything on unmount.
   useEffect(() => {
-    const save = () => {
-      if (questRef.current) saveQuest(questRef.current)
-    }
+    const save = () => sessionRef.current?.save()
     window.addEventListener('pagehide', save)
     document.addEventListener('visibilitychange', save)
     return () => {
       window.removeEventListener('pagehide', save)
       document.removeEventListener('visibilitychange', save)
       stopRef.current?.()
+      stopRef.current = undefined
       wakeRef.current?.release()
+      wakeRef.current = undefined
+      sessionRef.current?.dispose()
       audioEngine().stopMusic()
       audioEngine().stopVoice()
     }

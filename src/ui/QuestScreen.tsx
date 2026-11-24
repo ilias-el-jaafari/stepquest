@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useI18n } from '../i18n/index.ts'
 import { directionTo } from '../quest/compass.ts'
-import { formatDuration, formatPace, nextCheckpoint, questStats, routeToNext, trackFor, type QuestState } from '../quest/quest.ts'
+import { formatDuration, formatPace, nextCheckpoint, questStats, routeToNext, signalStatus, trackFor, type QuestState } from '../quest/quest.ts'
 import { snapToRoute } from '../quest/snap.ts'
 import type { LocationErrorCode } from '../quest/geolocation.ts'
 import type { TileGrid } from '../tiles/grid.ts'
@@ -21,9 +21,6 @@ type Props = {
   onEnd: () => void
   onUseSim: () => void
 }
-
-const LOST_AFTER_MS = 30_000
-const WEAK_AFTER_MS = 5_000
 
 function fmtDistance(m: number, locale: string): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km`
@@ -86,15 +83,16 @@ export function QuestScreen({ grid, quest, pickup, error, wakeActive, resumed, o
   }
 
   let message: { text: string; tone: 'warn' | 'bad' } | undefined
+  const signal = signalStatus(quest, now)
   // Once the quest is finished, GPS no longer matters: no signal or route warnings.
-  if (quest.finishedAt !== undefined) message = undefined
+  if (signal === 'finished') message = undefined
   else if (error === 'denied' || error === 'unsupported' || error === 'insecure') message = { text: t(`quest.err.${error}`), tone: 'bad' }
   else if (quest.lost && player) {
     const snap = snapToRoute(trackFor(quest.route), player, quest.alongM)
     const dir = directionTo(player, snap.point)
     message = { text: t('quest.offRoute', { dir: t(`dir.${dir.point}`), m: Math.round(snap.offsetM) }), tone: 'warn' }
-  } else if (!quest.simulated && quest.lastFixAt !== undefined && now - quest.lastFixAt > LOST_AFTER_MS) message = { text: t('quest.lost'), tone: 'warn' }
-  else if (quest.weakSince !== undefined && now - quest.weakSince > WEAK_AFTER_MS) message = { text: t('quest.weak'), tone: 'warn' }
+  } else if (signal === 'lost') message = { text: t('quest.lost'), tone: 'warn' }
+  else if (signal === 'weak') message = { text: t('quest.weak'), tone: 'warn' }
   else if (error) message = { text: t(`quest.err.${error}`), tone: 'warn' }
 
   // iOS suspends audio after calls, Siri or a locked screen; a tap brings it back.
