@@ -103,3 +103,16 @@ Related: [quest](../quest/requirements.md) (HUD content, resume after reload), [
 2. WHEN the bar is too narrow for one row, THE SYSTEM SHALL wrap the readout onto its own row, and SHALL shrink the text button's label to no less than 9 px before anything leaves the frame.
 3. THE SYSTEM SHALL let every flex child of a button row shrink (`min-width: 0`) and SHALL cap `.pix-btn` at the width of its container.
 4. WHEN a button row of the planner, a dialog or the complete screen is shown in Spanish at 320 px, THE SYSTEM SHALL fit each word of every label, and an automated check SHALL fail when a label or a rule regresses.
+
+### Requirement 17 (task 71): Page zoom lock, map-only pinch
+
+**User Story:** As a walker on an iPhone, I want a pinch to zoom only the map, so that the frames, HUD, menus and buttons never get cut off by an accidental page zoom.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL declare the viewport as `width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover`.
+2. WHEN Safari sends `gesturestart`, `gesturechange` or `gestureend` for a target outside the map canvas, THE SYSTEM SHALL cancel the event, and SHALL leave events on the canvas to the map's own pinch (requirement 10 of map-rendering).
+3. WHEN a touch event with two or more touches starts or moves outside the map canvas, THE SYSTEM SHALL cancel it.
+4. THE SYSTEM SHALL set `touch-action: manipulation` on the app root and on buttons, selects, summaries and labels, and `touch-action: none` on the map canvas only, so a double tap never zooms the page.
+5. WHEN the visual viewport scale is above 1, THE SYSTEM SHALL re-apply the locked viewport and scroll to the origin, as far as the browser allows.
+6. THE SYSTEM SHALL use no font size below 7 px and SHALL keep `-webkit-text-size-adjust: 100%`; an automated check SHALL fail on a smaller size.

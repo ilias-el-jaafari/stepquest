@@ -5,7 +5,11 @@ import './index.css'
 import App from './App.tsx'
 import { I18nProvider } from './i18n/index.ts'
 import { registerServiceWorker } from './pwa/updateStore.ts'
+import { installPageZoomGuard } from './ui/pageZoomGuard.ts'
 import { ErrorBoundary } from './ui/ErrorBoundary.tsx'
+
+// iOS Safari ignores user-scalable=no: block page pinch outside the map canvas.
+installPageZoomGuard()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

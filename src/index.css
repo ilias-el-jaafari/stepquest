@@ -18,6 +18,16 @@
   box-sizing: border-box;
 }
 
+/* Page zoom is locked (see design, "Page zoom lock"): taps never wait for or start a double-tap zoom. */
+html,
+body,
+button,
+select,
+summary,
+label {
+  touch-action: manipulation;
+}
+
 html,
 body,
 #root {
@@ -107,7 +117,7 @@ body {
   left: 0;
   bottom: 0;
   padding: 3px 6px;
-  font-size: 6px;
+  font-size: 7px;
   background: rgba(251, 247, 236, 0.85);
 }
 
@@ -500,7 +510,7 @@ input[aria-invalid='true'] {
 }
 
 .hud-stats dt {
-  font-size: 6px;
+  font-size: 7px;
   color: #4b4a66;
 }
 
@@ -511,7 +521,7 @@ input[aria-invalid='true'] {
 }
 
 .hud-stats small {
-  font-size: 6px;
+  font-size: 7px;
 }
 
 .hud-buttons {
@@ -827,7 +837,7 @@ input[aria-invalid='true'] {
 
 .sound-hint {
   margin: 8px 0 0;
-  font-size: 6px;
+  font-size: 7px;
   line-height: 1.7;
   color: #4b4a66;
 }
@@ -946,6 +956,7 @@ button.hud-msg.sound-resume {
    ============================================================ */
 
 .app {
+  touch-action: manipulation; /* no double-tap zoom; the map canvas sets none, sliders pan-y */
   height: 100%;
   height: 100dvh;
   min-height: 0;

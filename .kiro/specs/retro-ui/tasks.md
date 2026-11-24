@@ -100,3 +100,8 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 
 - [x] 70.1 Quest bottom bar and button rows fit 320 to 430 px in EN and ES (wrapping bar, `min-width: 0`, label clamp 9 to 10 px); `hudFit.test.ts` checks label geometry and the CSS rules
   - _Requirements: 16.1 to 16.4_
+
+## Page zoom lock (requirement 17)
+
+- [x] 71.1 Locked viewport meta, `pageZoomGuard` (gesture and multi-touch cancel outside the map canvas, visual viewport reset), `touch-action` rules, minimum font 7 px, tests, design trade-off note
+  - _Requirements: 17.1 to 17.6_

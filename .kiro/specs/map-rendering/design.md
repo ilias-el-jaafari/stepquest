@@ -377,3 +377,7 @@ layout.ts     layoutTown, townFor, re-exports of the names the renderer and test
 - **P-Y2** shuffling `grid.pois` leaves `landmarks` and `houses` equal.
 - **P-Y3** at most one landmark per distinct (kind, tile) point, and each landmark lies near a point of its own kind.
 - **P-Y4** no tree on a house, fence or gate tile.
+
+### Page zoom lock (cross-reference)
+
+The map canvas is the only element that handles pinch (`touch-action: none`, pointer events in `ui/mapInput.ts`). The page-level guard that stops Safari from zooming the page is specified in retro-ui requirement 17; it must keep skipping events whose target is inside `.map-canvas`.

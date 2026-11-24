@@ -241,3 +241,17 @@ Field bug (iPhone, 390 px, Spanish): "Terminar" left the console frame. Cause: t
 Fix, all in `src/index.css`: the folded bar wraps; the readout is `flex: 1 1 100px` with `minmax(0, 1fr)` columns and takes its own row when the buttons need the space; `.hud-buttons` wraps and has `min-width: 0`; its text buttons use `flex: 1 1 0`, 8 px side padding and `font-size: clamp(9px, 2.6vw, 10px)`; `.pix-btn` has `max-width: 100%`. Folded bar padding is 8 px 10 px.
 
 Geometry used by the test (`src/ui/hudFit.test.ts`): HUD content width = viewport - 2 x (6 + 3 + 8 + 10 + 4 + 10) = 238 px at 320 px. Spanish "Terminar" at 9 px is 72 px; with two 48 px round buttons and gaps it needs 212 px. Other rows (confirm, crash, onboarding, planner actions) already wrap with `flex-wrap`; the test covers their Spanish labels.
+
+## Page zoom lock (task 71, requirement 17)
+
+Field bug (iPhone Safari): a pinch sometimes zoomed the whole page, cutting off frames, HUD and menus, and pinching out afterwards zoomed the map instead of restoring the page. Cause: iOS Safari ignores `user-scalable=no` and `maximum-scale`, so a pinch that did not start on the canvas became a page zoom.
+
+Fix, in layers:
+- `index.html`: viewport `width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover`.
+- `src/ui/pageZoomGuard.ts` (installed in `main.tsx`): document-level `gesturestart/change/end` listeners and `touchstart/touchmove` with two or more touches, all `{ passive: false }` and `preventDefault()` unless the target is inside `.map-canvas`. A `visualViewport` resize listener rewrites the viewport meta and scrolls to the origin when the scale is above 1 (best effort, Safari has no reset API).
+- CSS: `touch-action: manipulation` on `html, body, button, select, summary, label` and `.app` (no double-tap zoom, no 300 ms wait); `none` only on `.map-canvas`; the range slider keeps `pan-y`.
+- The map keeps its pinch in `render/gestures.ts` and `ui/mapInput.ts` (pointer events); the guard does not touch pointer events.
+
+Trade-off (accessibility): a locked viewport removes the user's page zoom, which WCAG 1.4.4 values. We accept it because the map is the product and a zoomed page breaks the fixed HUD, and we compensate: the smallest text is 7 px (was 6 px; the pixel font is drawn on an 8 px grid), the base size is 10 px, `-webkit-text-size-adjust: 100%` keeps the browser's own text sizing from shrinking text, the map has its own zoom buttons and keyboard zoom, and all controls are real buttons with labels for VoiceOver. The OS "larger text" (Dynamic Type) setting is not followed, because the pixel font and fixed-size frames are laid out in px; supporting it would need an rem-based layout, listed as a future change.
+
+Tests: `src/ui/pageZoomGuard.test.ts` (events prevented outside the canvas, allowed on it; viewport meta; touch-action rules; minimum font size).
