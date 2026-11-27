@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from './App.tsx'
 import { ONBOARDING_STORAGE_KEY } from './config/brand.ts'
+import { en } from './i18n/en.ts'
 import { I18nProvider } from './i18n/index.ts'
 
 declare global {
@@ -48,7 +49,7 @@ describe('App onboarding', () => {
     expect(intro()).toBeNull()
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="show-intro"]')!.click())
     expect(intro()).not.toBeNull()
-    expect(host.querySelector('.onb-title')?.textContent).toBe('Choose your distance')
+    expect(host.querySelector('.onb-title')?.textContent).toBe(en['onboarding.1.title'])
     await act(async () => root.unmount())
   })
 })

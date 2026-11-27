@@ -74,6 +74,8 @@ describe('SummaryScreen', () => {
     expect(q('summary-gems').textContent).toBe('2/10')
     expect(q('summary-title').textContent).toContain('Gem Seeker')
     expect(host.querySelector('.summary-hero.hop')).toBeNull()
+    expect(host.querySelector('.summary-ghost.spin')).toBeNull()
+    expect(host.querySelector('[data-testid="summary-ghost-say"]')).toBeNull()
   })
 
   it('speaks Spanish', async () => {
@@ -88,6 +90,10 @@ describe('SummaryScreen', () => {
     await show(done)
     expect(q('complete').dataset.motion).toBe('live')
     expect(host.querySelector('.summary-hero.hop')).not.toBeNull()
+    // The ghost spins and sparkles at the finish.
+    expect(host.querySelector('.summary-ghost.spin')).not.toBeNull()
+    expect(host.querySelectorAll('.spark').length).toBeGreaterThan(0)
+    expect(q('summary-ghost-say').textContent).toBe(en['ghost.finish'])
     expect(raf).toHaveBeenCalled()
   })
 
@@ -98,6 +104,8 @@ describe('SummaryScreen', () => {
     await show(done)
     expect(q('complete').dataset.motion).toBe('still')
     expect(host.querySelector('.summary-hero.hop')).toBeNull()
+    expect(host.querySelector('.summary-ghost.spin')).toBeNull()
+    expect(host.querySelectorAll('.spark')).toHaveLength(0)
     expect(raf).not.toHaveBeenCalled()
     expect(fillRect).toHaveBeenCalled()
   })

@@ -279,3 +279,6 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
   - [x] 83.4 `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
     - _Requirements: 26.7 to 26.9_
 
+
+- [x] 84.2, 85.2 Hero placed on the route by `RouteWalker`; Wisp drawn by `OverlayLayer.drawGhost`
+  - _Requirements: 27.1 to 27.3_

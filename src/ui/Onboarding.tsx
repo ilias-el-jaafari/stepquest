@@ -1,9 +1,8 @@
 import { useId, useRef, useState } from 'react'
 import { useI18n } from '../i18n/index.ts'
 import type { PlainKey } from '../i18n/en.ts'
-import { LogoMark } from './Logo.tsx'
+import { ghostSprite, type GhostPose } from '../ghost/art.ts'
 import { PixelSvg } from './PixelIcons.tsx'
-import { ONBOARDING_ART } from './onboardingArt.ts'
 import { useModal } from './useModal.ts'
 
 export const ONBOARDING_STEPS = 3
@@ -11,12 +10,15 @@ export const ONBOARDING_STEPS = 3
 const TITLES: readonly PlainKey[] = ['onboarding.1.title', 'onboarding.2.title', 'onboarding.3.title']
 const BODIES: readonly PlainKey[] = ['onboarding.1.body', 'onboarding.2.body', 'onboarding.3.body']
 
+/** The ghost's pose on each screen: a friendly "Boo!", then floating, then happy to set off. */
+const POSES: readonly GhostPose[] = ['boo', 'float', 'happy']
+
 type Props = {
   /** Called when the user starts or skips; the caller stores the "seen" flag. */
   onClose: () => void
 }
 
-/** First-run introduction: three screens, skippable at any moment. */
+/** First-run introduction hosted by the guide ghost: pick a start, set a goal, press plan. Three screens, skippable at any moment. */
 export function Onboarding({ onClose }: Props) {
   const { t } = useI18n()
   const [step, setStep] = useState(0)
@@ -60,8 +62,9 @@ export function Onboarding({ onClose }: Props) {
       >
         <p className="onb-step">{t('onboarding.step', { n: step + 1, total: ONBOARDING_STEPS })}</p>
         <div className="onb-art" aria-hidden="true">
-          {step === 0 && <LogoMark size={48} className="onb-logo" />}
-          <PixelSvg art={ONBOARDING_ART[step]!} size={128} className="onb-pic" />
+          <span key={step} className={`onb-ghost ${step === 0 ? 'pop' : ''}`}>
+            <PixelSvg art={ghostSprite(POSES[step] ?? 'float')} size={96} className="onb-pic" />
+          </span>
         </div>
         <h2 className="onb-title" id={titleId}>
           {t(TITLES[step]!)}

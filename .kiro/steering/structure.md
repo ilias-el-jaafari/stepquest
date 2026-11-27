@@ -15,7 +15,8 @@ src/
   town/                  lots, houses, gardens and landmark placement (town layout)
   world/                 streamed multi-area world: 0.01° cells, per-cell records, merge and stitching, frame tiles, live world, cell streamer, walking-area loader, Overpass tag enrichment
   routing/               walking graph, A*, loop and A→B planners, checkpoints
-  render/                palette, tile painter, structure painters, route path, sprites, MapRenderer (canvas)
+  ghost/                 Wisp the guide ghost: sprites (art), pacer maths and status hysteresis, line director (see the ghost-guide spec)
+  render/                palette, tile painter, structure painters, route path, sprites, hero route progress (routeWalker), MapRenderer (canvas)
   app/                   app state reducer (appState.ts) and the hooks around it: planning, map area and location, number fields, today's steps, online status
   pwa/                   service worker template (filled in by the build) and the update store
   ui/                    React map view, planner, tab sheets, quest HUD, dialogs (modal focus), error boundary, sound menu, data loading hooks

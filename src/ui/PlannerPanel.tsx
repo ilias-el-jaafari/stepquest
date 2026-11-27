@@ -3,7 +3,8 @@ import { STEP_PRESETS } from '../app/constants.ts'
 import type { LocateStatus, PlanError, PlanPhase } from '../app/appState.ts'
 import type { useNumberFields } from '../app/useNumberFields.ts'
 import { MAX_STEPS, MIN_STEPS } from '../geo/steps.ts'
-import { formatKm, formatNumber } from '../i18n/format.ts'
+import { paceFor } from '../ghost/pacer.ts'
+import { formatDecimal, formatKm, formatNumber } from '../i18n/format.ts'
 import { useI18n } from '../i18n/index.ts'
 import type { PlanResult, RouteMode } from '../routing/planner.ts'
 import { FieldNote } from './FieldNote.tsx'
@@ -52,6 +53,7 @@ export function PlannerPanel(p: Props) {
   const { t, locale } = useI18n()
   const { settings, fields, result } = p
   const stepRange = { min: formatNumber(MIN_STEPS, locale), max: formatNumber(MAX_STEPS, locale) }
+  const ghostPace = paceFor(settings.strideM)
   const shownRoute = result?.ok ? result.route : result?.closest
   const format = (v: number) => formatNumber(v, locale)
   const note = feasibility(result, t, locale)
@@ -125,6 +127,11 @@ export function PlannerPanel(p: Props) {
           {t('result.short', { km: formatKm(shownRoute.distanceM, locale), steps: formatNumber(shownRoute.steps, locale), n: shownRoute.steps })}
           {!result?.ok && <> · {t('result.title')} ▸</>}
           {result?.ok && p.simulate && <> · {t('bag.demo')}</>}
+        </p>
+      )}
+      {result?.ok && (
+        <p className="route-line ok" data-testid="ghost-pace">
+          {t('result.ghostPace')}: {t('result.ghostPaceValue', { kmh: formatDecimal(ghostPace.kmh, locale, 1), spm: formatNumber(Math.round(ghostPace.stepsPerMin / 5) * 5, locale) })}
         </p>
       )}
       {p.planning && p.planPhase === 'streets' && (

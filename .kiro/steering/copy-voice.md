@@ -17,6 +17,23 @@ Everything the player reads (`src/i18n/en.ts`, `es.ts`, speech phrases included)
 6. **Buttons stay short.** Never lengthen a button or tab label (`fit.test.ts`).
 7. **Spanish is written for Spain, not translated.** Natural phrasing, always "tú", inverted `¡ ¿`, percentages as "5 %" with a no-break space. Same keys, placeholders and plural forms as English.
 
+## The ghost's voice (Wisp)
+
+Wisp is the guide: cheeky, warm, a little spooky, never mean. Rules for every `ghost.*` line and the intro:
+
+1. **Scare first, then help.** A joke or a "Boo!" is fine when the next words say what to do or that all is well ("Boo!" then "Don't worry, this way has street lamps.").
+2. **One short sentence**, at most two. It must fit a speech bubble on a 390 px phone (about 45 characters).
+3. **Wisp talks to the player, not about the app.** Gems, flag, lantern, pace: yes. Settings, errors in code, development talk: no.
+4. **The pace status is gentle.** Behind means "the ghost is waiting for you", never a reproach. No numbers in it.
+5. **Spanish is its own joke**, not a translation: "¡Bu!", "Por aquí hay farolas." Always «tú».
+6. The ghost is called Wisp in both languages.
+
+| EN | ES |
+| --- | --- |
+| You are ahead of the ghost! | Vas por delante del fantasma |
+| Keeping the ghost's pace | Al ritmo del fantasma |
+| Falling behind... the ghost is waiting for you! | Te estás quedando atrás… ¡el fantasma te espera! |
+
 ## Do and don't
 
 | Don't (EN) | Do (EN) |

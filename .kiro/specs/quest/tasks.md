@@ -95,3 +95,9 @@ Findings and rationale: see "Architecture review (Nov 2026)" in [design.md](desi
 
 - [x] 79.6 `WalkerMotion` glide and camera follow from the shown position (see [map-rendering tasks](../map-rendering/tasks.md) 79)
   - _Requirements: 6f.1 to 6f.3_
+
+
+## Steady walker (task 84)
+
+- [x] 84.1 to 84.4 `RouteWalker` and overlay wiring, property tests (see [ghost-guide tasks](../ghost-guide/tasks.md))
+  - _Requirements: 6g.1 to 6g.5_

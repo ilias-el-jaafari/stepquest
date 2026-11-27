@@ -7,6 +7,7 @@ import type { Summary } from '../quest/summary.ts'
 import { prefersReducedMotion } from '../render/env.ts'
 import type { Sprite } from '../render/sprites.ts'
 import { createShow, showIsOver, showPixels, stepShow, type Show } from './celebration.ts'
+import { GHOST_FLOAT, GHOST_HAPPY } from '../ghost/art.ts'
 import { PixelSvg } from './PixelIcons.tsx'
 import { useModal } from './useModal.ts'
 
@@ -94,6 +95,21 @@ export function SummaryScreen({ summary, walker, seed, onBack, onNew }: Props) {
         <span className={`summary-hero ${still || calm ? '' : 'hop'}`} role="img" aria-label={t('summary.hero')} data-testid="summary-hero">
           <PixelSvg art={walker} size={48} />
         </span>
+        <span className={`summary-ghost ${still || calm ? '' : 'spin'}`} role="img" aria-label={t('summary.ghost')} data-testid="summary-ghost">
+          <PixelSvg art={calm ? GHOST_FLOAT[0]! : GHOST_HAPPY} size={48} />
+          {!calm && !still && (
+            <>
+              <i className="spark s1" aria-hidden="true" />
+              <i className="spark s2" aria-hidden="true" />
+              <i className="spark s3" aria-hidden="true" />
+            </>
+          )}
+        </span>
+        {!calm && (
+          <p className="summary-lead" data-testid="summary-ghost-say">
+            {t('ghost.finish')}
+          </p>
+        )}
         <h2 id={titleId}>{t(calm ? 'summary.title.paused' : 'summary.title.complete')}</h2>
         <p className="summary-lead">{t(calm ? 'summary.lead.paused' : 'summary.lead.complete')}</p>
         <div className="summary-title" data-testid="summary-title">

@@ -17,6 +17,14 @@ A handheld-RPG overworld, in the spirit of Game Boy Color / Game Boy Advance era
 - The route is a trail of red footprints; checkpoints are numbered gold "step gems"; the finish is a chequered flag; the walker is a small kid with a beanie and yellow headphones (our own design); the player dresses it in the Hero tab (boy or girl; skin, hair, cap, shirt and trousers from palettes of 6–8 swatches), and the map walker and header avatar wear that look.
 - Shallow diagonal streets get one long asphalt wedge per flat run, so kerbs run straight instead of in stairs.
 
+## The ghost guide (Wisp, ghost-guide spec)
+
+- A small rounded sheet ghost, 16×16, our own design: a domed head with a tiny tuft, a wavy two-frame hem, two ink eyes, a pink blush, a gold lantern held on its right (mirrored when it walks left). Nothing from any other game's ghosts; no mouth except the "boo" and happy frames.
+- Colours (`src/ghost/art.ts`): ink `#1b1a2e` outline and eyes, sheet `#e9e4ff`, highlight `#ffffff`, shade `#bdb2ee`, blush `#ff8fa3`, lantern gold `#ffd84a`.
+- Frames: float (hem wave every 320 ms), happy (arched eyes, finish), boo (open mouth, night scare). It bobs one art pixel in four steps.
+- It floats 6 m ahead of the pace point on the route, under the hero in draw order, with a warm lantern glow at night. HUD bubble: paper fill, ink outline, 8 px Press Start 2P, the ghost's face on its left.
+- Motion is a pop (0.45 s, 3 steps) for "Boo!", a spin and three twinkling sparkles at the finish. Reduced motion removes all of it; only the walk along the route remains. Never a jump-scare, never a sound.
+
 ## Tile rules (task 51)
 
 - Light comes from the top-left: highlights on top and left edges, shade on the bottom and right. Kerbs on the south and east side of a road are bright, north and west are shaded; zebra bars shade their lower or right row.

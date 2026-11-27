@@ -16,3 +16,6 @@ Part of the StepQuest specs; see [../README.md](../README.md). Requirements: [re
     - _Requirements: D2, D3, D4.3, D4.4, D5.1_
 - [x] 79.8 The HUD of the demo run has no "Simulation ×N" badge (`QuestScreen`, `AppDemo.test.tsx`)
   - _Requirements: D7.1, D7.2_
+
+- [x] 85.3 Wisp in the demo: pacer at the demo time scale, night scare at dusk (see [ghost-guide tasks](../ghost-guide/tasks.md))
+  - _Requirements: D8.1, D8.2_

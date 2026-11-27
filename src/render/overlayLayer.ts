@@ -10,10 +10,13 @@ import type { LightingLayer } from './lightingLayer.ts'
 import { WALKER_RGB } from './lights.ts'
 import { P } from './palette.ts'
 import { routeCells, smoothPolyline } from './routePath.ts'
-import { CHECKPOINT, FINISH_FLAG, paintSprite, START_MAT, walkFrame, WALKER, type Facing, type Sprite } from './sprites.ts'
+import { CHECKPOINT, FINISH_FLAG, facingFrom, paintSprite, START_MAT, walkFrame, WALKER, type Facing, type Sprite } from './sprites.ts'
 import { artUnit, drawAvoided } from './streetMarks.ts'
 import { screenX, screenY, type View } from './view.ts'
 import { WalkerMotion } from './walkerMotion.ts'
+import { RouteLine, RouteWalker } from './routeWalker.ts'
+import { ghostAlongM, type PacerPlan } from '../ghost/pacer.ts'
+import { ghostBob, ghostPhase, ghostSprite, type GhostPose } from '../ghost/art.ts'
 
 export type Markers = { start?: LatLon; end?: LatLon }
 
@@ -28,6 +31,12 @@ export type QuestOverlay = {
   alongM: number
   /** Walked stretches of earlier routes (before a reroute), drawn as walked footprints. */
   walkedBefore?: readonly (readonly LatLon[])[]
+  /** Simulated walk: the hero's real speed in m/s (walking speed times time scale). Absent for real GPS. */
+  simMps?: number
+  /** Real GPS: the hero is off the route line and is drawn where the fix is. */
+  offRoute?: boolean
+  /** The guide ghost that paces the walk, when there is one. */
+  ghost?: { plan: PacerPlan; pose: GhostPose }
 }
 
 export const PICKUP_MS = 900
@@ -53,6 +62,12 @@ export class OverlayLayer {
   private walkerSprites: Record<Facing, Sprite[]> = WALKER
   private readonly sprites = new Map<Sprite, HTMLCanvasElement>()
   readonly walker = new WalkerMotion()
+  /** The hero's progress along the route (monotonic; constant pace in a simulation). */
+  private readonly routed = new RouteWalker()
+  private line: RouteLine | undefined
+  private facing: Facing = 'down'
+  private placedAt = NaN
+  private placedValue: { x: number; y: number; moving: boolean; facing: Facing } | undefined
 
   private readonly grid: TileGrid
   private readonly lighting: LightingLayer
@@ -66,6 +81,10 @@ export class OverlayLayer {
     this.route = route
     const cells = route ? routeCells(route.points.map((p) => this.grid.toTileXY(p)), cumulativeDistances(route.points)) : []
     this.trail.setLine(smoothPolyline(cells))
+    const total = route ? (cumulativeDistances(route.points).at(-1) ?? 0) : 0
+    this.line = route && route.points.length > 1 ? new RouteLine(route.points.map((p) => this.grid.toTileXY(p)), total) : undefined
+    this.routed.setLine(this.line)
+    this.placedAt = NaN
   }
 
   /** Streets on the user's avoid list, drawn as hazard tape under the route. */
@@ -109,13 +128,38 @@ export class OverlayLayer {
         })
     }
     this.quest = quest
+    this.routed.setSim(quest?.simMps)
+    if (quest?.player) this.routed.observe(quest.alongM, nowMs())
+    this.placedAt = NaN
     const next = quest?.player
     if (next) this.walker.moveTo(this.grid.toTileXY(next), prev ? this.grid.toTileXY(prev) : undefined, nowMs(), prefersReducedMotion())
   }
 
   /** Where the walker is shown at `now` (tile units) while a quest runs; undefined outside one. */
   walkerTile(now: number): { x: number; y: number } | undefined {
-    return this.quest?.player ? this.walker.position(now) : undefined
+    return this.placed(now)
+  }
+
+  /** The hero as shown at `now`: on the route line (constant pace in a simulation, never back with GPS) or at the fix when off it. */
+  private placed(now: number): { x: number; y: number; moving: boolean; facing: Facing } | undefined {
+    const q = this.quest
+    if (!q?.player) return undefined
+    if (now === this.placedAt) return this.placedValue
+    const reduced = prefersReducedMotion()
+    const glide = this.walker.position(now)
+    const sim = this.routed.isSim
+    let out: { x: number; y: number; moving: boolean; facing: Facing } | undefined
+    if (sim || !q.offRoute) {
+      const r = this.routed.at(now, glide)
+      if (r) {
+        this.facing = facingFrom(r.dx, r.dy, this.facing, 1e-6)
+        out = { x: r.x, y: r.y, moving: !reduced && (sim ? r.moving : r.moving || this.walker.isWalking(now, reduced)), facing: this.facing }
+      }
+    }
+    if (!out && glide) out = { x: glide.x, y: glide.y, moving: this.walker.isWalking(now, reduced), facing: this.walker.facing }
+    this.placedAt = now
+    this.placedValue = out
+    return out
   }
 
   /** Start the sparkle animation for a collected checkpoint. */
@@ -197,6 +241,7 @@ export class OverlayLayer {
           ctx.fill()
           ctx.stroke()
         }
+        animating ||= this.drawGhost(ctx, v, spriteScale, light, now)
         const w = this.drawWalker(ctx, v, player, spriteScale, light, now)
         animating ||= w.animating
         if (this.bubble) drawBubble(ctx, this.bubble, w.at, v.dpr, v.w, v.h)
@@ -238,14 +283,12 @@ export class OverlayLayer {
   }
 
   private drawWalker(ctx: CanvasRenderingContext2D, v: View, p: LatLon, spriteScale: number, light: Lighting, now: number): { at: Anchor; animating: boolean } {
-    const reduced = prefersReducedMotion()
-    const m = this.walker
     const target = this.grid.toTileXY(p)
-    const inQuest = this.quest?.player !== undefined
     // Outside a quest (planning screen) the walker just stands at the start.
-    const pos = inQuest ? (m.position(now) ?? target) : target
-    const moving = inQuest && m.isWalking(now, reduced)
-    const frames = this.walkerSprites[inQuest ? m.facing : 'down']
+    const shown = this.placed(now)
+    const pos = shown ?? target
+    const moving = shown?.moving ?? false
+    const frames = this.walkerSprites[shown ? shown.facing : 'down']
     const sprite = frames[walkFrame(now, moving)] ?? frames[0]!
     const sx = screenX(v, pos.x)
     const sy = screenY(v, pos.y)
@@ -257,7 +300,41 @@ export class OverlayLayer {
       ctx.globalCompositeOperation = 'source-over'
     }
     ctx.drawImage(this.sprite(sprite), Math.round(sx - size / 2), Math.round(sy - size), size, size)
-    return { at: { x: sx, y: sy, size }, animating: moving || m.isTweening(now) }
+    return { at: { x: sx, y: sy, size }, animating: moving || (shown !== undefined && (this.routed.isMoving(now) || this.walker.isTweening(now))) }
+  }
+
+  /** The guide ghost on the route, a little ahead of the pace point. Only sprite blits and one glow. Returns true while it moves or bobs. */
+  private drawGhost(ctx: CanvasRenderingContext2D, v: View, spriteScale: number, light: Lighting, now: number): boolean {
+    const g = this.quest?.ghost
+    const line = this.line
+    if (!g || !line) return false
+    const reduced = prefersReducedMotion()
+    const along = ghostAlongM(g.plan, now, line.totalM)
+    const at = line.pointAt(along)
+    const sx = screenX(v, at.x)
+    const sy = screenY(v, at.y)
+    const size = 16 * spriteScale
+    const bob = ghostBob(now, reduced) * spriteScale
+    // Slightly ahead of the ground, as if floating; mirrored when it heads left so the lantern leads.
+    const lift = Math.round(size * 0.12)
+    const left = at.dx < 0
+    const sprite = this.sprite(ghostSprite(g.pose, reduced ? 0 : ghostPhase(now)))
+    if (light.lamps > 0.02) {
+      ctx.globalCompositeOperation = 'lighter'
+      this.lighting.drawGlow(ctx, sx, sy - size * 0.5, 5, v.scale, WALKER_RGB, light.lamps)
+      ctx.globalCompositeOperation = 'source-over'
+    }
+    const dx = Math.round(sx - size / 2)
+    const dy = Math.round(sy - size - lift - bob)
+    if (left) {
+      ctx.save()
+      ctx.translate(dx + size, dy)
+      ctx.scale(-1, 1)
+      ctx.drawImage(sprite, 0, 0, size, size)
+      ctx.restore()
+    } else ctx.drawImage(sprite, dx, dy, size, size)
+    // Keep drawing while the pace point moves (it always does until the finish) or the ghost bobs.
+    return !reduced || along < line.totalM
   }
 
   dispose(): void {

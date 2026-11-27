@@ -92,3 +92,16 @@ Related: [routing](../routing/requirements.md) (rerouting, Requirement 7c), [voi
 1. THE SYSTEM SHALL draw the walker, and in follow mode the camera, at a position that moves on every frame between fixes, at the speed measured from the last fixes, at ×1 (a fix every 2 s) as at higher speeds, as set out in [map-rendering](../map-rendering/requirements.md) requirement 24.8.
 2. THE SYSTEM SHALL decouple that motion from the location source and the simulator: a fix changes the quest state once, and the frame loop reads the shown position from the clock.
 3. THE SYSTEM SHALL keep the walk cycle on while fixes keep coming (held for 1.5 fix intervals, at least 1.2 s), and stop it when they stop.
+
+
+### Requirement 6g (task 84): The hero moves at a steady pace and never steps back
+
+**User Story:** As a walker watching the Bag's "Simulate walk" at ×1, I want the hero to walk at one pace and never step back, so that the test mode looks like a real walk.
+
+#### Acceptance Criteria
+
+1. WHILE a quest runs on the simulator or the demo, THE SYSTEM SHALL move the hero along the planned route polyline at the constant pace of the simulator (walking speed × time scale), on the frame clock, whatever the fix times, GPS noise or frame times: every frame advances by `speed × dt` within ±10 %, except at a deliberate stop at the end of the route.
+2. THE SYSTEM SHALL use fixes in a simulation only to limit how far the hero may run ahead of the newest fix (20 m plus 1.5 s of walking) and to place it after a jump of more than 60 m (a resume or a reroute); a late or noisy fix SHALL NOT speed it up, slow it down or move it back.
+3. WHILE a real GPS quest runs, THE SYSTEM SHALL keep the dead-reckoning glide of requirement 6f, project the glide position onto the route and show route progress that never decreases. A reading behind the shown progress by up to 15 m SHALL be ignored; when the walker truly goes back further, the hero SHALL follow 15 m behind without a jump.
+4. WHILE the walker is off the route line (`offRoute`), THE SYSTEM SHALL draw the hero at the glide position, as before.
+5. THE SYSTEM SHALL cover requirements 1 to 3 with property tests at ×1, ×5 and ×20 with irregular frame times and noisy fixes.

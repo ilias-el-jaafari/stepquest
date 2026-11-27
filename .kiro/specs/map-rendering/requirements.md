@@ -410,3 +410,14 @@ Terms: the **hero** is as in requirement 25. **R_far** is `R_FAR_M`, 10 km. The 
 9. THE SYSTEM SHALL show the straight-line distance from the start in the finish status line, "Finish: Calle X · 9.2 km" ("Meta: Calle X · 9,2 km"), with one decimal in the number format of the language (`formatKmShort`), and SHALL set `data-finish-m` on that element to the whole metres of that distance (`haversine(start, finish)`, rounded). The distance follows the start when the start moves.
     - _Requirements: 26.1 to 26.9_
 
+
+
+### Requirement 27 (tasks 84, 85): The hero follows the route and the guide ghost is drawn on it
+
+**User Story:** As a walker, I want the hero and Wisp to move along the street line, so that nothing slides across buildings or steps back.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL place the hero, while it is on the route, on the route polyline at the progress `RouteWalker` gives (requirement 6g of [quest](../quest/requirements.md)); the camera in follow mode and the sprite SHALL read the same place for the same frame time.
+2. THE SYSTEM SHALL draw Wisp in the overlay (after the route and gems, before the hero) as a blit of a pre-rendered 16×16 canvas at the point `pace × elapsed + 6 m` along the route, mirrored when heading left, with the lantern glow at night. The scene cache, chunk plan and dirty rendering SHALL NOT change; golden frames without a ghost SHALL keep their hashes.
+3. THE SYSTEM SHALL keep requesting frames while the ghost moves (it moves until the finish, also with reduced motion) and only then.

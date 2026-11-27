@@ -65,7 +65,7 @@ function frame(opts: { w?: number; h?: number; dpr?: number; time?: number; cent
   return canvas.hash()
 }
 
-const quest = (p: { x: number; y: number }): QuestOverlay => ({ player: at(p.x, p.y), accuracyM: 3, collected: 1, alongM: 40 })
+const quest = (p: { x: number; y: number }): QuestOverlay => ({ player: at(p.x, p.y), accuracyM: 3, collected: 1, alongM: 40, offRoute: true })
 
 describe('golden frames', () => {
   it('planning map in daylight at detail zoom', () => {

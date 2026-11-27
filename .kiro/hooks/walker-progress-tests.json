@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Walker progress property tests",
+      "description": "When the walker motion, the route walker or the simulator changes, run the property tests that keep the hero's progress monotonic and, in a simulation, at a constant pace.",
+      "trigger": "PostFileSave",
+      "matcher": "src/(render/(walkerMotion|routeWalker|overlayLayer)|quest/(simulate|simSource))\\.ts$",
+      "timeout": 120,
+      "action": {
+        "type": "command",
+        "command": "npx vitest run src/render/routeWalker.test.ts src/render/walkerMotion.test.ts src/render/ghostOverlay.test.ts src/ghost"
+      }
+    }
+  ]
+}

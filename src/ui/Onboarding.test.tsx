@@ -6,7 +6,6 @@ import { en } from '../i18n/en.ts'
 import { es } from '../i18n/es.ts'
 import { I18nProvider } from '../i18n/index.ts'
 import { Onboarding } from './Onboarding.tsx'
-import { ONBOARDING_ART } from './onboardingArt.ts'
 import { LOGO, logoSvg } from './logoArt.ts'
 import { hasSeenOnboarding, markOnboardingSeen } from './onboarding.ts'
 import type { Icon } from './pixelArt.ts'
@@ -162,8 +161,6 @@ describe('logo and illustrations', () => {
   it('are rectangular and use only declared colours', () => {
     rectangular(LOGO)
     expect(LOGO.rows).toHaveLength(16)
-    expect(ONBOARDING_ART).toHaveLength(3)
-    ONBOARDING_ART.forEach(rectangular)
   })
   it('builds a favicon with rects only', () => {
     const svg = logoSvg()

@@ -13,6 +13,10 @@ import type { MapLoad } from '../world/streamer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 import { DEMO_FINISH_CLOSE_MS, DEMO_NEXT_LINE_MS, demoCameraBlend, demoClockAt, demoProgress } from '../demo/script.ts'
 import { prefersReducedMotion } from '../render/env.ts'
+import { atLocalMinutes, lightingAt, parseTimeParam } from '../render/daylight.ts'
+import { DEFAULT_SIM } from '../quest/simulate.ts'
+import { GhostHud } from './GhostHud.tsx'
+import { useGhost } from './useGhost.ts'
 import { useAudio } from '../audio/useAudio.ts'
 import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { DialogueBox } from './DialogueBox.tsx'
@@ -127,10 +131,7 @@ export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, er
   const stats = questStats(quest, clock)
   const next = nextCheckpoint(quest)
   const player = quest.player
-  const overlay = useMemo(
-    () => ({ player: quest.player, accuracyM: quest.simulated ? undefined : quest.accuracy, collected: quest.collected, alongM: quest.alongM, walkedBefore: quest.walkedBefore }),
-    [quest.player, quest.accuracy, quest.collected, quest.alongM, quest.simulated, quest.walkedBefore],
-  )
+  const simMps = quest.simulated ? (DEFAULT_SIM.speedKmh / 3.6) * (quest.sim?.timeScale ?? 1) : undefined
   const markers = EMPTY_MARKERS
   const stopFollowing = useCallback(() => setFollow(false), [])
   const startFollowing = useCallback(() => setFollow(true), [])
@@ -144,6 +145,26 @@ export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, er
   const progress = demoProgress(quest.alongM, trackFor(quest.route).total, quest.finishedAt !== undefined)
   const clockAt = demo ? demoClockAt(progress) : undefined
   const blend = demoCameraBlend(progress)
+  // The light of the quest's clock: the demo's day cycle, `?time=` or the real time. From dusk the ghost plays its night scare.
+  const timeParam = typeof location === 'undefined' ? undefined : parseTimeParam(location.search)
+  const lightMs = clockAt ?? (timeParam === undefined ? now : atLocalMinutes(now, timeParam))
+  const phase = player ? lightingAt(lightMs, player).phase : 'day'
+  const ghost = useGhost({ quest, pickup, phase, seed: seedOf(quest.id) })
+  const ghostPlan = ghost.plan
+  const ghostPose = ghost.say?.pose ?? 'float'
+  const overlay = useMemo(
+    () => ({
+      player: quest.player,
+      accuracyM: quest.simulated ? undefined : quest.accuracy,
+      collected: quest.collected,
+      alongM: quest.alongM,
+      walkedBefore: quest.walkedBefore,
+      simMps,
+      offRoute: quest.offRoute,
+      ghost: ghostPlan ? { plan: ghostPlan, pose: ghostPose } : undefined,
+    }),
+    [quest.player, quest.accuracy, quest.collected, quest.alongM, quest.simulated, quest.walkedBefore, quest.offRoute, simMps, ghostPlan, ghostPose],
+  )
   const shot = useMemo(() => (autoCamera && routeBounds && quest.finishedAt === undefined ? { blend, bounds: routeBounds } : undefined), [autoCamera, routeBounds, blend, quest.finishedAt])
   // Frame the walker once when the quest screen opens (the parent keys this component by quest id).
   const [focus] = useState(() => (player ? [player] : []))
@@ -303,6 +324,7 @@ export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, er
                 )}
               </div>
             )}
+            {!finished && <GhostHud say={ghost.say} status={ghost.status} low={!!message} />}
             {showResumed && !message && !finished && <div className="hud-msg info">{t('quest.resumed')}</div>}
             {soundPaused && !message && (
               <button type="button" className="hud-msg info sound-resume" onClick={() => engine.unlock()} data-testid="sound-resume">

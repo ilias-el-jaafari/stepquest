@@ -8,7 +8,7 @@
       "matcher": "src/i18n/(en|es)\\.ts$",
       "action": {
         "type": "agent",
-        "prompt": "A translation dictionary (src/i18n/en.ts or src/i18n/es.ts) was just saved. Compare the two files and check that: (1) every English key has a Spanish key with the same name, and no Spanish key lacks an English one; (2) every {placeholder} in the English text appears in the Spanish text, with the same name; (3) plural forms such as {steps|step|steps} keep the same shape in both languages; (4) every spoken phrase under voice.* exists in both languages, and any new English word is in EN_LEXICON. Fix gaps in the file that was not just edited, keeping the wording natural, then run `npx vitest run src/i18n`. Report what you changed. If nothing is wrong, reply with one line."
+        "prompt": "A translation dictionary (src/i18n/en.ts or src/i18n/es.ts) was just saved. Compare the two files and check that: (1) every English key has a Spanish key with the same name, and no Spanish key lacks an English one; (2) every {placeholder} in the English text appears in the Spanish text, with the same name; (3) plural forms such as {steps|step|steps} keep the same shape in both languages; (4) every spoken phrase under voice.* exists in both languages, and any new English word is in EN_LEXICON; (5) every ghost.* line is one short sentence or two, keeps Wisp's voice from copy-voice.md, and Spanish opens ¡ ¿. Fix gaps in the file that was not just edited, keeping the wording natural, then run `npx vitest run src/i18n`. Report what you changed. If nothing is wrong, reply with one line."
       }
     }
   ]

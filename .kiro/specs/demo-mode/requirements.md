@@ -65,3 +65,13 @@ Related: [quest](../quest/requirements.md) (simulation, summary, requirement 6d)
 
 1. WHILE the demo run (`?demo=1`) plays, THE SYSTEM SHALL NOT show the "Simulation ×N" badge in the HUD (the GPS line is left out; the screen-awake note still shows when it is on).
 2. WHEN a normal quest runs on the simulator from the Bag, THE SYSTEM SHALL keep showing the badge.
+
+
+### Requirement D8 (task 85): The ghost pacer runs in the demo
+
+**User Story:** As someone recording the demo, I want Wisp to float ahead of the hero from the first seconds, so that the pacer is part of the video.
+
+#### Acceptance Criteria
+
+1. WHILE the demo run (`?demo=1`) plays, THE SYSTEM SHALL draw Wisp on the route a few metres ahead of the hero from the first frame, walking at the pace of requirement G6 at the demo's time scale, so the pair stays together on screen.
+2. THE SYSTEM SHALL let the night scare of requirement G5 play once when the demo's day cycle reaches dusk. The demo's HUD otherwise stays as in D7.
