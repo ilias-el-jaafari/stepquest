@@ -105,3 +105,15 @@ Related: [routing](../routing/requirements.md) (rerouting, Requirement 7c), [voi
 3. WHILE a real GPS quest runs, THE SYSTEM SHALL keep the dead-reckoning glide of requirement 6f, project the glide position onto the route and show route progress that never decreases. A reading behind the shown progress by up to 15 m SHALL be ignored; when the walker truly goes back further, the hero SHALL follow 15 m behind without a jump.
 4. WHILE the walker is off the route line (`offRoute`), THE SYSTEM SHALL draw the hero at the glide position, as before.
 5. THE SYSTEM SHALL cover requirements 1 to 3 with property tests at ×1, ×5 and ×20 with irregular frame times and noisy fixes.
+
+### Requirement 6h (task 85): Arrival counts only after the route was walked
+
+**User Story:** As a walker on a loop (start = finish) or on an A → B walk whose finish is near the start, I want the quest to end only when I have really walked it, so that "Simulate walk", the demo and real GPS never say "you reached the flag" with 0 steps.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL collect the finish only WHEN route progress (`alongM`, which never decreases while on the route) is at least 90 % of the route length AND the odometer shows at least 50 % of the route length, whatever the distance between the position and the finish.
+2. THE SYSTEM SHALL collect any other gem only WHEN route progress has come within `max(2 × pickup radius, 40 m)` of the gem's place along the route, so a gem that lies near the start in a loop is not taken at the start.
+3. THE SYSTEM SHALL apply requirements 1 and 2 to real GPS, the simulator and the demo alike (one rule in the quest machine), and after a reroute against the rerouted line.
+4. WHEN the whole route has been walked, THE SYSTEM SHALL finish as before.
+5. THE SYSTEM SHALL cover requirements 1 to 4 with unit tests, a fast-check property (for any loop and any monotonic progress sequence, no arrival below the threshold, arrival once the whole route is walked) and an App-level regression with a circular simulated quest.

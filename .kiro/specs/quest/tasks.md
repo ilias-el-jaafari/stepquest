@@ -101,3 +101,10 @@ Findings and rationale: see "Architecture review (Nov 2026)" in [design.md](desi
 
 - [x] 84.1 to 84.4 `RouteWalker` and overlay wiring, property tests (see [ghost-guide tasks](../ghost-guide/tasks.md))
   - _Requirements: 6g.1 to 6g.5_
+
+## Circular arrival (task 85, requirement 6h)
+
+- [x] 85.1 Failing tests first: unit, property and App regression for a circular simulated quest (1 000 steps, one gem = the finish, ended at 0 steps)
+  - _Requirements: 6h.5_
+- [x] 85.2 `canCollect` in `quest/collect.ts` (progress ≥ 90 %, odometer ≥ 50 % for the finish; progress near the gem for the others), wired in `machine.ts`
+  - _Requirements: 6h.1 to 6h.4_

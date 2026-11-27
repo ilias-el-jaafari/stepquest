@@ -62,7 +62,7 @@ export function applyFix(state: QuestState, fix: GpsFix, cfg: QuestConfig = DEFA
   const prevAlong = state.alongM
   const alongM = onRoute ? snap.alongM : state.alongM
   const picked = collectCheckpoints(
-    { route: state.route, collected: state.collected, position, prevAlongM: prevAlong, alongM, offsetM: snap.offsetM, onRoute, accuracyM: reported, elapsedS: sinceLastS },
+    { route: state.route, collected: state.collected, position, prevAlongM: prevAlong, alongM, offsetM: snap.offsetM, onRoute, accuracyM: reported, walkedM: odometer.totalM, elapsedS: sinceLastS },
     cfg,
   )
   events.push(...picked.events)

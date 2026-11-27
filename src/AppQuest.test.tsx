@@ -9,6 +9,7 @@ import { en } from './i18n/en.ts'
 import { DEMO_AREA } from './osm/demoArea.ts'
 import { loadDemoOsm } from './osm/demo.ts'
 import { createQuest } from './quest/quest.ts'
+import { SETTINGS_STORAGE_KEY } from './config/brand.ts'
 import { loadQuest, QUEST_STORAGE_KEY, saveQuest } from './quest/storage.ts'
 import { WalkGraph } from './routing/graph.ts'
 import { planRoute } from './routing/planner.ts'
@@ -105,6 +106,24 @@ describe('active quest UI', () => {
     // Let the simulator walk for a moment (120× → ~2.5 min of walking per real second).
     await waitFor(() => (loadQuest(Date.now() + 3_600_000)?.odometer.totalM ?? 0) > 50, 8000)
     expect(host.querySelector('[data-testid="walked"]')?.textContent).not.toBe('0 m')
+  })
+
+  it('a circular simulated quest with one gem does not end at 0 steps', async () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ mode: 'loop', targetSteps: 1000 }))
+    await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
+    await waitFor(() => !!button('Plan quest') && !button('Plan quest')!.disabled)
+    await act(async () => button('Plan quest')!.click())
+    await waitFor(() => !!button('Start quest'))
+    const sim = host.querySelector('.quest-start input[type="checkbox"]') as HTMLInputElement
+    await act(async () => sim.click())
+    await act(async () => button('Start quest')!.click())
+    await waitFor(() => !!host.querySelector('[data-testid="hud"]'))
+    expect(host.querySelector('[data-testid="collected"]')?.textContent).toBe('0/1')
+    await act(async () => new Promise((r) => setTimeout(r, 1500)))
+    expect(host.querySelector('[data-testid="complete"]')).toBeNull()
+    expect(loadQuest(Date.now() + 3_600_000)?.finishedAt).toBeUndefined()
+    await waitFor(() => (loadQuest(Date.now() + 3_600_000)?.odometer.totalM ?? 0) > 20, 8000)
+    expect(host.querySelector('[data-testid="complete"]')).toBeNull()
   })
 
   it('speaks the opening line on start and has a sound button in the HUD', async () => {
