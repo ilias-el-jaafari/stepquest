@@ -35,3 +35,8 @@
   - _Requirements: H3, H4, H5, H6_
 - [x] 89.15 Tests: sizes, new sprites, spacing, widths against streets, quest-zoom budget, `forgetDecor` with a rectangle, goldens (the two decor frames changed on purpose; every other golden is unchanged). Browser check, València start 390 × 844: 41 static and 16 moving items on the screen at 22:30, 41 and 0 at 12:00 (HUD cards cover about 40 %)
   - _Requirements: H10, H11_
+
+## CI note: decor counted as pool images
+
+- [x] 89.16 `nightRender.test.ts` counted decor images (still items, glows, hats, flicker) in the lamp-pool budget, and decor is drawn only on painted chunks, whose number depends on the frame-time budget (`CHUNK_BUDGET_MS`); that made the count differ between a fast and a slow machine (CI red on a762456 and 64171ff). The lamp test now runs with decor off; a separate test holds decor to its own strict budget (by day `2 × staticPerChunk × 4 + animated`, at night `3 × staticPerChunk × 4 + MAX_LAMPS_PER_CHUNK × 4 + animated`, where the factors are the item, its second pumpkin, and the glow) under a frozen and a slow clock; a third test shows the counts ignore the stored decor setting.
+  - _Requirements: H4, H10_
