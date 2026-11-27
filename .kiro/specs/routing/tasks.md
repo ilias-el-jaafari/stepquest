@@ -87,4 +87,5 @@ Each bug task starts with a failing regression test (fixture-based, Benicalap, n
 - [x] 83 A snapped finish always plans (requirement 14.5, 14.6; with map-rendering task 83)
   - [x] 83.1 Property test: the finish cell and the tile of a point 250 m from it are in the corridor, 4 to 10 km, any bearing and goal; app-level test with a finish beside a foot=no primary road (plans after the fix, fails before)
     - _Requirements: 14.5, 14.6_
-
+  - [x] 83.2 Far pick still failed in Chrome ("no walkable street", 2 to 3 s): the corridor skipped cells that held a record of another source, whose streets share no vertex with the tiles', leaving the walk in pieces. Failing test first (`corridor.test.ts`, `routing.test.ts`); `LiveWorld.hasWalk`, `addWalkNet(..., { alongside })`, corridor loads walking records for every cell, `planOneWay` snaps to the network of the finish; measured in Chrome (design.md)
+    - _Requirements: 14.5_

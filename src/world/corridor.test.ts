@@ -5,9 +5,10 @@ import type { OsmData, OsmWay } from '../osm/types.ts'
 import { planWithSafety } from '../routing/safePlanner.ts'
 import { stepsToMetres } from '../geo/steps.ts'
 import { tileBBox, tileKey, type TileId } from '../vector/tileMath.ts'
-import { cellOf } from './cells.ts'
+import { cellBBox, cellOf } from './cells.ts'
 import { CORRIDOR_FROM_M, CORRIDOR_MAX_HALF_M, CORRIDOR_MIN_HALF_M, corridorCells, corridorHalfM, corridorTiles, isCorridor } from './corridor.ts'
 import { LiveWorld } from './liveWorld.ts'
+import { sliceToCells, type CellRecord } from './slice.ts'
 import { loadWalkRecords, walkTiles } from './walkArea.ts'
 
 /** València, and a finish 9 km to the north-west (routing requirement 14). */
@@ -169,5 +170,75 @@ describe('planning across a synthetic 9 km city of many tiles', () => {
     const w = live.world()
     const out = planWithSafety(w.graph, w.safety, { mode: 'oneway', start: START, end: END, targetSteps: STEPS, strideM: STRIDE, seed: 0 }, w.data.bbox, { safe: true, night: false, avoid: [] })
     expect(out.result.ok).toBe(false)
+  })
+})
+
+/**
+ * A record of the bundled extract or of Overpass for one cell: its own streets (a different grid from the tiles', so no vertex
+ * is shared with them), cut at the cell's border, with nothing that joins the neighbouring cells.
+ */
+function ownNetworkRecord(cell: ReturnType<typeof cellOf>): CellRecord {
+  const b = cellBBox(cell)
+  const lat: number[] = []
+  const lon: number[] = []
+  const ways: OsmWay[] = []
+  const base = { kind: 'road' as const, highway: 'residential', walkable: true, area: false, tunnel: false, crossing: false }
+  const las: number[] = []
+  const los: number[] = []
+  for (let k = Math.ceil(b.south / 0.0011); k * 0.0011 < b.north; k++) las.push(k * 0.0011 + 0.0003)
+  for (let k = Math.ceil(b.west / 0.0017); k * 0.0017 < b.east; k++) los.push(k * 0.0017 + 0.0004)
+  const at = (la: number, lo: number) => {
+    lat.push(la)
+    lon.push(lo)
+    return lat.length - 1
+  }
+  const grid = las.map((la) => los.map((lo) => at(la, lo)))
+  las.forEach((_, i) => ways.push({ ...base, id: ways.length + 1, nodes: grid[i]! }))
+  los.forEach((_, j) => ways.push({ ...base, id: ways.length + 1, nodes: las.map((__, i) => grid[i]![j]!) }))
+  const data: OsmData = { bbox: b, lat: Float64Array.from(lat), lon: Float64Array.from(lon), ways, pois: [], industrial: [], activity: [], source: 'fixture', timestamp: '' }
+  return sliceToCells(data, [cell], b)[0]!
+}
+
+describe('a corridor across cells that already have streets of another source (routing requirement 14.5)', () => {
+  const STEPS = 17_000
+  const target = stepsToMetres(STEPS, STRIDE)
+  const req = { mode: 'oneway' as const, start: START, end: END, targetSteps: STEPS, strideM: STRIDE, seed: 0 }
+  const plan = (live: LiveWorld) => {
+    const w = live.world()
+    return planWithSafety(w.graph, w.safety, req, w.data.bbox, { safe: true, night: false, avoid: [] })
+  }
+  const tiles = { loadTile: async (t: TileId) => syntheticTile(t) }
+  /**
+   * What a session holds when the finish is tapped: a record with a network of its own (the bundled extract, Overpass cells) in every
+   * cell of the frame that the corridor crosses, the start's included.
+   */
+  const world = () => {
+    const cells = corridorCells(START, END, target)
+    const live = new LiveWorld(cellOf(START), [])
+    const own = cells.filter((c) => live.inFrame(c)).map(ownNetworkRecord)
+    live.add(own)
+    expect(own.length).toBeGreaterThan(10)
+    expect(cells.some((c) => !live.inFrame(c))).toBe(true)
+    return { cells, live }
+  }
+
+  it('loading only the cells without a record leaves the walk in pieces: the networks of two sources never share a vertex (the cause of the far pick failing)', async () => {
+    const { cells, live } = world()
+    live.addWalkNet(await loadWalkRecords(cells.filter((c) => !live.hasGraph(c)), tiles))
+    expect(plan(live).result.ok).toBe(false)
+  })
+
+  it('walking records for every cell of the corridor make one network from the start to the finish, whatever else the cells hold', async () => {
+    const { cells, live } = world()
+    const missing = cells.filter((c) => !live.hasWalk(c))
+    expect(missing.length).toBeGreaterThan(cells.filter((c) => !live.hasGraph(c)).length)
+    live.addWalkNet(await loadWalkRecords(missing, tiles), { alongside: true })
+    expect(cells.every((c) => live.hasWalk(c))).toBe(true)
+    const out = plan(live)
+    expect(out.result.ok).toBe(true)
+    if (!out.result.ok) return
+    expect(Math.abs(out.result.route.distanceM - target) / target).toBeLessThanOrEqual(0.05)
+    const last = out.result.route.points[out.result.route.points.length - 1]!
+    expect(haversine(last, END)).toBeLessThan(150)
   })
 })

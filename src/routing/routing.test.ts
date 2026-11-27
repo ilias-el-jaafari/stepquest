@@ -6,7 +6,7 @@ import { loadDemoOsm } from '../osm/demo.ts'
 import { cumulativeDistances, defaultCheckpointCount, placeCheckpoints, pointAlong } from './checkpoints.ts'
 import { WalkGraph } from './graph.ts'
 import { MinHeap } from './heap.ts'
-import { bearingBetween, planRoute, type RouteRequest } from './planner.ts'
+import { bearingBetween, planOneWay, planRoute, type RouteRequest } from './planner.ts'
 
 let graph: WalkGraph
 const area = DEMO_AREA.bbox
@@ -285,5 +285,49 @@ describe('two walking networks in one graph (the bundled extract plus the street
     expect(graph.component[graph.nearestNode({ lat: 39.5, lon: -0.39 })!.node]).toBe(0)
     // A component can be asked for by label.
     expect(graph.component[graph.nearestNode({ lat: 39.5, lon: -0.39 }, true, 1)!.node]).toBe(1)
+  })
+})
+
+describe('an A → B walk on the network that reaches the finish (routing requirement 14.5)', () => {
+  /** Rows of streets, `cols` long, `rows` rows; the bundled extract and the tiles' streets lie over each other without sharing a vertex. */
+  const block = (rows: number, cols: number, lat0: number, lon0: number, id0: number, step: number) => {
+    const lat: number[] = []
+    const lon: number[] = []
+    const ways: import('../osm/types.ts').OsmWay[] = []
+    const base = { kind: 'road' as const, highway: 'residential', walkable: true, area: false, tunnel: false, crossing: false }
+    for (let r = 0; r < rows; r++) {
+      const nodes: number[] = []
+      for (let c = 0; c < cols; c++) {
+        lat.push(lat0 + r * step)
+        lon.push(lon0 + c * step)
+        nodes.push(lat.length - 1)
+      }
+      ways.push({ ...base, id: id0 + r, nodes })
+    }
+    ways.push({ ...base, id: id0 + 500, nodes: Array.from({ length: rows }, (_, r) => r * cols) })
+    return { lat, lon, ways }
+  }
+
+  it('the start snaps to the network that holds the finish, though another and larger one is nearer', () => {
+    // A: 30 × 40 nodes, the larger network at the start only. B: 8 × 100 nodes, 9 m off A, runs on 2.5 km east to the finish.
+    const a = block(30, 40, 39.5, -0.4, 1, 0.0005)
+    const b = block(8, 100, 39.50008, -0.39992, 100, 0.0005)
+    const data = {
+      bbox: { south: 39.49, west: -0.41, north: 39.52, east: -0.34 },
+      lat: Float64Array.from([...a.lat, ...b.lat]),
+      lon: Float64Array.from([...a.lon, ...b.lon]),
+      ways: [...a.ways, ...b.ways.map((w) => ({ ...w, nodes: w.nodes.map((n) => n + a.lat.length) }))],
+      pois: [],
+      source: 'tiles' as const,
+      timestamp: '',
+    }
+    const g = new WalkGraph(data)
+    expect(g.componentSizes.length).toBe(2)
+    const start = { lat: 39.5, lon: -0.4 }
+    const end = { lat: 39.50008, lon: -0.39992 + 90 * 0.0005 }
+    expect(g.component[g.nearestNode(start)!.node]).toBe(0)
+    expect(g.component[g.nearestNode(end, true)!.node]).toBe(1)
+    const out = planOneWay(g, { mode: 'oneway', start, end, targetSteps: 5_200, strideM: 0.75, seed: 0 }, data.bbox)
+    expect(out.ok ? 'ok' : out.reason).toBe('ok')
   })
 })

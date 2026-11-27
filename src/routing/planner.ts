@@ -1,6 +1,6 @@
 import { bboxContains, destination, haversine, type BBox, type LatLon } from '../geo/geo.ts'
 import { MAX_STEPS, metresToSteps, MIN_STEPS, stepsToMetres, TARGET_TOLERANCE } from '../geo/steps.ts'
-import type { WalkGraph } from './graph.ts'
+import { NETWORK_NODES, type WalkGraph } from './graph.ts'
 import type { InfeasibleReason, PlanResult, Route, RouteRequest } from './planTypes.ts'
 import { finish, isClean, routeVia, score } from './routeBuild.ts'
 import { Attempts, hash01, tune } from './tune.ts'
@@ -94,6 +94,33 @@ export function planLoop(graph: WalkGraph, req: RouteRequest, area: BBox): PlanR
   return { ok: false, reason, minSteps: attempts.shortest.steps, maxSteps: attempts.longest.steps, closest: best }
 }
 
+type Snap = { node: number; distance: number }
+
+/** At most this many networks are tried for the start of an A → B walk (they are ranked by size). */
+const SNAP_NETWORKS = 8
+
+/**
+ * The nodes an A → B walk starts and ends on: both within `MAX_SNAP_M` and on one network. The main network (or the one the start
+ * stands in, see `nearestNode`) first; when the finish has no street within reach on it, the other large networks that reach the
+ * start, since a start in the bundled extract also stands on the tiles' streets that lead to a far finish (routing requirement 14.5).
+ */
+function snapEnds(graph: WalkGraph, start: LatLon, end: LatLon): { a: Snap; b: Snap } | undefined {
+  const within = (n: Snap | undefined): n is Snap => !!n && n.distance <= MAX_SNAP_M
+  const a = graph.nearestNode(start)
+  if (!a) return undefined
+  const b = graph.nearestNode(end, true, graph.component[a.node])
+  if (within(a) && within(b)) return { a, b }
+  const first = graph.component[a.node]
+  const last = Math.min(graph.componentSizes.length, SNAP_NETWORKS)
+  for (let c = 0; c < last; c++) {
+    if (c === first || graph.componentSizes[c]! < NETWORK_NODES) continue
+    const a2 = graph.nearestNode(start, true, c)
+    const b2 = within(a2) ? graph.nearestNode(end, true, c) : undefined
+    if (within(a2) && within(b2)) return { a: a2, b: b2 }
+  }
+  return undefined
+}
+
 /**
  * A walk from A to B that adds detours until it matches the goal: one via
  * point, two via points, then a triangle loop off the direct path.
@@ -105,9 +132,9 @@ export function planOneWay(graph: WalkGraph, req: RouteRequest, area: BBox): Pla
   if (!end) return { ok: false, reason: 'unreachable' }
   const targetM = stepsToMetres(req.targetSteps, req.strideM)
   if (!bboxContains(area, req.start) || !bboxContains(area, end)) return { ok: false, reason: 'outsideArea' }
-  const a = graph.nearestNode(req.start)
-  const b = a && graph.nearestNode(end, true, graph.component[a.node])
-  if (!a || !b || a.distance > MAX_SNAP_M || b.distance > MAX_SNAP_M) return { ok: false, reason: 'unreachable' }
+  const ends = snapEnds(graph, req.start, end)
+  if (!ends) return { ok: false, reason: 'unreachable' }
+  const { a, b } = ends
   if (a.node === b.node) return { ok: false, reason: 'samePoint' }
   const network = graph.component[a.node]!
   const direct = graph.shortestPath(a.node, b.node, req.cost, req.minCost ?? 1)

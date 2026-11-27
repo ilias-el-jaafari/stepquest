@@ -218,7 +218,8 @@ describe('planning outside the bundled map (field test, iPhone)', () => {
     tapAt.b = { lat: HERE.lat + 8_500 / 111_195, lon: HERE.lon }
     await startAtMyLocation()
     await click(button('A → B'))
-    await click(button('12k'))
+    // 8k (6 km) is shorter than the way across, so the answer names the nearest goal; 12k would fit and plan at once.
+    await click(button('8k'))
     await click(host.querySelector('[data-testid="tap-b"]') ?? undefined)
     expect(host.textContent).toContain('Finish: 39.54')
     await click(button('Plan quest'))
@@ -227,7 +228,7 @@ describe('planning outside the bundled map (field test, iPhone)', () => {
     expect(host.textContent).toContain('Too short')
     const use = button(/^Use [\d,]+ steps$/)!
     const goal = Number(/[\d,]+/.exec(use.textContent!)![0].replace(/,/g, ''))
-    expect(goal).toBeGreaterThan(12_000)
+    expect(goal).toBeGreaterThan(11_000)
     expect(goal).toBeLessThan(15_000)
     await click(use)
     await click(button('Plan quest'))
@@ -302,7 +303,7 @@ describe('A → B finish on a road the walkers may not use (requirement 26.7 to 
     tapAt.zoom = zoom
     await startAtMyLocation()
     await click(button('A → B'))
-    await click(button('12k'))
+    await click(button('8k'))
     await click(host.querySelector('[data-testid="tap-b"]') ?? undefined)
     // The line is hidden while the streets of the corridor load, then comes back.
     await waitFor(() => !!note(), 30_000)

@@ -102,9 +102,9 @@ export function useLiveLoader(tiles: WalkTileSource) {
 
   /** Add the streets of `cells` to a streamed world already on screen. Throws `WalkAreaError`. */
   const grow = useCallback(
-    (live: LiveWorld, cells: readonly CellId[], onProgress?: Progress): Promise<World> =>
+    (live: LiveWorld, cells: readonly CellId[], onProgress?: Progress, opts?: { alongside?: boolean }): Promise<World> =>
       run(cells, onProgress, async (progress) => {
-        live.addWalkNet(await loadWalkRecords(cells, tiles, { onProgress: progress }))
+        live.addWalkNet(await loadWalkRecords(cells, tiles, { onProgress: progress }), opts)
         return live.world()
       }),
     [run, tiles],

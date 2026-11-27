@@ -164,6 +164,11 @@ export class LiveWorld implements MapSource {
     return this.records.has(k) || this.walk.has(k)
   }
 
+  /** The cell has a walking record, made from tiles (a record of another source does not count). */
+  hasWalk(c: CellId): boolean {
+    return this.walk.has(cellKey(c))
+  }
+
   /** The whole cell is painted now (requirement 21.14): a record that covers only part of it does not count. */
   hasAny(c: CellId): boolean {
     if (!this.inFrame(c)) return false
@@ -252,16 +257,18 @@ export class LiveWorld implements MapSource {
    * Add walking records (requirement 23.1): the streets of cells that have no graph record yet, built
    * from vector tiles. They enter the merged data and the graph like any graph record, with way ids
    * made unique per call so two loads never join their ways by accident, and are never painted.
-   * Cells that already have a graph record are skipped; a cell outside the frame is kept (the walk of a corridor reaches beyond
+   * Cells that already have a graph record are skipped, unless `alongside` is set (a corridor walk: the streets of another source, such
+   * as the bundled extract or Overpass, share no vertex with the tiles', so only walking records along the whole line make one
+   * network; the other record stays for painting and for its tags). A cell outside the frame is kept (the walk of a corridor reaches beyond
    * the frame, which follows the view: routing requirement 14). Returns the cells added.
    */
-  addWalkNet(records: readonly CellRecord[]): CellId[] {
+  addWalkNet(records: readonly CellRecord[], opts: { alongside?: boolean } = {}): CellId[] {
     const added: CellId[] = []
     let first = Infinity
     const seq = ++this.walkSeq
     for (const rec of records) {
       const key = cellKey(rec.cell)
-      if (this.records.has(key) || this.walk.has(key)) continue
+      if ((!opts.alongside && this.records.has(key)) || this.walk.has(key)) continue
       const own: CellRecord = { ...rec, data: { ...rec.data, ways: rec.data.ways.map((w) => ({ ...w, id: seq * 1_000_000 + w.id })) } }
       this.walk.set(key, own)
       first = Math.min(first, this.data.addRecord(own).firstWay)

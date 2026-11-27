@@ -140,9 +140,10 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
       // A walk across the city loads the cells along the line between start and finish, wherever the frame is (routing requirement 14).
       if (isCorridor(need.start, need.end)) {
         const along = corridorCells(need.start, need.end, targetM)
-        const missing = along.filter((c) => !lv.hasGraph(c))
+        // Walking records in every cell of the line: the streets of another source (the bundled extract, Overpass) share no vertex with the tiles'.
+        const missing = along.filter((c) => !lv.hasWalk(c))
         if (!missing.length) return w
-        const next = await liveGrow(lv, missing, onProgress)
+        const next = await liveGrow(lv, missing, onProgress, { alongside: true })
         if (worldRef.current?.live === lv) setWorld(next)
         dispatch({ type: 'areaGrown', box: cellsBBox(along) })
         enrichAround(next, cellsBBox(missing))
