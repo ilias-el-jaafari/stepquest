@@ -46,6 +46,11 @@ export type PacerPlan = {
   anchorElapsedMs: number
   pausedAt: number | undefined
   offsetM: number
+  /**
+   * Scripted extra gap, metres, as a function of elapsed quest time (ms): positive puts the pace point behind the
+   * hero. Only the self-playing demo sets it (see `demo/script.ts`); a real walk has none.
+   */
+  gapScript?: (elapsedMs: number) => number
 }
 
 /** A pacer that starts now; a resumed quest starts with the ghost where the hero is (`alongM`). */
@@ -70,7 +75,8 @@ export function resumePacer(plan: PacerPlan, now: number): PacerPlan {
 
 /** targetDistance(t) = pace × elapsed time, metres from the start of the quest. */
 export function pacerDistanceM(plan: PacerPlan, now: number): number {
-  return (plan.paceMps * pacerElapsedMs(plan, now)) / 1000
+  const elapsed = pacerElapsedMs(plan, now)
+  return (plan.paceMps * elapsed) / 1000 - (plan.gapScript?.(elapsed) ?? 0)
 }
 
 /** The pace point on the current route, metres along it (not below 0, not past the end). */

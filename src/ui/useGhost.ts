@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { demoGapScript } from '../demo/script.ts'
 import { checkpointLine, NIGHT_LINES, shouldScare, type GhostLine } from '../ghost/director.ts'
 import { nextPacerStatus, pacerElapsedMs, pacerGapM, paceFor, pausePacer, rebasePacer, resumePacer, startPacer, type Pace, type PacerPlan, type PacerStatus } from '../ghost/pacer.ts'
 import type { Phase } from '../render/daylight.ts'
@@ -19,6 +20,8 @@ type Args = {
   seed: number
   /** Suggested duration of the walk, minutes, when there is one. */
   durationMin?: number
+  /** The self-playing demo: the ghost follows the scripted gap so every status shows early. */
+  demo?: boolean
 }
 
 /** The pace for a quest: from its stride, and its suggested duration when given. */
@@ -31,10 +34,11 @@ export function questPace(quest: QuestState, durationMin?: number): Pace {
  * the first fix of a real walk and after the finish), the gap status for the HUD with hysteresis, and the
  * lines it says (gem comments and the night scare; the finish is the summary's). The map draws the ghost from `plan`.
  */
-export function useGhost({ quest, pickup, phase, seed, durationMin }: Args) {
+export function useGhost({ quest, pickup, phase, seed, durationMin, demo }: Args) {
   const rate = quest.simulated ? (quest.sim?.timeScale ?? 1) : 1
   const [plan, setPlan] = useState<PacerPlan>(() => {
     const p = startPacer(nowMs(), questPace(quest, durationMin), { rate, alongM: quest.alongM })
+    if (demo) p.gapScript = demoGapScript(rate)
     // A real walk waits for its first fix; a finished quest has no clock at all.
     return quest.simulated || quest.lastFixAt !== undefined ? (quest.finishedAt !== undefined ? pausePacer(p, nowMs()) : p) : pausePacer(p, nowMs())
   })

@@ -74,4 +74,5 @@ Related: [quest](../quest/requirements.md) (simulation, summary, requirement 6d)
 #### Acceptance Criteria
 
 1. WHILE the demo run (`?demo=1`) plays, THE SYSTEM SHALL draw Wisp on the route a few metres ahead of the hero from the first frame, walking at the pace of requirement G6 at the demo's time scale, so the pair stays together on screen.
-2. THE SYSTEM SHALL let the night scare of requirement G5 play once when the demo's day cycle reaches dusk. The demo's HUD otherwise stays as in D7.
+2. THE SYSTEM SHALL script the demo's pacer gap (`DEMO_GAP_KEYS`, a `gapScript` on the pacer plan, the real pacer untouched) so that every status shows: Wisp starts 34 m ahead ("behind" from the first second), the hero has caught up by 10 s ("on pace"), later the gap grows to 38 m ("ahead", about 32 s) and settles back near the end. The hero's own speed stays constant; the ghost's pace changes relative to it and never goes backwards.
+3. THE SYSTEM SHALL let the night scare of requirement G5 play once when the demo's day cycle reaches dusk. The demo's HUD otherwise stays as in D7.

@@ -128,6 +128,8 @@ export const en = {
   'bag.start': 'Start point',
   'settings.sound': 'Sound',
   'settings.language': 'Language',
+  'settings.decor': 'Halloween decor',
+  'settings.decorHint': 'Bats, pumpkins and cobwebs on the map. Subtle by day, spookier at night.',
   'onboarding.step': 'Step {n} of {total}',
   'onboarding.skip': 'Skip',
   'onboarding.back': 'Back',

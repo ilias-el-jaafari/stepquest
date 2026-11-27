@@ -11,7 +11,7 @@ import type { BBox, LatLon } from '../geo/geo.ts'
 import type { MapSource } from '../render/mapSource.ts'
 import type { MapLoad } from '../world/streamer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
-import { DEMO_FINISH_CLOSE_MS, DEMO_NEXT_LINE_MS, demoCameraBlend, demoClockAt, demoProgress } from '../demo/script.ts'
+import { DEMO_FINISH_CLOSE_MS, DEMO_NEXT_LINE_MS, DEMO_QUEST_ID, demoCameraBlend, demoClockAt, demoProgress } from '../demo/script.ts'
 import { prefersReducedMotion } from '../render/env.ts'
 import { atLocalMinutes, lightingAt, parseTimeParam } from '../render/daylight.ts'
 import { DEFAULT_SIM } from '../quest/simulate.ts'
@@ -149,7 +149,7 @@ export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, er
   const timeParam = typeof location === 'undefined' ? undefined : parseTimeParam(location.search)
   const lightMs = clockAt ?? (timeParam === undefined ? now : atLocalMinutes(now, timeParam))
   const phase = player ? lightingAt(lightMs, player).phase : 'day'
-  const ghost = useGhost({ quest, pickup, phase, seed: seedOf(quest.id) })
+  const ghost = useGhost({ quest, pickup, phase, seed: seedOf(quest.id), demo: quest.id === DEMO_QUEST_ID })
   const ghostPlan = ghost.plan
   const ghostPose = ghost.say?.pose ?? 'float'
   const overlay = useMemo(

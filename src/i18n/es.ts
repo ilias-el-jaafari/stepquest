@@ -129,6 +129,8 @@ export const es: Record<MessageKey, string> = {
   'bag.start': 'Punto de salida',
   'settings.sound': 'Sonido',
   'settings.language': 'Idioma',
+  'settings.decor': 'Decoración de Halloween',
+  'settings.decorHint': 'Murciélagos, calabazas y telarañas en el mapa. Discreto de día, más siniestro de noche.',
   'onboarding.step': 'Paso {n} de {total}',
   'onboarding.skip': 'Saltar',
   'onboarding.back': 'Atrás',

@@ -93,3 +93,40 @@ export function demoTimeline(): { atS: number; event: DemoEvent }[] {
     { atS: DEMO_WALK_SECONDS, event: 'arrive' },
   ]
 }
+
+/**
+ * The demo's ghost choreography (the real pacer is untouched): gap in metres between the hero and the pace point
+ * (positive = hero ahead) against real seconds of the walk. Wisp starts 34 m ahead ("behind"), the hero catches up
+ * by about 10 s ("on pace"), later pulls ahead ("ahead"), then settles back. The hero's own speed stays constant, so
+ * its progress is as monotonic as in any other run; the ghost slows and speeds up relative to it.
+ */
+export const DEMO_GAP_KEYS: readonly (readonly [number, number])[] = [
+  [0, -34],
+  [5, -34],
+  [10, 0],
+  [28, 0],
+  [33, 38],
+  [44, 38],
+  [52, 5],
+  [DEMO_WALK_SECONDS, 0],
+]
+
+/** Scripted gap at `walkSeconds` real seconds into the walk (linear between keys). */
+export function demoGapM(walkSeconds: number): number {
+  const keys = DEMO_GAP_KEYS
+  if (!(walkSeconds > 0)) return keys[0]![1]
+  for (let i = 1; i < keys.length; i++) {
+    const [t1, g1] = keys[i]!
+    if (walkSeconds <= t1) {
+      const [t0, g0] = keys[i - 1]!
+      return g0 + ((g1 - g0) * (walkSeconds - t0)) / (t1 - t0)
+    }
+  }
+  return keys[keys.length - 1]![1]
+}
+
+/** The pacer's `gapScript` for a run whose simulator runs `rate` times faster than real time. */
+export function demoGapScript(rate: number): (elapsedMs: number) => number {
+  const r = rate > 0 ? rate : 1
+  return (elapsedMs) => demoGapM(elapsedMs / 1000 / r)
+}

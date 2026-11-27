@@ -19,7 +19,9 @@ StepQuest gets a small original pixel ghost, **Wisp**. It hosts the first-run in
 
 1. THE SYSTEM SHALL draw Wisp in code as 16×16 character-grid sprites (a rounded sheet with a wavy hem, two eyes, a blush and a small lantern), in its own colours, with nothing taken from or resembling a character of another game.
 2. THE SYSTEM SHALL have four frames: two floating frames (the hem wave alternates every 320 ms), a happy frame and a "boo" frame, each pre-rendered once to an offscreen canvas and then only blitted. The map's scene cache and dirty rendering SHALL stay as they are: the ghost is part of the overlay, never of the scene.
-3. WHEN the light is dark, THE SYSTEM SHALL give the lantern a small warm glow like the walker's.
+3. WHEN the light is dark, THE SYSTEM SHALL give the lantern a small, faint warm glow (half the walker's strength).
+4. THE SYSTEM SHALL draw the face as two separate 2×2 ink eyes (columns 4–5 and 9–10, rows 4–5), a clear row with a pink blush on each cheek, and a one-pixel mouth below, so it never reads as a "+" (a test checks it). The "boo" frame has a 3×2 open mouth; the happy frame a small smile.
+5. THE SYSTEM SHALL draw Wisp on the map 1.5 times the size of a tile sprite (`GHOST_SCALE`), so it reads next to the hero.
 
 ### Requirement G2: First-run intro (three taps)
 

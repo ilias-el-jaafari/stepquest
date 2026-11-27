@@ -50,12 +50,14 @@ const route: RouteShape = {
   ],
 }
 
-function frame(opts: { w?: number; h?: number; dpr?: number; time?: number; centre: { x: number; y: number }; zoom: number; setup?: (r: MapRenderer) => void }): string {
+function frame(opts: { w?: number; h?: number; dpr?: number; time?: number; centre: { x: number; y: number }; zoom: number; decor?: boolean; setup?: (r: MapRenderer) => void }): string {
   vi.stubGlobal('devicePixelRatio', opts.dpr ?? 1)
   const canvas = new SoftCanvas(10, 10)
   canvas.clientWidth = opts.w ?? 240
   canvas.clientHeight = opts.h ?? 180
   const r = new MapRenderer(canvas as unknown as HTMLCanvasElement, grid)
+  // The approved frames predate the Halloween decor: they are drawn with it off; the decor has goldens of its own below.
+  r.setDecor(opts.decor ?? false)
   r.setClockOverride(opts.time ?? 13 * 60)
   r.centerOn(at(opts.centre.x, opts.centre.y), opts.zoom)
   opts.setup?.(r)
@@ -135,5 +137,11 @@ describe('golden frames', () => {
         setup: (r) => r.setAvoided([[at(cx - 10, cy - 3), at(cx + 10, cy - 3)]]),
       }),
     ).toMatchSnapshot()
+  })
+  it('Halloween decor by day (subtle) at detail zoom', () => {
+    expect(frame({ decor: true, centre: { x: cx + 5, y: cy + 3 }, zoom: 16, w: 390, h: 400 })).toMatchSnapshot()
+  })
+  it('Halloween decor at night: lit pumpkins, glows, hats on lamp posts', () => {
+    expect(frame({ decor: true, time: 22 * 60, centre: { x: cx + 5, y: cy + 3 }, zoom: 16, w: 390, h: 400 })).toMatchSnapshot()
   })
 })

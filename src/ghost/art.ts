@@ -17,8 +17,8 @@ const BODY = [
   '..KWWWWWWWWWK...',
   '..KWKKWWWKKWK...',
   '..KWKKWWWKKWK.K.',
-  '..KBBWWKWWBBK.K.',
-  '..KWWWWWWWWWK.K.',
+  '..KBBWWWWWBBK.K.',
+  '..KWWWWKWWWWK.K.',
   '..KWWWWWWWWWKKKK',
   '..KWWWWWWWWWKKLK',
   '..KSWWWWWWWSKKLK',
@@ -44,12 +44,12 @@ export const GHOST_FLOAT: readonly Sprite[] = [frame(A), frame(B)]
 export const GHOST_HAPPY: Sprite = frame(B, [
   [4, 4, 'W'], [4, 5, 'K'], [4, 9, 'K'], [4, 10, 'W'],
   [5, 4, 'K'], [5, 5, 'W'], [5, 9, 'W'], [5, 10, 'K'],
-  [6, 6, 'W'], [6, 7, 'K'], [6, 8, 'K'], [7, 7, 'W'],
+  [7, 7, 'W'], [7, 6, 'K'], [7, 8, 'K'], [8, 7, 'K'],
 ])
 
 /** Boo: eyes wide, mouth open (the friendly scare). */
 export const GHOST_BOO: Sprite = frame(A, [
-  [6, 7, 'K'], [7, 6, 'K'], [7, 7, 'K'], [7, 8, 'K'], [8, 7, 'K'],
+  [7, 6, 'K'], [7, 7, 'K'], [7, 8, 'K'], [8, 6, 'K'], [8, 7, 'K'], [8, 8, 'K'],
 ])
 
 /** Every frame, for the sprite cache and the tests. */

@@ -1,6 +1,8 @@
 import { DEMO_AREA } from '../osm/demoArea.ts'
 import { formatCoord } from '../geo/coords.ts'
 import type { LatLon } from '../geo/geo.ts'
+import { useSyncExternalStore } from 'react'
+import { decorOn, setDecorOn, subscribeDecor } from '../decor/pref.ts'
 import { useI18n, type Locale } from '../i18n/index.ts'
 import { GhostNote } from './GhostNote.tsx'
 import { InfoMenu } from './InfoMenu.tsx'
@@ -24,6 +26,7 @@ type Props = {
 /** Settings tab: sound, language, help, the intro and the map data. */
 export function SettingsContent(p: Props) {
   const { t, locale, setLocale } = useI18n()
+  const decor = useSyncExternalStore(subscribeDecor, decorOn)
   const loading = p.liveStatus.state === 'loading'
   return (
     <>
@@ -32,6 +35,13 @@ export function SettingsContent(p: Props) {
         <div className="sound-inline">
           <SoundControls />
         </div>
+      </div>
+      <div className="box">
+        <label className="field">
+          <span className="box-title">{t('settings.decor')}</span>
+          <input type="checkbox" data-testid="decor-toggle" checked={decor} onChange={(e) => setDecorOn(e.target.checked)} />
+        </label>
+        <p className="hint">{t('settings.decorHint')}</p>
       </div>
       <div className="box">
         <label className="field lang">

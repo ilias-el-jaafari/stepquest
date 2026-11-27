@@ -1,5 +1,6 @@
 import { Layer, Terrain, type TileGrid } from '../tiles/grid.ts'
 import { chunkKey } from './chunkPlan.ts'
+import { forgetDecor } from '../decor/place.ts'
 import { forgetFireflies } from './fireflies.ts'
 
 /**
@@ -50,6 +51,7 @@ export function forgetLamps(grid: TileGrid): void {
   lampsByGrid.delete(grid)
   cache.delete(grid)
   forgetFireflies(grid)
+  forgetDecor(grid)
 }
 
 /** Lamps of one chunk (chunk of `size` tiles). Allocation-free after the first call for a grid and size. */

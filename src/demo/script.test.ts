@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { shotAt } from './camera.ts'
 import { lightingAt } from '../render/daylight.ts'
 import { DEMO_AREA } from '../osm/demoArea.ts'
-import { DEMO_CLOCK, DEMO_DAY_MS, demoClockAt, DEMO_SETTINGS, DEMO_WALK_SECONDS, demoCameraBlend, demoClockMinutes, demoProgress, demoTimeline, demoTimeScale, parseDemo } from './script.ts'
+import { DEMO_CLOCK, DEMO_DAY_MS, demoClockAt, DEMO_SETTINGS, demoGapM, demoGapScript, DEMO_WALK_SECONDS, demoCameraBlend, demoClockMinutes, demoProgress, demoTimeline, demoTimeScale, parseDemo } from './script.ts'
+import { nextPacerStatus, pacerDistanceM, paceFor, startPacer, type PacerStatus } from '../ghost/pacer.ts'
 
 describe('parseDemo', () => {
   it('turns on only for demo=1, with an optional language', () => {
@@ -122,5 +123,51 @@ describe('demo camera', () => {
     expect(shotAt({ ...base, blend: 1, minZoom: 2 }).zoom).toBe(2)
     expect(shotAt({ ...base, blend: 1, bounds: { minX: 0, minY: 0, maxX: 2, maxY: 2 } }).zoom).toBe(24)
     expect(shotAt({ ...base, blend: Number.NaN })).toEqual({ x: 100, y: 100, zoom: 24 })
+  })
+})
+
+describe('demo ghost choreography', () => {
+  const script = demoGapScript(52)
+  const statusAt = (walkS: number, prev: PacerStatus) => nextPacerStatus(prev, demoGapM(walkS), walkS * 1000 * 52)
+
+  it('starts 34 m behind the ghost, catches up by 10 s, pulls ahead later and settles at the end', () => {
+    expect(demoGapM(0)).toBe(-34)
+    expect(demoGapM(10)).toBe(0)
+    expect(demoGapM(40)).toBe(38)
+    expect(demoGapM(DEMO_WALK_SECONDS)).toBe(0)
+    expect(demoGapM(1e6)).toBe(0)
+    expect(demoGapM(-3)).toBe(-34)
+  })
+
+  it('shows behind, on pace, then ahead, in that order, the first two within 15 s', () => {
+    let status: PacerStatus = 'warmup'
+    const seen: { s: number; status: PacerStatus }[] = []
+    for (let s = 0; s <= DEMO_WALK_SECONDS; s += 0.5) {
+      const next = statusAt(s, status)
+      if (next !== status) seen.push({ s, status: next })
+      status = next
+    }
+    expect(seen.map((x) => x.status)).toEqual(['behind', 'on', 'ahead', 'on'])
+    expect(seen[0]!.s).toBeLessThan(2)
+    expect(seen[1]!.s).toBeLessThan(15)
+    expect(seen[2]!.s).toBeGreaterThan(25)
+  })
+
+  it('is deterministic and keeps the ghost moving forward', () => {
+    expect(script(12_345)).toBe(demoGapScript(52)(12_345))
+    // Ghost distance = hero's nominal distance minus the gap: never decreases in real time.
+    let last = -Infinity
+    for (let s = 0; s <= DEMO_WALK_SECONDS; s += 0.1) {
+      const d = (s * 52 * 5) / 3.6 - demoGapM(s)
+      expect(d).toBeGreaterThanOrEqual(last)
+      last = d
+    }
+  })
+
+  it('moves the pace point only when a plan has a script', () => {
+    const plan = startPacer(0, paceFor(0.75), { rate: 52 })
+    const scripted = { ...plan, gapScript: script }
+    expect(pacerDistanceM(plan, 0)).toBe(0)
+    expect(pacerDistanceM(scripted, 0)).toBe(34)
   })
 })

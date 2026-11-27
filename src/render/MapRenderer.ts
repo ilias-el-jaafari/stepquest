@@ -10,6 +10,8 @@ import { shotAt } from '../demo/camera.ts'
 import type { Lighting } from './daylight.ts'
 import { OverlayLayer, type Markers, type QuestOverlay, type RouteShape } from './overlayLayer.ts'
 import { LightingLayer } from './lightingLayer.ts'
+import { DecorLayer } from './decorLayer.ts'
+import { decorOn } from '../decor/pref.ts'
 import { FrameScheduler } from './frameScheduler.ts'
 import { P } from './palette.ts'
 import type { Facing, Sprite } from './sprites.ts'
@@ -69,6 +71,10 @@ export class MapRenderer {
   private readonly chunks: ChunkLayer
   private readonly lightingLayer: LightingLayer
   private readonly overlay: OverlayLayer
+  private readonly decor: DecorLayer
+  private routeTiles: { x: number; y: number }[] = []
+  private markerTiles: { x: number; y: number }[] = []
+  private keepOut: ReadonlySet<number> | undefined
   private readonly stopPixelRatio: () => void
   private readonly stopSource: () => void
   private viewListener: ((box: BBox, centre: LatLon, zoom: number) => void) | undefined
@@ -104,6 +110,7 @@ export class MapRenderer {
     this.stopSource = source.subscribe(tick)
     this.lightingLayer = new LightingLayer(grid, this.chunks, tick)
     this.overlay = new OverlayLayer(grid, this.lightingLayer)
+    this.decor = new DecorLayer(grid, () => this.requestRender(), decorOn())
     this.stopPixelRatio = watchPixelRatio(tick)
   }
 
@@ -203,8 +210,47 @@ export class MapRenderer {
     this.requestRender()
   }
 
+  /** Halloween decor on or off (the Settings tab and `?decor=`); redraws the scene when it changes. */
+  setDecor(on: boolean): void {
+    if (!this.decor.setEnabled(on)) return
+    this.sceneDirty = true
+    this.requestRender()
+  }
+
+  /** Keep the decor off the route, the start and the finish: every tile within 2 of them is left bare. */
+  private updateKeepOut(): void {
+    const keep = new Set<number>()
+    const { cols, rows } = this.grid
+    const mark = (p: { x: number; y: number }) => {
+      const x0 = Math.floor(p.x)
+      const y0 = Math.floor(p.y)
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (x0 + dx >= 0 && y0 + dy >= 0 && x0 + dx < cols && y0 + dy < rows) keep.add((y0 + dy) * cols + x0 + dx)
+    }
+    const pts = this.routeTiles
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i]!
+      mark(a)
+      const b = pts[i + 1]
+      if (!b) break
+      // Points of a route are metres apart; fill the gaps at half-tile steps.
+      const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.5)
+      for (let k = 1; k < n; k++) mark({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n })
+    }
+    for (const m of this.markerTiles) mark(m)
+    // Only a real change redraws the scene (the same route set again, or a start on the route, changes nothing).
+    const old = this.keepOut
+    let same = old !== undefined && old.size === keep.size
+    if (same) for (const k of keep) if (!old!.has(k)) { same = false; break }
+    if (same) return
+    this.keepOut = keep
+    this.decor.setKeepOut(keep)
+    if (this.decor.isEnabled) this.sceneDirty = true
+  }
+
   setRoute(route: RouteShape | undefined): void {
     this.overlay.setRoute(route)
+    this.routeTiles = route ? route.points.map((p) => this.grid.toTileXY(p)) : []
+    this.updateKeepOut()
     this.requestRender()
   }
 
@@ -228,6 +274,8 @@ export class MapRenderer {
 
   setMarkers(markers: Markers): void {
     this.overlay.setMarkers(markers)
+    this.markerTiles = [markers.start, markers.end].filter((p): p is LatLon => p !== undefined).map((p) => this.grid.toTileXY(p))
+    this.updateKeepOut()
     this.requestRender()
   }
 
@@ -404,6 +452,7 @@ export class MapRenderer {
     this.stopLod?.()
     this.viewListener = undefined
     this.lightingLayer.dispose()
+    this.decor.dispose()
     this.chunks.dispose()
     this.overlay.dispose()
     if (this.scene) releaseCanvas(this.scene.canvas)
@@ -455,6 +504,7 @@ export class MapRenderer {
     // The sparse part of the work, once per idle moment: one ring chunk per frame, outside any scene redraw.
     if (!this.sceneDirty && this.chunks.prefetchStep()) this.requestRender()
 
+    this.decor.drawAnimated(ctx, v, light, now, shown)
     if (this.overlay.draw(ctx, v, light, now)) this.requestRender()
     this.reportView(v)
   }
@@ -550,12 +600,15 @@ export class MapRenderer {
     // Tram, metro and train tracks above ground.
     if (this.grid.rails.length) drawRails(ctx, v, this.grid.rails, this.grid.cols, this.grid.rows)
 
+    // Halloween decor: still items under the sky tint, so the night tints them too.
+    if (frame) this.decor.drawStatic(ctx, v, frame.plan, frame.painted, light)
     // Day cycle: multiply the map by the sky tint, then add window and lamp light. The route,
     // gems and walker are drawn afterwards, so they keep their full colours.
     if (light.darkness > 0.005) {
       this.lightingLayer.drawTint(ctx, v, light)
       if (frame) this.lightingLayer.drawNightLights(ctx, v, frame.plan, frame.painted, light)
       else this.lightingLayer.drawNightDots(ctx, v, light)
+      if (frame) this.decor.drawNight(ctx, v, light)
     } else this.lightingLayer.idle()
     // Street names last: they are signs, not part of the lit map.
     this.lod?.drawLabels(ctx, v, this.grid)

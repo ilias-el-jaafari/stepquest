@@ -19,11 +19,21 @@ A handheld-RPG overworld, in the spirit of Game Boy Color / Game Boy Advance era
 
 ## The ghost guide (Wisp, ghost-guide spec)
 
-- A small rounded sheet ghost, 16×16, our own design: a domed head with a tiny tuft, a wavy two-frame hem, two ink eyes, a pink blush, a gold lantern held on its right (mirrored when it walks left). Nothing from any other game's ghosts; no mouth except the "boo" and happy frames.
+- A small rounded sheet ghost, 16×16, our own design: a domed head with a tiny tuft, a wavy two-frame hem, two separate 2×2 ink eyes, a pink blush on each cheek, a one-pixel mouth below, a gold lantern held on its right (mirrored when it walks left). Nothing from any other game's ghosts. On the map it is drawn 1.5 times the size of a tile sprite with a faint glow at night.
 - Colours (`src/ghost/art.ts`): ink `#1b1a2e` outline and eyes, sheet `#e9e4ff`, highlight `#ffffff`, shade `#bdb2ee`, blush `#ff8fa3`, lantern gold `#ffd84a`.
 - Frames: float (hem wave every 320 ms), happy (arched eyes, finish), boo (open mouth, night scare). It bobs one art pixel in four steps.
 - It floats 6 m ahead of the pace point on the route, under the hero in draw order, with a warm lantern glow at night. HUD bubble: paper fill, ink outline, 8 px Press Start 2P, the ghost's face on its left.
 - Motion is a pop (0.45 s, 3 steps) for "Boo!", a spin and three twinkling sparkles at the finish. Reduced motion removes all of it; only the walk along the route remains. Never a jump-scare, never a sound.
+
+## Halloween decor (halloween-decor spec)
+
+- Original pixel art in code (`src/decor/art.ts`), painted once into a 128 × 27 px atlas (22 frames). Nothing external or trademarked; no characters from other works. Light from the top-left like the tiles.
+- Sizes in art pixels (a tile is 16): pumpkin 8×7, jack-o'-lantern 8×7 (unlit and lit), bat 9×5 (two wing frames), cobweb 8×8 (four corners), sitting skeleton 8×10 (two frames, waving), gravestone 6×8 (three shapes, clusters of one to three), crow 8×6, candle 4×7 (unlit and lit), lantern 5×7 (unlit and lit), witch hat 8×6, fog wisp 16×5, glow 16×16 (three stepped rings).
+- Decor palette (documented here, defined in `DECOR`): pumpkin `#f08a24` / shade `#b3500f` / light `#ffc060`, stem `#3f7a2a`, carved face `#4a2410`, lit face `#ffd84a`; bone `#efe9d6`, bone shade `#b9b09a`; bat `#2e2542`; stone `#a7a3b5` / shade `#6f6b82` / mark `#4d4a60`, moss `#5d8c4a`; web `#e8e6f2`; crow `#25222f`, sheen `#5b5878`, beak `#e0a030`; wax `#f4ecd0`, flame `#ffb02e` / core `#fff0a0`; lantern `#d9412c` / `#8f2a1e` / off `#a05a2a`; hat `#4b2a6e`, band `#ffd84a`; fog `#cfd6ee`; glow `#ffa23c` (rings at 10, 22 and 40 % alpha).
+- Anchors: green areas (not pitches, playgrounds, farmland), plazas, ground near landmarks and at lot corners, building corners (cobwebs), cemeteries (graves, fog). Never on or next to a street, path or crossing, on water or a building, nor within 2 tiles of the route, start or finish; animated items keep 1.5 tiles from the hero. The witch hat is the one exception: it sits on one lamp post in five, at night, where the post is drawn.
+- Density: hidden below zoom 8; static items per 32-tile chunk 2 at zoom 8, 3 at 12, 4 at 16, 5 at 24, 6 from 32; at most 16 on a phone screen. By day 55 % of the items (by rank), unlit, only waving skeletons move. At night all of them, lit with stepped additive glows, plus bats, fog, flicker and lamp-post hats.
+- Motion: at most 12 animated items per frame, stepping at 12 Hz (bats flap at 6 Hz and orbit in 14 to 22 s, fog drifts over 30 s, skeletons wave at 3 Hz). Reduced motion stops everything (first frames, no drift, no flicker, no timer). Static items live in the cached scene, animated ones in the overlay under the route and the hero.
+- Settings: "Halloween decor" / "Decoración de Halloween", on by default; `?decor=0` turns it off for a visit.
 
 ## Tile rules (task 51)
 

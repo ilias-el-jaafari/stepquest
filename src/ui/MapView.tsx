@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/index.ts'
 import { DEMO_CLOSE_ZOOM } from '../demo/script.ts'
 import { PixelIcon } from './PixelIcons.tsx'
 import { parseTimeParam } from '../render/daylight.ts'
+import { decorOn, subscribeDecor } from '../decor/pref.ts'
 import { MapRenderer, type Markers, type QuestOverlay, type RouteShape } from '../render/MapRenderer.ts'
 import { isMapSource, type MapSource } from '../render/mapSource.ts'
 import type { MapLoad } from '../world/streamer.ts'
@@ -112,6 +113,7 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
     renderer.onViewChange((box, centre, zoom) => onViewBoxRef.current?.(box, centre, zoom))
     // `?time=19:45` previews the lighting at that local time (screenshots, demo video).
     if (typeof location !== 'undefined') renderer.setClockOverride(parseTimeParam(location.search))
+    renderer.setDecor(decorOn())
     renderer.requestRender()
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => renderer.renderNow())
     observer?.observe(canvas)
@@ -163,6 +165,8 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
     if (follow && quest?.player) r.follow(quest.player)
     else r.stopFollow()
   }, [quest, follow, map, frame])
+
+  useEffect(() => subscribeDecor(() => rendererRef.current?.setDecor(decorOn())), [])
 
   useEffect(() => {
     if (clockAt !== undefined) rendererRef.current?.setClockAt(clockAt)

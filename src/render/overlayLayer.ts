@@ -40,6 +40,8 @@ export type QuestOverlay = {
 }
 
 export const PICKUP_MS = 900
+/** Wisp is drawn this much larger than a tile sprite, so it reads next to the hero. */
+export const GHOST_SCALE = 1.5
 
 type TilePts = { x: number; y: number }[]
 
@@ -313,7 +315,7 @@ export class OverlayLayer {
     const at = line.pointAt(along)
     const sx = screenX(v, at.x)
     const sy = screenY(v, at.y)
-    const size = 16 * spriteScale
+    const size = 16 * spriteScale * GHOST_SCALE
     const bob = ghostBob(now, reduced) * spriteScale
     // Slightly ahead of the ground, as if floating; mirrored when it heads left so the lantern leads.
     const lift = Math.round(size * 0.12)
@@ -321,7 +323,7 @@ export class OverlayLayer {
     const sprite = this.sprite(ghostSprite(g.pose, reduced ? 0 : ghostPhase(now)))
     if (light.lamps > 0.02) {
       ctx.globalCompositeOperation = 'lighter'
-      this.lighting.drawGlow(ctx, sx, sy - size * 0.5, 5, v.scale, WALKER_RGB, light.lamps)
+      this.lighting.drawGlow(ctx, sx, sy - size * 0.5, 5 * GHOST_SCALE, v.scale, WALKER_RGB, light.lamps * 0.5)
       ctx.globalCompositeOperation = 'source-over'
     }
     const dx = Math.round(sx - size / 2)

@@ -1,0 +1,218 @@
+import fc from 'fast-check'
+import { describe, expect, it } from 'vitest'
+import { loadDemoOsm } from '../osm/demo.ts'
+import { Terrain } from '../tiles/grid.ts'
+import { buildTileGrid } from '../tiles/rasterize.ts'
+import { ATLAS_WIDTH, atlasLayout, DECOR_FRAMES, SPRITE_IDS, webCorner } from './art.ts'
+import { batFrame, batX, batY, flickerLevel, fogX, skeletonFrame, tickOf } from './anim.ts'
+import { ANIM_FRAME_MS, decorBudget, MAX_ANIMATED, MAX_STATIC_PER_SCREEN, MIN_DECOR_ZOOM } from './budget.ts'
+import { clearOfStreets, decorInChunk, type DecorItem } from './place.ts'
+
+const grid = buildTileGrid(loadDemoOsm())
+const CHUNK = 32
+const chunksX = Math.ceil(grid.cols / CHUNK)
+const chunksY = Math.ceil(grid.rows / CHUNK)
+const all = (g = grid): DecorItem[] => {
+  const out: DecorItem[] = []
+  for (let cy = 0; cy < chunksY; cy++) for (let cx = 0; cx < chunksX; cx++) out.push(...decorInChunk(g, cx, cy, CHUNK).statics, ...decorInChunk(g, cx, cy, CHUNK).animated)
+  return out
+}
+const key = (i: DecorItem) => `${i.kind}:${i.x.toFixed(4)}:${i.y.toFixed(4)}:${i.variant}:${i.n}:${i.rank.toFixed(6)}`
+
+describe('atlas', () => {
+  it('has a fixed size (golden: change it on purpose, with the art)', () => {
+    const l = atlasLayout()
+    expect({ width: l.width, height: l.height, frames: l.frames }).toEqual({ width: 128, height: 27, frames: 22 })
+  })
+  it('fits every frame inside the page without overlap', () => {
+    const l = atlasLayout()
+    const slots = Object.values(l.slots)
+    for (const s of slots) {
+      expect(s.x + s.w).toBeLessThanOrEqual(ATLAS_WIDTH)
+      expect(s.y + s.h).toBeLessThanOrEqual(l.height)
+    }
+    for (let a = 0; a < slots.length; a++) {
+      for (let b = a + 1; b < slots.length; b++) {
+        const p = slots[a]!
+        const q = slots[b]!
+        expect(p.x + p.w <= q.x || q.x + q.w <= p.x || p.y + p.h <= q.y || q.y + q.h <= p.y).toBe(true)
+      }
+    }
+  })
+  it('draws every sprite from its own colours on a rectangular grid', () => {
+    for (const id of SPRITE_IDS) {
+      const [first] = DECOR_FRAMES[id]
+      for (const f of DECOR_FRAMES[id]) {
+        expect(f.rows.length).toBe(first!.rows.length)
+        for (const r of f.rows) {
+          expect(r.length).toBe(first!.rows[0]!.length)
+          for (const ch of r) expect(ch === '.' || ch in f.colors).toBe(true)
+        }
+      }
+    }
+  })
+  it('mirrors the web into four different corners', () => {
+    expect(new Set([0, 1, 2, 3].map((c) => webCorner(c).join('/'))).size).toBe(4)
+  })
+})
+
+describe('placement', () => {
+  it('finds decor in the demo area, of several kinds', () => {
+    const kinds = new Set(all().map((i) => i.kind))
+    expect(kinds.size).toBeGreaterThanOrEqual(7)
+  })
+
+  it('is deterministic: a grid built again gets the same decor (property over chunks)', () => {
+    const again = buildTileGrid(loadDemoOsm())
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: chunksX - 1 }), fc.integer({ min: 0, max: chunksY - 1 }), (cx, cy) => {
+        const a = decorInChunk(grid, cx, cy, CHUNK)
+        const b = decorInChunk(again, cx, cy, CHUNK)
+        expect([...b.statics, ...b.animated].map(key)).toEqual([...a.statics, ...a.animated].map(key))
+        expect(decorInChunk(grid, cx, cy, CHUNK)).toBe(a)
+      }),
+      { numRuns: 60 },
+    )
+  })
+
+  it('lists items in rank order with a stable static order', () => {
+    for (let cy = 0; cy < chunksY; cy++) {
+      for (let cx = 0; cx < chunksX; cx++) {
+        const { statics, animated } = decorInChunk(grid, cx, cy, CHUNK)
+        statics.forEach((s, i) => {
+          expect(s.order).toBe(i)
+          if (i > 0) expect(s.rank).toBeGreaterThanOrEqual(statics[i - 1]!.rank)
+        })
+        for (const a of animated) expect(a.order).toBe(-1)
+      }
+    }
+  })
+
+  it('never stands on or next to a street, path or crossing, nor on water or a building', () => {
+    for (const it of all()) {
+      expect(clearOfStreets(grid, it.tx, it.ty)).toBe(true)
+      const t = grid.terrain[it.ty * grid.cols + it.tx]
+      expect([Terrain.park, Terrain.plaza, Terrain.ground]).toContain(t)
+      // Foot and sprite stay within the tile's 3×3 neighbourhood (graves and fog reach about one tile).
+      expect(Math.abs(it.x - (it.tx + 0.5))).toBeLessThanOrEqual(1.1)
+      expect(Math.abs(it.y - (it.ty + 0.5))).toBeLessThanOrEqual(1.1)
+    }
+  })
+
+  it('keeps every sprite pixel off street tiles', () => {
+    const isStreet = (x: number, y: number) => {
+      if (!grid.inBounds(x, y)) return false
+      const t = grid.terrain[y * grid.cols + x]
+      return t === Terrain.road || t === Terrain.path || t === Terrain.crossing
+    }
+    for (const it of all()) {
+      if (it.kind === 'bat') continue // flies; its orbit is checked below
+      const reach = it.kind === 'graves' ? 0.6 : it.kind === 'fog' ? 1.0 : 0.3
+      for (const [dx, dy] of [[-reach, 0], [reach, 0], [0, -reach], [0, 0.0]] as const) expect(isStreet(Math.floor(it.x + dx), Math.floor(it.y + dy))).toBe(false)
+    }
+  })
+
+  it('keeps bat orbits and fog drift over streetless tiles', () => {
+    const isStreet = (x: number, y: number) => {
+      if (!grid.inBounds(x, y)) return false
+      const t = grid.terrain[y * grid.cols + x]
+      return t === Terrain.road || t === Terrain.path || t === Terrain.crossing
+    }
+    const moving = all().filter((i) => i.kind === 'bat' || i.kind === 'fog')
+    expect(moving.length).toBeGreaterThan(0)
+    for (const it of moving.slice(0, 200)) {
+      for (let tick = 0; tick < 12 * 60; tick += 37) {
+        const x = it.kind === 'bat' ? batX(it, tick) : fogX(it, tick)
+        const y = it.kind === 'bat' ? batY(it, tick) : it.y
+        expect(isStreet(Math.floor(x), Math.floor(y))).toBe(false)
+      }
+    }
+  })
+
+  it('night-only kinds are exactly bats and fog, and they are the animated ones with skeletons', () => {
+    for (const it of all()) {
+      expect(it.nightOnly).toBe(it.kind === 'bat' || it.kind === 'fog')
+      expect(it.animated).toBe(it.kind === 'bat' || it.kind === 'fog' || it.kind === 'skeleton')
+    }
+  })
+
+  it('leaves tiles without loaded data bare (streamed worlds)', () => {
+    const g = buildTileGrid(loadDemoOsm())
+    g.covered = new Uint8Array(g.cols * g.rows)
+    expect(all(g).length).toBe(0)
+  })
+})
+
+describe('budget', () => {
+  it('hides decor below the detail zoom and when switched off', () => {
+    expect(decorBudget(MIN_DECOR_ZOOM - 0.5, 1).visible).toBe(false)
+    expect(decorBudget(16, 1, false).visible).toBe(false)
+    expect(decorBudget(MIN_DECOR_ZOOM, 1).visible).toBe(true)
+  })
+  it('shows more per chunk as the zoom grows, never fewer', () => {
+    let prev = 0
+    for (const z of [8, 9, 12, 16, 24, 32, 48]) {
+      const n = decorBudget(z, 0).staticPerChunk
+      expect(n).toBeGreaterThanOrEqual(prev)
+      prev = n
+    }
+    expect(decorBudget(8, 0).staticPerChunk).toBeLessThan(decorBudget(32, 0).staticPerChunk)
+  })
+  it('is subtler by day and fuller at night', () => {
+    const day = decorBudget(16, 0)
+    const night = decorBudget(16, 0.8)
+    expect(day.night).toBe(false)
+    expect(night.night).toBe(true)
+    expect(day.density).toBeLessThan(night.density)
+    expect(day.animPerChunk).toBeLessThanOrEqual(night.animPerChunk)
+  })
+  it('keeps a phone screen to a few static items at every zoom (cap per screen)', () => {
+    // 390 × 844 CSS px phone, many positions across the demo area.
+    for (const zoom of [8, 12, 16, 24, 32, 48]) {
+      const b = decorBudget(zoom, 0.8)
+      const wT = 390 / zoom
+      const hT = 844 / zoom
+      let worst = 0
+      for (let x0 = 0; x0 + wT < grid.cols; x0 += 23) {
+        for (let y0 = 0; y0 + hT < grid.rows; y0 += 29) {
+          let n = 0
+          for (let cy = Math.floor(y0 / CHUNK); cy <= Math.floor((y0 + hT) / CHUNK); cy++) {
+            for (let cx = Math.floor(x0 / CHUNK); cx <= Math.floor((x0 + wT) / CHUNK); cx++) {
+              for (const s of decorInChunk(grid, cx, cy, CHUNK).statics) {
+                if (s.order < b.staticPerChunk && s.rank < b.density && s.x >= x0 && s.x < x0 + wT && s.y >= y0 && s.y < y0 + hT) n++
+              }
+            }
+          }
+          worst = Math.max(worst, n)
+        }
+      }
+      expect(worst).toBeLessThanOrEqual(MAX_STATIC_PER_SCREEN)
+    }
+  })
+})
+
+describe('animation', () => {
+  const bat = all().find((i) => i.kind === 'bat')!
+  it('steps at 12 Hz', () => {
+    expect(tickOf(0, false)).toBe(0)
+    expect(tickOf(ANIM_FRAME_MS * 5 + 1, false)).toBe(5)
+    expect(tickOf(ANIM_FRAME_MS * 5 - 1, false)).toBe(4)
+  })
+  it('rests with reduced motion', () => {
+    const tick = tickOf(123_456, true)
+    expect(tick).toBe(0)
+    expect(batFrame(tick, bat)).toBe(0)
+    expect(skeletonFrame(tick)).toBe(0)
+    expect(flickerLevel(bat, tick)).toBe(1)
+  })
+  it('flaps the wings and flies slowly (under 1 tile a second)', () => {
+    expect(new Set(Array.from({ length: 8 }, (_, t) => batFrame(t + 1, bat))).size).toBe(2)
+    for (let t = 1; t < 400; t++) {
+      const speed = Math.hypot(batX(bat, t + 1) - batX(bat, t), batY(bat, t + 1) - batY(bat, t)) * 12
+      expect(speed).toBeLessThan(1)
+    }
+  })
+  it('caps the animated items per frame', () => {
+    expect(MAX_ANIMATED).toBeLessThanOrEqual(12)
+  })
+})

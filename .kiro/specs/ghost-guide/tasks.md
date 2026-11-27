@@ -27,3 +27,10 @@
 - [x] 87.3 EN/ES copy (`ghost.*`, `result.ghostPace*`, `summary.ghost`, `onboarding.*`), steering notes (`visual-style.md`, `copy-voice.md`, `structure.md`)
   - _Requirements: G8_
 - [x] 87.4 `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
+
+## Polish from browser review
+
+- [x] 90.1 Wisp's face redrawn (two spaced 2×2 eyes, cheek blush, one-pixel mouth; boo and happy mouths), 1.5× on the map, fainter night glow; `ghost/art.test.ts`
+  - _Requirements: G1.3 to G1.5_
+- [x] 90.2 Demo choreography: `gapScript` on `PacerPlan`, `DEMO_GAP_KEYS` and `demoGapScript` in `demo/script.ts`, `useGhost({ demo })`; tests in `demo/script.test.ts`
+  - _Requirements: D8.2_
