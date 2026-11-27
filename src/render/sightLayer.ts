@@ -5,6 +5,7 @@ import type { TileGrid } from '../tiles/grid.ts'
 import { CHUNK } from './chunkLayer.ts'
 import { chunkKey } from './chunkPlan.ts'
 import type { Lighting } from './daylight.ts'
+import { fitLabel } from './labelFit.ts'
 import { makeCanvas } from './env.ts'
 import { P } from './palette.ts'
 import type { View } from './view.ts'
@@ -181,9 +182,12 @@ export class SightLayer {
       if (!text) continue
       if (!painted.has(chunkKey(Math.floor((p.x + p.w / 2) / CHUNK), Math.floor((p.y + p.h - 1) / CHUNK)))) continue
       const b = this.box(p, v)
-      const cx = b.x + b.w / 2
-      const y = b.y + b.h + Math.round(font * 0.3)
-      if (cx < -200 || cx > v.w + 200 || y > v.h || y < -font) continue
+      // Only names of sights that are on the screen; the name itself is slid inside the view (labelFit).
+      if (b.x > v.w || b.y > v.h || b.x + b.w < 0 || b.y + b.h < 0) continue
+      const textW = ctx.measureText?.(text)?.width ?? text.length * font
+      const at = fitLabel(b.x + b.w / 2, b.y, b.y + b.h, textW + ctx.lineWidth, font, v.w, v.h, Math.round(4 * v.dpr), Math.round(font * 0.3))
+      const cx = at.x
+      const y = at.y
       ctx.strokeStyle = P.white
       ctx.strokeText(text, cx, y)
       ctx.fillStyle = P.ink

@@ -1,5 +1,6 @@
 import { haversine, type LatLon } from '../geo/geo.ts'
 import { pointAlong } from '../routing/checkpoints.ts'
+import { gemTotal } from './gems.ts'
 import { snapToRoute } from './snap.ts'
 import { trackFor, type QuestState } from './state.ts'
 
@@ -28,7 +29,7 @@ export function questStats(state: QuestState, now: number): QuestStats {
     elapsedMs,
     paceMinPerKm: walkedM >= 50 ? elapsedMs / 60000 / (walkedM / 1000) : undefined,
     collected: state.collected,
-    total: state.route.checkpoints.length,
+    total: gemTotal(state.route),
   }
 }
 

@@ -1,5 +1,6 @@
 import { haversine, type LatLon } from '../geo/geo.ts'
 import { directionTo, type CompassPoint } from '../quest/compass.ts'
+import { gemTotal } from '../quest/gems.ts'
 import { trackFor, type QuestEvent, type QuestState } from '../quest/quest.ts'
 import { snapToRoute, type RouteTrack } from '../quest/snap.ts'
 import { pointAlong } from '../routing/checkpoints.ts'
@@ -144,7 +145,7 @@ export class CalloutPlanner {
       if (upcoming) {
         const m = spokenMetres(upcoming.distanceM - next.alongM)
         const key = upcoming.isFinish ? 'voice.gemLast' : 'voice.gem'
-        say(key, { n: last.index, total: cps.length, m, dir: dirFrom(next, upcoming.point) })
+        say(key, { n: last.index, total: gemTotal(next.route), m, dir: dirFrom(next, upcoming.point) })
       }
     }
     if (events.some((e) => e.type === 'offRoute') && next.player) {

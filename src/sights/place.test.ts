@@ -61,8 +61,8 @@ describe('placeSights', () => {
     for (const k of SIGHT_KINDS) {
       const f = footprint(k)
       expect(f.w).toBeGreaterThanOrEqual(1)
-      expect(f.w).toBeLessThanOrEqual(2)
-      expect(f.h).toBeLessThanOrEqual(2)
+      expect(f.w).toBeLessThanOrEqual(5)
+      expect(f.h).toBeLessThanOrEqual(5)
     }
   })
 })

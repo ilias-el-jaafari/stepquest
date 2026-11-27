@@ -1,3 +1,4 @@
+import { gemTotal } from '../quest/gems.ts'
 import { useI18n } from '../i18n/index.ts'
 import { formatKm, formatNumber, formatSignedPercent } from '../i18n/format.ts'
 import { STEPS_PER_CHECKPOINT } from '../routing/checkpoints.ts'
@@ -31,7 +32,7 @@ export function ResultBox({ result, onUseSteps }: { result: PlanResult | undefin
           </div>
           <div>
             <dt>{t('result.checkpoints')}</dt>
-            <dd>{t('result.checkpointsValue', { n: route.checkpoints.length, every: n(Math.round(route.steps / Math.max(1, route.checkpoints.length) / 10) * 10 || STEPS_PER_CHECKPOINT) })}</dd>
+            <dd>{t('result.checkpointsValue', { n: gemTotal(route), every: n(Math.round(route.steps / Math.max(1, route.checkpoints.length) / 10) * 10 || STEPS_PER_CHECKPOINT) })}</dd>
           </div>
           <div>
             <dt>{t('result.time')}</dt>

@@ -1,5 +1,5 @@
 import type { Sprite } from '../render/sprites.ts'
-import { SIGHT_KINDS, type SightKind } from './types.ts'
+import { isMonumentKind, SIGHT_KINDS, type SightKind } from './types.ts'
 
 /**
  * Sight art (landmarks spec, L4): one original sprite per kind, built in code from rectangles on a small
@@ -34,6 +34,8 @@ export const SIGHT: Record<string, string> = {
   N: '#5d8c4a', // green
   A: '#7fc4ff', // water
   a: '#bfe4ff', // water light
+  Q: '#ece3cb', // paving plate
+  q: '#c9bc9b', // paving plate shade
 }
 /** Warm window light for the night overlay. */
 export const SIGHT_LIT = '#ffe27a'
@@ -77,6 +79,21 @@ class Grid {
   }
   rows(): string[] {
     return this.c.map((r) => r.join(''))
+  }
+  /** Every pixel doubled in both directions, with `padTop` empty rows added above (room for spires and flags). */
+  doubled(padTop = 0): Grid {
+    const g = new Grid(this.w * 2, this.h * 2 + padTop)
+    for (let y = 0; y < this.h; y++) {
+      for (let x = 0; x < this.w; x++) {
+        const ch = this.c[y]![x]!
+        if (ch === '.') continue
+        g.rect(x * 2, y * 2 + padTop, 2, 2, ch)
+      }
+    }
+    return g
+  }
+  get(x: number, y: number): string {
+    return this.c[y]?.[x] ?? '.'
   }
 }
 
@@ -312,8 +329,107 @@ const BUILDERS: Record<SightKind, () => Grid> = {
   fountain,
 }
 
-/** One sprite per kind: day colours, ink outline included. */
-export const SIGHT_SPRITES: Record<SightKind, Sprite> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, { rows: outlined(BUILDERS[k]()), colors: SIGHT }])) as Record<SightKind, Sprite>
+/** A pole with a pennant, 1 px wide, `h` tall from (x, y) down; the flag flies to the right (or left when `dir` is -1). */
+function flag(g: Grid, x: number, y: number, h: number, colour: string, shade: string, dir = 1): void {
+  g.rect(x, y, 1, h, 'K')
+  const fx = dir > 0 ? x + 1 : x - 6
+  g.rect(fx, y, 6, 3, colour).rect(fx, y + 3, 6, 1, shade)
+}
+
+/** A filled disc, centre (cx, cy), in one character. */
+function disc(g: Grid, cx: number, cy: number, r: number, ch: string): void {
+  for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r + 1) g.set(cx + x, cy + y, ch)
+}
+
+/**
+ * Sights are drawn at twice the old size and given a few more distinctive parts (task 91.5): flags on the
+ * town hall, school and university, a big clock, pilasters, a second minaret. Each returns the doubled grid.
+ */
+const BIG: Partial<Record<SightKind, () => Grid>> = {
+  townHall() {
+    const g = townHall().doubled(8)
+    // Clock face on the tower (glass lights up at night), gold ring, hands.
+    disc(g, 26, 28, 6, 'g')
+    disc(g, 26, 28, 5, 'V')
+    g.rect(26, 24, 1, 5, 'K').rect(26, 28, 3, 1, 'K')
+    // A tall spire with a gold ball, and a flag on each wing.
+    g.rect(25, 0, 2, 3, 'G').rect(25, 3, 2, 5, 'K')
+    flag(g, 4, 26, 12, 'R', 'r')
+    flag(g, 47, 26, 12, 'B', 'b', -1)
+    // Pilasters between the arches of the hall.
+    for (const x of [19, 31]) g.rect(x, 44, 2, 12, 'l').rect(x + 1, 44, 1, 12, 's')
+    return g
+  },
+  university() {
+    const g = university().doubled(10)
+    // A gold-tipped flagpole over the pediment, and two small urns on the corners of the entablature.
+    g.rect(23, 0, 2, 4, 'G').rect(23, 4, 2, 6, 'K')
+    flag(g, 25, 2, 8, 'B', 'b')
+    g.rect(5, 17, 3, 3, 'S').rect(40, 17, 3, 3, 'S')
+    return g
+  },
+  school() {
+    const g = school().doubled(8)
+    flag(g, 20, 0, 10, 'R', 'r')
+    // A big bell in the tower.
+    disc(g, 24, 23, 2, 'G')
+    return g
+  },
+  mosque() {
+    const g = mosque().doubled(6)
+    // A second minaret, mirrored from the first (everything above the hall).
+    const w = g.w
+    for (let y = 0; y < 40; y++) for (let x = 38; x < 48; x++) {
+      const ch = g.get(x, y + 6)
+      if (ch !== '.') g.set(w - 1 - x, y + 6, ch)
+    }
+    return g
+  },
+}
+
+const MIN_W_BUILDING = 64
+const MIN_H_BUILDING = 56
+const MIN_W_MONUMENT = 40
+const PLATE_H_BUILDING = 12
+const PLATE_H_MONUMENT = 8
+/** The lot of an ordinary house in the town, 3 × 3 tiles of 16 px (the median in the demo area): the bar for "bigger than a house". */
+export const HOUSE_FOOTPRINT_PX = 48 * 48
+
+/** The building itself, outlined in ink (no plate). */
+export const SIGHT_BODIES: Record<SightKind, string[]> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, outlined((BIG[k] ?? (() => BUILDERS[k]().doubled()))())])) as Record<SightKind, string[]>
+
+/** Body on a rounded paving plate along its foot, with two gold sparkles at the corners: the sight reads as a place worth the detour. */
+function onPlate(kind: SightKind, body: readonly string[]): string[] {
+  const monument = isMonumentKind(kind)
+  const bw = body[0]?.length ?? 0
+  const W = Math.max(bw + 10, monument ? MIN_W_MONUMENT : MIN_W_BUILDING) + ((Math.max(bw + 10, monument ? MIN_W_MONUMENT : MIN_W_BUILDING) - bw) % 2)
+  const H = Math.max(body.length + 3, monument ? 0 : MIN_H_BUILDING)
+  const ph = monument ? PLATE_H_MONUMENT : PLATE_H_BUILDING
+  const out = Array.from({ length: H }, () => Array.from({ length: W }, () => '.'))
+  const put = (x: number, y: number, ch: string) => {
+    if (x >= 0 && y >= 0 && x < W && y < H) out[y]![x] = ch
+  }
+  for (let r = 0; r < ph; r++) {
+    const y = H - ph + r
+    const cut = Math.max(3 - r, 3 - (ph - 1 - r), 0)
+    for (let x = cut; x < W - cut; x++) put(x, y, r === 0 ? 'q' : y < H - 1 && (x * 3 + y * 5) % 11 === 0 ? 'q' : 'Q')
+  }
+  const ox = Math.floor((W - bw) / 2)
+  const oy = H - 3 - body.length
+  body.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) if (row[x] !== '.') put(ox + x, oy + y, row[x]!)
+  })
+  // Sparkles on the open corners above the plate (skipped where the building is).
+  for (const [sx, sy] of [[5, H - ph - 4], [W - 6, H - ph - 7]] as const) {
+    if (out[sy]?.[sx] !== '.') continue
+    put(sx, sy, 'G')
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) if (out[sy + dy]?.[sx + dx] === '.') put(sx + dx, sy + dy, 'H')
+  }
+  return out.map((r) => r.join(''))
+}
+
+/** One sprite per kind: day colours, ink outline and paving plate included. */
+export const SIGHT_SPRITES: Record<SightKind, Sprite> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, { rows: onPlate(k, SIGHT_BODIES[k]), colors: SIGHT }])) as Record<SightKind, Sprite>
 
 /** The night overlay of a sprite: only its window glass, in warm light (drawn after the tint). */
 export function litOverlay(s: Sprite): Sprite {
@@ -326,7 +442,7 @@ export const spriteSize = (k: SightKind): { w: number; h: number } => ({ w: SIGH
 export type AtlasSlot = { x: number; y: number; w: number; h: number }
 export type SightAtlasLayout = { width: number; height: number; day: Record<SightKind, AtlasSlot>; lit: Record<SightKind, AtlasSlot> }
 
-const ATLAS_WIDTH = 160
+const ATLAS_WIDTH = 288
 
 /** Day frames, then lit overlays, packed in rows with a 1 px gap. */
 export function sightAtlasLayout(): SightAtlasLayout {

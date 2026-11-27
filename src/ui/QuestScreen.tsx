@@ -4,6 +4,7 @@ import { formatDistance, formatNumber } from '../i18n/format.ts'
 import { directionTo } from '../quest/compass.ts'
 import { formatDuration, formatPace, nextCheckpoint, questStats, routeToNext, signalStatus, trackFor, type QuestState } from '../quest/quest.ts'
 import { snapToRoute } from '../quest/snap.ts'
+import { startLines } from './questCopy.ts'
 import { summarize, type Summary } from '../quest/summary.ts'
 import type { Sprite } from '../render/sprites.ts'
 import type { LocationErrorCode } from '../quest/geolocation.ts'
@@ -235,7 +236,7 @@ export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, er
     dialogue = {
       key: 'start',
       kind: 'start',
-      lines: quest.route.checkpoints.length > 1 ? [t('dlg.start1', { n: quest.route.checkpoints.length - 1 }), t('dlg.start2')] : [t('dlg.startFlag')],
+      lines: startLines(quest.route, t),
       onDone: closeStart,
       autoCloseMs: 5000,
     }

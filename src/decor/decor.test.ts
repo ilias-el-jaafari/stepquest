@@ -1,12 +1,12 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { loadDemoOsm } from '../osm/demo.ts'
-import { Terrain } from '../tiles/grid.ts'
+import { Terrain, TileGrid } from '../tiles/grid.ts'
 import { buildTileGrid } from '../tiles/rasterize.ts'
 import { ATLAS_WIDTH, atlasLayout, DECOR_FRAMES, graveRows, pumpkinRows, spriteSize, SPRITE_IDS, webCorner } from './art.ts'
 import { batFrame, batX, batY, flickerLevel, fogX, skeletonFrame, tickOf } from './anim.ts'
 import { ANIM_FRAME_MS, decorBudget, MAX_ANIMATED, MAX_STATIC_PER_SCREEN, MIN_DECOR_ZOOM } from './budget.ts'
-import { clearOfStreets, decorInChunk, forgetDecor, HALF_WIDTH, LOW_KINDS, tileClear, type DecorItem, type YardTest } from './place.ts'
+import { clearOfStreets, decorInChunk, forgetDecor, HALF_WIDTH, LAT_STEP, LON_STEP, LOW_KINDS, PLAZA_BLOCK, PLAZA_CAP, PLAZA_GAP_M, tileClear, type DecorItem, type YardTest } from './place.ts'
 
 const grid = buildTileGrid(loadDemoOsm())
 const CHUNK = 32
@@ -326,5 +326,65 @@ describe('animation', () => {
   })
   it('caps the animated items per frame', () => {
     expect(MAX_ANIMATED).toBeLessThanOrEqual(16)
+  })
+})
+
+describe('open squares (task 91.1)', () => {
+  /** Plaça-sized open paving: 450 m × 450 m of plaza tiles, nothing else. */
+  const plazaGrid = (): TileGrid => {
+    const g = new TileGrid({ south: 39.4690, west: -0.3790, north: 39.4730, east: -0.3730 })
+    g.terrain.fill(Terrain.plaza)
+    return g
+  }
+  const itemsOf = (g: TileGrid): DecorItem[] => {
+    const out: DecorItem[] = []
+    for (let cy = 0; cy * CHUNK < g.rows; cy++) for (let cx = 0; cx * CHUNK < g.cols; cx++) out.push(...decorInChunk(g, cx, cy, CHUNK).statics, ...decorInChunk(g, cx, cy, CHUNK).animated)
+    return out.filter((i) => i.kind !== 'web')
+  }
+  const plaza = plazaGrid()
+  const plazaItems = itemsOf(plaza)
+  const blockOf = (g: TileGrid, it: DecorItem) => {
+    const ll = g.tileToLatLon(it.x, it.y)
+    return `${Math.floor(ll.lat / LAT_STEP / PLAZA_BLOCK)},${Math.floor(ll.lon / LON_STEP / PLAZA_BLOCK)}`
+  }
+
+  it('property: a plaza block never holds more than the cap, and the items stand apart', () => {
+    expect(plazaItems.length).toBeGreaterThan(5)
+    const perBlock = new Map<string, number>()
+    for (const it of plazaItems) perBlock.set(blockOf(plaza, it), (perBlock.get(blockOf(plaza, it)) ?? 0) + 1)
+    for (const n of perBlock.values()) expect(n).toBeLessThanOrEqual(PLAZA_CAP)
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: plazaItems.length - 1 }), fc.integer({ min: 0, max: plazaItems.length - 1 }), (a, b) => {
+        fc.pre(a !== b)
+        const p = plazaItems[a]!
+        const q = plazaItems[b]!
+        // Jitter inside a tile and the tile grid's own scale allow a little less than the gap, in tile units.
+        expect(Math.hypot(p.x - q.x, p.y - q.y) * plaza.metresPerTile).toBeGreaterThan(PLAZA_GAP_M * 0.75 - 1)
+      }),
+      { numRuns: 300 },
+    )
+  })
+
+  it('shows a handful on any phone screen of plaza (16 × 35 tiles), not dozens', () => {
+    let worst = 0
+    for (let y = 0; y + 35 <= plaza.rows; y += 7) {
+      for (let x = 0; x + 16 <= plaza.cols; x += 7) worst = Math.max(worst, plazaItems.filter((i) => i.x >= x && i.x < x + 16 && i.y >= y && i.y < y + 35).length)
+    }
+    expect(worst).toBeLessThanOrEqual(5)
+  })
+
+  it('is the same whichever chunk size asks, and after a grid is built again', () => {
+    const again = plazaGrid()
+    const a = itemsOf(plaza).map(key).sort()
+    const b: DecorItem[] = []
+    for (let cy = 0; cy * 16 < again.rows; cy++) for (let cx = 0; cx * 16 < again.cols; cx++) b.push(...decorInChunk(again, cx, cy, 16).statics, ...decorInChunk(again, cx, cy, 16).animated)
+    expect(b.filter((i) => i.kind !== 'web').map(key).sort()).toEqual(a)
+  })
+
+  it('leaves parks as full as before', () => {
+    const g = plazaGrid()
+    g.terrain.fill(Terrain.park)
+    const park = itemsOf(g).length
+    expect(park).toBeGreaterThan(plazaItems.length * 5)
   })
 })

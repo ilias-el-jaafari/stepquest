@@ -97,4 +97,31 @@ describe('SightLayer', () => {
     layer.drawStatic(ctx, view(24), new Set())
     expect(calls.drawImage).toBe(0)
   })
+
+  it('keeps every name inside the view, however close the sight is to the screen edge', () => {
+    const layer = new SightLayer(grid)
+    layer.setMarks(marks(8))
+    const sight = layer.standing[0]!
+    for (const [w, h] of [[390, 844], [320, 568]] as const) {
+      // Slide the map so the sight's centre sits on each edge in turn.
+      for (const edge of [0, w / 2, w]) {
+        const xs: { x: number; w: number; y: number }[] = []
+        const ctx = {
+          drawImage: () => {}, strokeText: () => {}, measureText: (s: string) => ({ width: s.length * 8 }),
+          fillText: (s: string, x: number, y: number) => xs.push({ x, w: s.length * 8, y }),
+          fillStyle: '', strokeStyle: '', font: '', lineWidth: 1, lineJoin: 'miter', textAlign: 'start', textBaseline: 'alphabetic', globalAlpha: 1, globalCompositeOperation: 'source-over',
+        } as unknown as CanvasRenderingContext2D
+        const scale = 24
+        const v: View = { w, h, dpr: 1, zoom: scale, cssW: w, cssH: h, scale, originX: edge - (sight.x + sight.w / 2) * scale, originY: h - 40 - (sight.y + sight.h) * scale, camX: 0, camY: 0, detail: true }
+        layer.drawLabels(ctx, v, painted)
+        for (const l of xs) {
+          expect(l.x - l.w / 2).toBeGreaterThanOrEqual(0)
+          expect(l.x + l.w / 2).toBeLessThanOrEqual(w)
+          expect(l.y).toBeGreaterThanOrEqual(0)
+          expect(l.y + 7).toBeLessThanOrEqual(h)
+        }
+        expect(xs.length).toBeGreaterThan(0)
+      }
+    }
+  })
 })

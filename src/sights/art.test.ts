@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { SIGHT, SIGHT_LIT, SIGHT_LIT_SPRITES, SIGHT_SPRITES, sightAtlasLayout, spriteSize, starRows } from './art.ts'
-import { SIGHT_KINDS } from './types.ts'
+import { HOUSE_FOOTPRINT_PX, SIGHT, SIGHT_BODIES, SIGHT_LIT, SIGHT_LIT_SPRITES, SIGHT_SPRITES, sightAtlasLayout, spriteSize, starRows } from './art.ts'
+import { isMonumentKind, SIGHT_KINDS } from './types.ts'
 
 describe('sight art', () => {
   it('has one rectangular sprite per kind, in the palette, with an ink outline and no stray colours', () => {
@@ -8,14 +8,38 @@ describe('sight art', () => {
       const s = SIGHT_SPRITES[k]
       const w = s.rows[0]!.length
       expect(s.rows.every((r) => r.length === w)).toBe(true)
-      expect(w).toBeGreaterThanOrEqual(14)
-      expect(w).toBeLessThanOrEqual(32)
-      expect(s.rows.length).toBeLessThanOrEqual(32)
+      expect(w).toBeGreaterThanOrEqual(40)
+      expect(w).toBeLessThanOrEqual(80)
+      expect(s.rows.length).toBeLessThanOrEqual(80)
       for (const ch of s.rows.join('')) if (ch !== '.') expect(SIGHT[ch], `${k}: ${ch}`).toBeDefined()
-      // The outline closes the silhouette: the border rows and columns are empty or ink.
-      expect(s.rows[0]!.replace(/[.K]/g, '')).toBe('')
-      expect(s.rows.at(-1)!.replace(/[.K]/g, '')).toBe('')
-      expect(s.rows.every((r) => r[0] === '.' || r[0] === 'K')).toBe(true)
+      // The outline closes the silhouette of the building itself (the paving plate has none).
+      const body = SIGHT_BODIES[k]
+      expect(body[0]!.replace(/[.K]/g, '')).toBe('')
+      expect(body.at(-1)!.replace(/[.K]/g, '')).toBe('')
+      expect(body.every((r) => r[0] === '.' || r[0] === 'K')).toBe(true)
+    }
+  })
+
+  it('stands out from the houses (task 91.5): buildings cover about 1.6 to 2 house footprints, monuments rise to three tiles or more', () => {
+    for (const k of SIGHT_KINDS) {
+      const { w, h } = spriteSize(k)
+      if (isMonumentKind(k)) expect(Math.max(h, w), k).toBeGreaterThanOrEqual(48)
+      else {
+        expect((w * h) / HOUSE_FOOTPRINT_PX, k).toBeGreaterThanOrEqual(1.5)
+        expect((w * h) / HOUSE_FOOTPRINT_PX, k).toBeLessThanOrEqual(2.6)
+      }
+    }
+  })
+
+  it('stands each sight on a paving plate along its foot, and keeps the building above it', () => {
+    for (const k of SIGHT_KINDS) {
+      const rows = SIGHT_SPRITES[k].rows
+      const last = rows.at(-1)!
+      expect(last, k).toContain('Q')
+      // The plate spans wider than the building body, and the body sits on it.
+      const bodyW = SIGHT_BODIES[k][0]!.length
+      expect(last.replace(/\./g, '').length, k).toBeGreaterThan(bodyW * 0.8)
+      expect(rows[0]!.replace(/[.]/g, ''), k).not.toContain('Q')
     }
   })
 
@@ -55,7 +79,7 @@ describe('sight art', () => {
       }
     }
     for (const k of SIGHT_KINDS) expect({ w: l.day[k].w, h: l.day[k].h }).toEqual(spriteSize(k))
-    expect(l.width * l.height).toBeLessThan(40_000)
+    expect(l.width * l.height).toBeLessThan(160_000)
   })
 
   it('draws each kind differently', () => {

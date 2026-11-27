@@ -42,8 +42,8 @@ export type SightMark = {
 
 /** Draw only sights this close to the route (metres). */
 export const CORRIDOR_M = 50
-/** Wisp comments when the hero is this close (metres). */
-export const PASS_M = 40
+/** Wisp comments when the hero is this close (metres): the sight is on the phone screen then (a sight is drawn out to `CORRIDOR_M`). */
+export const PASS_M = 35
 /** Sights of one kind this close are one place (metres). */
 export const MERGE_M = 80
 

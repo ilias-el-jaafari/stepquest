@@ -38,3 +38,7 @@
   - _Requirements: G6.5_
 - [x] 90.4 Wisp hidden in the demo at about 8 s. Root causes: the speech bubble (anchored at the hero) was drawn after Wisp and covered it; and while the hero was animating, `animating ||= this.drawGhost(...)` short-circuited and never drew Wisp at all. Now the ghost is placed first (`ghostPlace`), the bubble steps aside from its box (`drawBubble(..., avoid)`: other side of the hero, then above or below the ghost), and the ghost is drawn last, always. Tests in `bubble.test.ts`, `ghostOverlay.test.ts`
   - _Requirements: G1_
+
+## Polish from browser review (sight mentions)
+
+- [x] 91.4 Wisp's sight mention radius is 35 m (`PASS_M`); the draw radius stays 50 m. See the [landmarks tasks](../landmarks/tasks.md).

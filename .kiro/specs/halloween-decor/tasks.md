@@ -40,3 +40,7 @@
 
 - [x] 89.16 `nightRender.test.ts` counted decor images (still items, glows, hats, flicker) in the lamp-pool budget, and decor is drawn only on painted chunks, whose number depends on the frame-time budget (`CHUNK_BUDGET_MS`); that made the count differ between a fast and a slow machine (CI red on a762456 and 64171ff). The lamp test now runs with decor off; a separate test holds decor to its own strict budget (by day `2 × staticPerChunk × 4 + animated`, at night `3 × staticPerChunk × 4 + MAX_LAMPS_PER_CHUNK × 4 + animated`, where the factors are the item, its second pumpkin, and the glow) under a frozen and a slow clock; a third test shows the counts ignore the stored decor setting.
   - _Requirements: H4, H10_
+
+## Polish from browser review (open squares)
+
+- [x] 91.1 Plazas and pedestrian areas were covered with decor. Now a plaza block (40 × 40 lattice steps, about 150 m) keeps at most `PLAZA_CAP` = 2 plaza items, at least `PLAZA_GAP_M` = 20 m apart, picked by rank (`plazaPicks` in `decor/place.ts`, geographic, so every chunk and frame agrees). Parks, yards and corners are unchanged. Tests: block cap and spacing (property), at most 5 on any 16 × 35 tile screen, same result for other chunk sizes, parks stay full. The two decor goldens changed on purpose.

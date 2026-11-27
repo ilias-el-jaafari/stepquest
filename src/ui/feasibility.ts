@@ -1,4 +1,5 @@
 import type { Translate } from '../i18n/index.ts'
+import { gemTotal } from '../quest/gems.ts'
 import type { PlanResult } from '../routing/planner.ts'
 import { formatNumber } from '../i18n/format.ts'
 import type { Locale } from '../i18n/index.ts'
@@ -9,7 +10,7 @@ export type Feasibility = { text: string; ok: boolean; suggest?: number }
 export function feasibility(result: PlanResult | undefined, t: Translate, locale: Locale): Feasibility | undefined {
   if (!result) return undefined
   const n = (v: number) => formatNumber(v, locale)
-  if (result.ok) return { text: t('result.ready', { n: result.route.checkpoints.length }), ok: true }
+  if (result.ok) return { text: t('result.ready', { n: gemTotal(result.route) }), ok: true }
   switch (result.reason) {
     case 'tooShort':
       return { text: t(result.closest?.mode === 'loop' ? 'error.tooShortLoop' : 'error.tooShort', { min: n(result.minSteps ?? 0) }), ok: false, suggest: Math.ceil((result.minSteps ?? 0) / 100) * 100 }

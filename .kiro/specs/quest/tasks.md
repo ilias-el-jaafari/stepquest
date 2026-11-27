@@ -108,3 +108,7 @@ Findings and rationale: see "Architecture review (Nov 2026)" in [design.md](desi
   - _Requirements: 6h.5_
 - [x] 85.2 `canCollect` in `quest/collect.ts` (progress ≥ 90 %, odometer ≥ 50 % for the finish; progress near the gem for the others), wired in `machine.ts`
   - _Requirements: 6h.1 to 6h.4_
+
+## One gem count (task 91.3)
+
+- [x] 91.3 The start bubble said 4 gems while the HUD said 0/5: the bubble left the flag out. `quest/gems.ts` `gemTotal` (the flag is the last gem, so the total is the checkpoint count) now feeds the start lines (`ui/questCopy.ts`), HUD and summary (`questStats`), pickup dialogue, voice callouts, route-ready line and result box. Copy EN/ES says "the last one is the flag"; the result label reads "Gems". Test: `quest/gems.test.ts` (property over route sizes, both languages).

@@ -31,3 +31,9 @@
   - _Requirements: L7_
 - [x] L4.3 `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`; ES 390×844 screenshots day, night and summary; benchmark
   - _Requirements: L9_
+
+## Polish from browser review (València, ES 390×844)
+
+- [x] 91.2 Names never clipped: `render/labelFit.ts` slides a label inside the view and flips it above the sprite when there is no room below; tests in `labelFit.test.ts` (property) and `sightLayer.test.ts`. The HUD cards are not avoided (the view does not know them).
+- [x] 91.4 Wisp mentions a sight within `PASS_M` = 35 m (was 40), so it is on screen; sights are still drawn out to `CORRIDOR_M` = 50 m. Test in `sights/route.test.ts`.
+- [x] 91.5 Sprites doubled with new parts (clock, flags, pilasters, second minaret), each on a paving plate with two gold sparkles. Buildings cover 1.5 to 2.6 house lots (`HOUSE_FOOTPRINT_PX`, a 3 × 3 tile lot), monuments are 3 tiles or taller. Footprints are now up to 4 × 4 tiles; the keep-out set still holds route, gems, start and finish. Atlas 288 px wide; tests in `sights/art.test.ts`.

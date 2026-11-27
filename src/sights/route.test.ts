@@ -104,6 +104,18 @@ describe('passedSights and announceNext', () => {
     expect(PASS_M).toBeLessThan(CORRIDOR_M)
   })
 
+  it('mentions a sight only when it is on screen: about 35 m, while sights are still drawn out to 50 m', () => {
+    expect(PASS_M).toBe(35)
+    expect(CORRIDOR_M).toBe(50)
+    const near = sightsAlongRoute([at(300, 30)], ROUTE)
+    const far = sightsAlongRoute([at(300, 42)], ROUTE)
+    expect(near).toHaveLength(1)
+    expect(far).toHaveLength(1)
+    const hero = destination(O, 90, 300)
+    expect(announceNext(hero, near, new Set())).toBeDefined()
+    expect(announceNext(hero, far, new Set())).toBeUndefined()
+  })
+
   it('property: a walk along the route announces every sight inside the pass radius exactly once', () => {
     const announced = new Set<string>()
     const said: string[] = []

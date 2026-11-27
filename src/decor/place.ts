@@ -105,6 +105,7 @@ const POI_RADIUS = 4
 /** Forget the placement of a grid whose tiles changed (a streamed cell arrived or left). */
 export function forgetDecor(grid: TileGrid, rect?: { x: number; y: number; w: number; h: number }): void {
   poiCache.delete(grid)
+  plazaCache.delete(grid)
   const sizes = cache.get(grid)
   if (!sizes) return
   if (!rect) {
@@ -282,39 +283,21 @@ function buildChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?:
   const webs = new Set<string>()
   for (let i = i0; i <= i1; i++) {
     for (let j = j0; j <= j1; j++) {
-      const h = hash3(i, j, 1)
-      if (unit(h) >= ACCEPT) continue
-      // Jitter inside the lattice cell, so sites do not line up in rows.
-      const jl = unit(hash3(i, j, 2))
-      const jo = unit(hash3(i, j, 3))
-      const t = grid.toTileXY({ lat: (i + jl) * LAT_STEP, lon: (j + jo) * LON_STEP })
-      const tx = Math.floor(t.x)
-      const ty = Math.floor(t.y)
-      if (tx < x0 || tx >= x1 || ty < y0 || ty >= y1) continue
-      if (tree?.(tx, ty)) {
-        // A garden tree: a spider now and then hangs from its crown.
-        const spider = treeSpider(grid, i, j, tx, ty)
-        if (spider && !crowded(i, j)) items.push(spider)
-        continue
+      if (unit(hash3(i, j, 1)) >= ACCEPT) continue
+      const t = siteTile(grid, i, j)
+      if (t.x < x0 || t.x >= x1 || t.y < y0 || t.y >= y1) continue
+      const found = siteItem(grid, i, j, yard, tree)
+      if (!found) continue
+      const { item, category } = found
+      // A square or pedestrian plaza keeps only a few accents, spread out (see `plazaPicks`).
+      if (category === 'plaza' && !plazaPicks(grid, i, j, yard, tree).has(siteKey(i, j))) continue
+      // Two sites can share a tile corner: one web there is enough.
+      if (item.kind === 'web') {
+        const wk = `${item.x},${item.y}`
+        if (webs.has(wk)) continue
+        webs.add(wk)
       }
-      if (!tileClear(grid, tx, ty, yard, true)) continue
-      const site = classify(grid, tx, ty, yard)
-      if (!site) continue
-      const item = makeItem(grid, i, j, tx, ty, site, t.x, t.y)
-      // The spacing rule is checked last: it is the dearest test, and most sites fail on terrain first.
-      if (item && crowded(i, j)) continue
-      if (item && !LOW_KINDS.has(item.kind) && !tileClear(grid, tx, ty, yard)) continue
-      // Things that roam, spread, stand in groups or sit on a tile corner need the whole 3×3 free of streets.
-      if (item && (item.animated || item.kind === 'graves' || item.kind === 'web') && !clearOfStreets(grid, tx, ty)) continue
-      if (item) {
-        // Two sites can share a tile corner: one web there is enough.
-        if (item.kind === 'web') {
-          const wk = `${item.x},${item.y}`
-          if (webs.has(wk)) continue
-          webs.add(wk)
-        }
-        items.push(item)
-      }
+      items.push(item)
     }
   }
   if (items.length === 0) return EMPTY
@@ -329,6 +312,80 @@ function buildChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?:
     }
   }
   return { statics, animated }
+}
+
+
+/** The tile a lattice site falls in, and its exact position in tile units. */
+function siteTile(grid: TileGrid, i: number, j: number): { x: number; y: number; fx: number; fy: number } {
+  const t = grid.toTileXY(sitePoint(i, j))
+  return { x: Math.floor(t.x), y: Math.floor(t.y), fx: t.x, fy: t.y }
+}
+
+type Found = { item: DecorItem; category: Category }
+
+/** What stands at lattice site (i, j) on this grid, if anything: terrain, spacing and street tests included. Chunk limits are the caller's. */
+function siteItem(grid: TileGrid, i: number, j: number, yard?: YardTest, tree?: YardTest): Found | undefined {
+  const t = siteTile(grid, i, j)
+  const tx = t.x
+  const ty = t.y
+  if (tree?.(tx, ty)) {
+    // A garden tree: a spider now and then hangs from its crown.
+    const spider = treeSpider(grid, i, j, tx, ty)
+    return spider && !crowded(i, j) ? { item: spider, category: 'yard' } : undefined
+  }
+  if (!tileClear(grid, tx, ty, yard, true)) return undefined
+  const site = classify(grid, tx, ty, yard)
+  if (!site) return undefined
+  const item = makeItem(grid, i, j, tx, ty, site, t.fx, t.fy)
+  if (!item) return undefined
+  // The spacing rule is checked last: it is the dearest test, and most sites fail on terrain first.
+  if (crowded(i, j)) return undefined
+  if (!LOW_KINDS.has(item.kind) && !tileClear(grid, tx, ty, yard)) return undefined
+  // Things that roam, spread, stand in groups or sit on a tile corner need the whole 3×3 free of streets.
+  if ((item.animated || item.kind === 'graves' || item.kind === 'web') && !clearOfStreets(grid, tx, ty)) return undefined
+  return { item, category: site.category }
+}
+
+/** Plaza sites per block and the least distance between two (halloween-decor spec, task 91.1). */
+export const PLAZA_BLOCK = 40
+export const PLAZA_CAP = 2
+export const PLAZA_GAP_M = 20
+const siteKey = (i: number, j: number): string => `${i},${j}`
+
+const plazaCache = new WeakMap<TileGrid, Map<string, ReadonlySet<string>>>()
+
+/**
+ * The few plaza sites of the block around (i, j) that stand: the candidates on plaza ground of a block of
+ * `PLAZA_BLOCK` lattice steps (about 150 m), lowest rank first, at most `PLAZA_CAP`, each `PLAZA_GAP_M` from
+ * the ones before. The block is fixed on the lattice, so every chunk of every frame reads the same answer.
+ */
+function plazaPicks(grid: TileGrid, i: number, j: number, yard?: YardTest, tree?: YardTest): ReadonlySet<string> {
+  const bi = Math.floor(i / PLAZA_BLOCK)
+  const bj = Math.floor(j / PLAZA_BLOCK)
+  const key = `${bi},${bj}`
+  let blocks = plazaCache.get(grid)
+  if (!blocks) plazaCache.set(grid, (blocks = new Map()))
+  const known = blocks.get(key)
+  if (known) return known
+  const cands: { i: number; j: number; rank: number; p: { lat: number; lon: number } }[] = []
+  for (let a = bi * PLAZA_BLOCK; a < (bi + 1) * PLAZA_BLOCK; a++) {
+    for (let b = bj * PLAZA_BLOCK; b < (bj + 1) * PLAZA_BLOCK; b++) {
+      if (unit(hash3(a, b, 1)) >= ACCEPT) continue
+      const f = siteItem(grid, a, b, yard, tree)
+      if (f?.category === 'plaza') cands.push({ i: a, j: b, rank: f.item.rank, p: sitePoint(a, b) })
+    }
+  }
+  cands.sort((p, q) => p.rank - q.rank || p.i - q.i || p.j - q.j)
+  const picked: typeof cands = []
+  for (const c of cands) {
+    if (picked.length >= PLAZA_CAP) break
+    const cos = Math.cos((c.p.lat * Math.PI) / 180)
+    if (picked.some((o) => Math.hypot((o.p.lat - c.p.lat) * M_PER_DEG, (o.p.lon - c.p.lon) * M_PER_DEG * cos) < PLAZA_GAP_M)) continue
+    picked.push(c)
+  }
+  const set = new Set(picked.map((c) => siteKey(c.i, c.j)))
+  blocks.set(key, set)
+  return set
 }
 
 /** Where a lattice site stands: latitude and longitude in degrees, from the hashes alone. */

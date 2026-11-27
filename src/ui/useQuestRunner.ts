@@ -5,6 +5,7 @@ import { isStale, PaceTracker, tempoForSpeed } from '../audio/tempo.ts'
 import { useI18n } from '../i18n/index.ts'
 import type { LatLon } from '../geo/geo.ts'
 import { browserSource, type LocationErrorCode, type LocationSource } from '../quest/geolocation.ts'
+import { gemTotal } from '../quest/gems.ts'
 import { trackFor, type QuestState } from '../quest/quest.ts'
 import type { ReroutePatch } from '../quest/reroute.ts'
 import { QuestSession } from '../quest/session.ts'
@@ -130,7 +131,7 @@ export function useQuestRunner(reroute?: (q: QuestState) => Promise<ReroutePatch
       for (const e of events) {
         if (e.type === 'collected') {
           pickupCount.current++
-          setPickup({ n: pickupCount.current, point: e.point, index: e.index, total: state.route.checkpoints.length })
+          setPickup({ n: pickupCount.current, point: e.point, index: e.index, total: gemTotal(state.route) })
         }
         if (e.type === 'finished') {
           audio.stopMusic()
