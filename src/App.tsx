@@ -251,7 +251,7 @@ export default function App() {
           </section>
 
           {/* Map tab: the planner, framed above the tab bar. */}
-          <Sheet tab="map" active={tab === 'map'} className="planner">
+          <Sheet tab="map" active={tab === 'map'} className="planner" keepSpace>
             <PlannerPanel
               settings={settings}
               placing={state.placing}

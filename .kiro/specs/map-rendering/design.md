@@ -797,3 +797,62 @@ Per frame at detail zoom: visible chunks × ≤12 lamps (one `drawImage` pool an
 
 `lamps.property.test.ts` (fast-check: lamps on road tiles, same-side spacing, same input same output, cap keeps an even subset and is idempotent), `fireflies.test.ts`, `lights.test.ts` (windows deterministic), `nightRender.test.ts` (sprite at detail, dots only in the overview, no timer with reduced motion, caps), goldens.
 
+## Frame performance (requirement 24, task 79)
+
+Report (iPhone, Nov 2026): since textures, lamps, fireflies and vector tiles the app feels slow and the simulated walk moves in jerks even at ×1. Baseline on the harness at build 508dcb0: night ×20 walk 25 fps, pan 27 fps, zoom 14 fps with 7.0 s of long tasks (max 963 ms); day ×20 walk 10 fps.
+
+### Method
+
+`/tmp/perf.mjs` (Chrome headless through `playwright-core`, 390 × 844 at ratio 3, CPU throttled 4×, quest on the simulator; phases: walk 5 s, pan 5 s, zoom out and in, far pan; frame times from `requestAnimationFrame`, long tasks from `PerformanceObserver`). Nothing was added to the app for profiling: a copy of the harness serves a local build through `page.route` (no server), builds it with `--minify false` and records a V8 CPU profile (`Profiler.start`, 0.5 ms sampling) for one phase, then prints self time and inclusive time per function. `npm run build` output is the measured artefact; the numbers below are from this machine, so only the ratios carry over to the phone.
+
+### Causes found
+
+| Cause | Measured cost (zoom phase, night ×20, 4× throttle) |
+| --- | --- |
+| `ChunkLayer.paintChunk` copied 1024 tiles per chunk with one `drawImage` each (plus structures). A zoom out to level 8 builds 30 to 40 chunks. | 5.1 s of the 6.5 s spent in `render`; single tasks of 0.6 to 1.5 s |
+| Every frame redrew everything: ground, chunks, water, tracks, full-screen tint, window and lamp light. The walker animation asked for the next frame whenever it moved, so a walking hero meant 30 to 60 full redraws per second. | night walk 25 to 30 fps, day walk 10 to 49 fps; a frame of the scene costs 15 to 40 ms |
+| Backing store at the device ratio (3): 1170 × 2532 px, six full-screen passes in the night frame. | 2.25 times the pixels of a ratio-2 canvas |
+| `drawRails` recomputed the stamps of every track every frame. | 0.9 s in the zoom phase (the demo area has 62 track lines) |
+| The prefetch ring built a chunk inside the frame that drew the scene. | one more chunk build in each idle frame |
+| `WalkerMotion` tweened over the gap since the last fix, capped at 900 ms. At ×1 a fix comes every 2 s: the hero moved for 0.9 s and stood for 1.1 s. The camera was put on the raw fix once per fix. | the "jerks at ×1" |
+| Voice callouts render on the main thread, one phrase per timer slot (already sliced). | single tasks of 60 to 90 ms; not changed |
+| Planner hidden on a tab change: the map grew by CSS and its canvas was resized and rebuilt while the Bag slid in. | about 1 s of stretched bitmap |
+
+### Changes
+
+- `chunkLayer.ts`, `atlas.ts`: an atlas tile is read back once (`getImageData`, kept in shared blocks of 256 tiles); a chunk is assembled with `Uint32Array.set` in a reused 512 × 512 buffer and written with one `putImageData`. Tiles whose pixels cannot be read (stub canvases) fall back to `drawImage`. `prefetchStep()` paints one ring chunk per idle frame.
+- `MapRenderer.ts`: the scene cache. `render()` samples the clock once, moves the camera (follow or demo shot) from the walker's shown position, calls `updateScene` (redraw only when dirty, see requirement 24.3), blits the window of the scene that is on screen, then draws the overlay with the same clock value. `sceneDirty` is set by the layers' ticks (source change, water step, flicker step, sky timer, pixel-ratio change) and by clock changes; a camera move compares the origin with the scene's origin. `renderNow()` is used by the resize observer. `stats` counts frames and scene draws.
+- `lightingLayer.ts`: far-zoom lamp dots keep a budget for the screen and a separate one for the margin, so the dots on screen do not depend on the margin (golden unchanged). `View.inset` carries the margin.
+- `viewport.ts`: `MAX_DPR = 2`, `backingRatio`.
+- `walkerMotion.ts`: dead reckoning with an exponential lag, evaluated in closed form at the frame time (speed from the last two fixes, extrapolated for at most 1.25 fix intervals, lag 220 ms, walking flag held for 1.5 intervals). Continuous at a fix, independent of the frame rate, no per-frame state. `OverlayLayer.walkerTile(now)` gives the camera the same position the sprite uses; `MapRenderer.follow`/`stopFollow`/`clearShot` replace "centre on each fix".
+- `Sheet.tsx`, `index.css`: the planner sheet keeps its room on phones while hidden (`keep-space`, `visibility: hidden`), so the map never changes size on a tab change.
+- `QuestScreen.tsx`: the simulation badge is not drawn in the demo (demo-mode D7).
+
+### Results
+
+Harness, this machine, 4× throttle. Heap is after a forced collection.
+
+| Phase | Before | After |
+| --- | --- | --- |
+| Night ×20, walk | 30 fps, p95 50 ms | 54 fps, p95 33 ms |
+| Night ×20, pan | 24 fps, 35 long tasks = 2.3 s | 60 fps, no long task |
+| Night ×20, zoom out and in | 12 fps, 40 long tasks = 8.0 s, max 853 ms | 50 fps, 8 long tasks = 0.54 s, max 105 ms |
+| Night ×20, far pan | 24 fps | 51 fps |
+| Day ×20, walk | 49 fps (p95 33 ms, max task 183 ms) | 55 fps |
+| Day ×20, zoom out and in | 17 fps, 5.9 s, max 929 ms | 51 fps, 0.24 s, max 125 ms |
+| Night ×1, walk / pan | 47 / 37 fps (pan: 3.1 s of long tasks, max 893 ms) | 57 / 59 fps (max task 79 ms) |
+| Night ×1, zoom out and in | 24 fps, 4.4 s, max 1476 ms | 52 fps, 0.29 s, max 100 ms |
+| Heap after collection, night ×20 | 40.3 MB | 40.1 to 42.6 MB (run to run) |
+
+Inclusive time of `render` in the zoom phase: 6.5 s to 1.65 s; `paintChunk` 5.1 s to 0.43 s (the rest is the prefetch ring, now outside the scene redraw). Remaining cost: `drawRails` 0.37 s (stamps are recomputed per scene redraw; caching them per zoom is the next step), `lampsInChunk` 0.17 s, voice phrases 60 to 90 ms per task. On the far-pan phase one task is 204 ms (the town overview of a new cell); the requirement covers zoom.
+
+### Behaviour changes (deliberate)
+
+- All golden frames are unchanged (the 1× and 2× frames are below the ratio cap; the tile pixels read back and copied equal the `drawImage` result, checked by the goldens on `SoftCanvas`, which gained `getImageData`).
+- `camera.test.ts` (backing store): a ratio above 2 now gives 2 (the old expectations of 3 became 2; a property test and a ratio test were added). `rendererBugs.test.ts` B6 reads the scene canvas. `layers.test.ts` (walker): the position no longer reaches the fix after 900 ms; it keeps gliding and settles.
+- On a phone the walker lags the newest fix by up to about 0.2 s plus the extrapolation; it never stands between fixes.
+- The simulation badge is gone from the demo only.
+
+### Testing
+
+`sceneCache.test.ts` (no scene draw for 60 frames of a walking hero, pan inside and beyond the margin, zoom and clock redraw, route/walker/bubble/pickup do not, ratio cap on a 3× phone, camera glide), `walkerMotion.test.ts` (fast-check: per-frame step 0.55 to 1.6 times speed × dt for fix gaps of 0.2 to 2.5 s, latency up to 40 ms and three frame rates; frame-rate independence; no standing at ×1; settle; jump; turn), `camera.test.ts` (ratio cap), `AppShell.test.tsx` (tab switch keeps the canvas element and size; the stylesheet rule), `AppDemo.test.tsx` (no badge), `atlas`/chunk goldens (pixel copy equals draw).

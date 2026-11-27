@@ -36,7 +36,7 @@ export type ChunkFrame = {
   plan: ChunkPlan
   /** Keys (`chunkKey`) of the visible chunks drawn as real tiles this frame. */
   painted: ReadonlySet<number>
-  /** True while stand-ins or prefetching remain: another frame is needed. */
+  /** True while stand-ins remain: the scene must be drawn again once more chunks are painted. */
   pending: boolean
 }
 
@@ -54,6 +54,7 @@ export class ChunkLayer {
     releaseCanvas(canvas)
     this.water.delete(key)
   })
+  private scratch: { image: ImageData; words: Uint32Array } | undefined
   private onScreen = new Set<number>()
   private painted = new Set<number>()
   private readonly overview: OverviewCanvas
@@ -130,6 +131,18 @@ export class ChunkLayer {
     const canvas = makeCanvas(CHUNK * TILE_PX, CHUNK * TILE_PX)
     const ctx = canvas.getContext('2d')!
     const water: ChunkWater = { tiles: [], slots: [] }
+    // Tiles are copied as 32-bit words into one buffer that goes to the canvas in a single call: 1024
+    // drawImage calls per chunk cost about 5 s of a 6.5 s zoom on the phone-sized benchmark (design.md, "Profiling").
+    const side = CHUNK * TILE_PX
+    // One buffer for every chunk this layer builds (putImageData copies it), cleared for tiles without data.
+    const scratch = (this.scratch ??= (() => {
+      const image = ctx.createImageData(side, side)
+      return { image, words: new Uint32Array(image.data.buffer, image.data.byteOffset, side * side) }
+    })())
+    const { image, words } = scratch
+    words.fill(0)
+    // Tiles whose pixels cannot be read back (tests with a stub canvas) are drawn one by one afterwards.
+    const unread: { tx: number; ty: number; slot: AtlasSlot }[] = []
     for (let ty = 0; ty < CHUNK; ty++) {
       for (let tx = 0; tx < CHUNK; tx++) {
         const gx = cx * CHUNK + tx
@@ -139,9 +152,19 @@ export class ChunkLayer {
         const spec = tileSpecAt(this.grid, gx, gy)
         if (spec.terrain === Terrain.water) water.tiles.push({ tx, ty, spec })
         const slot = this.atlas.slot(tileKey(spec), (actx, x, y) => paintTile(actx, x, y, spec))
-        ctx.drawImage(slot.page, slot.sx, slot.sy, TILE_PX, TILE_PX, tx * TILE_PX, ty * TILE_PX, TILE_PX, TILE_PX)
+        const px = slot.px
+        if (!px) {
+          unread.push({ tx, ty, slot })
+          continue
+        }
+        for (let r = 0; r < TILE_PX; r++) {
+          const from = r * TILE_PX
+          words.set(px.subarray(from, from + TILE_PX), (ty * TILE_PX + r) * side + tx * TILE_PX)
+        }
       }
     }
+    ctx.putImageData(image, 0, 0)
+    for (const { tx, ty, slot } of unread) ctx.drawImage(slot.page, slot.sx, slot.sy, TILE_PX, TILE_PX, tx * TILE_PX, ty * TILE_PX, TILE_PX, TILE_PX)
     this.paintStructures(ctx, cx, cy)
     this.chunks.set(key, canvas, this.onScreen)
     if (water.tiles.length) this.water.set(key, water)
@@ -241,15 +264,20 @@ export class ChunkLayer {
         }
       }
     }
-    // Idle: paint the ring around the screen, one chunk per frame, so the next pan finds it ready.
-    if (!pending && plan.visible.length + plan.ring.length <= limit) {
-      const next = plan.ring.find((c: ChunkRef) => !this.chunks.has(chunkKey(c.cx, c.cy)))
-      if (next) {
-        this.paintChunk(next.cx, next.cy)
-        pending = true
-      }
-    }
     return { plan, painted: this.painted, pending }
+  }
+
+  /**
+   * Idle: paint one chunk of the ring around the screen, so the next pan finds it ready. Returns true while
+   * more remain. Called between scene redraws, not inside them: a ring chunk is never drawn by itself.
+   */
+  prefetchStep(): boolean {
+    const plan = this.lastPlan?.plan
+    if (!plan || plan.visible.length + plan.ring.length > chunkLimit(MAX_CHUNKS, plan)) return false
+    const next = plan.ring.find((c: ChunkRef) => !this.chunks.has(chunkKey(c.cx, c.cy)))
+    if (!next) return false
+    this.paintChunk(next.cx, next.cy)
+    return true
   }
 
   /**
@@ -298,6 +326,7 @@ export class ChunkLayer {
     if (this.waterTimer !== undefined) clearTimeout(this.waterTimer)
     this.waterTimer = undefined
     this.chunks.clear()
+    this.scratch = undefined
     this.water.clear()
     this.atlas.release()
     this.overview.release()

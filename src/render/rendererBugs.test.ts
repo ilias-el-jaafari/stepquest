@@ -3,7 +3,7 @@ import { loadDemoOsm } from '../osm/demo.ts'
 import { Layer, TileGrid } from '../tiles/grid.ts'
 import { buildTileGrid } from '../tiles/rasterize.ts'
 import { lampsInChunk } from './lamps.ts'
-import { MapRenderer } from './MapRenderer.ts'
+import { MapRenderer, sceneMargin } from './MapRenderer.ts'
 import { planChunks } from './chunkPlan.ts'
 
 /** Regression tests for the bugs found in the Nov 2026 review (design.md, B3 to B15). Each failed on the old renderer. */
@@ -33,8 +33,9 @@ function logging(main: HTMLCanvasElement) {
     })
   const mainCtx = make(true)
   const scratch = make(false)
+  // The map is drawn into the cached scene canvas (the screen plus a margin), then blitted to `main`.
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
-    return (this === main ? mainCtx : scratch) as never
+    return (this === main || this.width > main.width ? mainCtx : scratch) as never
   })
   return calls
 }
@@ -141,8 +142,9 @@ describe('B6 light over stand-ins', () => {
     expect(plan.visible.length).toBeGreaterThan(1)
     expect(r.chunkCount).toBe(1)
     const first = plan.visible[0]!
-    const ox = Math.round(250 - r.camX * 16)
-    const oy = Math.round(200 - r.camY * 16)
+    const m = sceneMargin(500, 400)
+    const ox = Math.round(250 - r.camX * 16) + m
+    const oy = Math.round(200 - r.camY * 16) + m
     const inside = (x: number, y: number) => x >= ox + first.cx * 512 && x < ox + (first.cx + 1) * 512 && y >= oy + first.cy * 512 && y < oy + (first.cy + 1) * 512
     const windows = calls.filter((c) => c.name === 'fillRect' && c.fillStyle === '#ffd36b')
     expect(windows.length).toBeGreaterThan(0)

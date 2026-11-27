@@ -171,8 +171,11 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
   // iOS suspends audio after calls, Siri or a locked screen; a tap brings it back.
   const soundPaused = quest.finishedAt === undefined && !sound.muted && engine.supported && status !== 'running' && status !== 'closed'
 
+  // The demo run (?demo=1) is a recording: it shows no "Simulation ×N" badge. A real quest on the simulator keeps it.
   const gps = quest.simulated
-    ? t('quest.simBadge', { x: quest.sim?.timeScale ?? 1 })
+    ? demo
+      ? ''
+      : t('quest.simBadge', { x: quest.sim?.timeScale ?? 1 })
     : quest.lastFixAt === undefined
       ? t('quest.waiting')
       : t('quest.gps', { m: Math.round(quest.accuracy ?? 0) })
@@ -270,10 +273,17 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
                   {stats.collected}/{stats.total}
                 </div>
               </div>
-              <div className={`hud-gps ${quest.simulated ? 'sim' : ''}`}>
-                {gps}
-                {wakeActive && <span className="wake"> · {t('quest.wakeLock')}</span>}
-              </div>
+              {(gps || wakeActive) && (
+                <div className={`hud-gps ${quest.simulated ? 'sim' : ''}`} data-testid="hud-gps">
+                  {gps}
+                  {wakeActive && (
+                    <span className="wake">
+                      {gps ? ' · ' : ''}
+                      {t('quest.wakeLock')}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {message && (

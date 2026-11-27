@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.tsx'
+import css from './index.css?raw'
 import { AudioEngine, setAudioEngineForTests } from './audio/engine.ts'
 import { loadAudioSettings } from './audio/settings.ts'
 import { I18nProvider } from './i18n/index.ts'
@@ -128,6 +129,30 @@ describe('planning', () => {
     expect(host.querySelector('[data-testid="steps"]')).toBeNull()
     expect(button('Plan quest')).toBeDefined()
     expect(button('Planning')).toBeUndefined()
+  })
+})
+
+describe('tab switch', () => {
+  it('keeps the map canvas (element and backing size) and the planner room when the Bag opens', async () => {
+    await ready()
+    const canvas = host.querySelector('[data-testid="map-canvas"]') as HTMLCanvasElement
+    const { width, height } = canvas
+    const planner = host.querySelector('.sheet.planner') as HTMLElement
+    expect(planner.classList.contains('keep-space')).toBe(true)
+    await act(async () => (host.querySelector('[data-testid="tab-bag"]') as HTMLButtonElement).click())
+    // The planner is hidden from the user and from assistive tech, but the map above it keeps its size.
+    expect(planner.hidden).toBe(true)
+    expect(host.querySelector('[data-testid="map-canvas"]')).toBe(canvas)
+    expect(canvas.width).toBe(width)
+    expect(canvas.height).toBe(height)
+    await act(async () => (host.querySelector('[data-testid="tab-map"]') as HTMLButtonElement).click())
+    expect(host.querySelector('[data-testid="map-canvas"]')).toBe(canvas)
+    expect(planner.hidden).toBe(false)
+  })
+
+  it('the stylesheet keeps a hidden planner in the phone layout and hides the others', () => {
+    expect(css).toMatch(/@media \(max-width: 899\.98px\)\s*\{\s*\.sheet\.keep-space\[hidden\]\s*\{[^}]*visibility: hidden/)
+    expect(css).toMatch(/\.sheet\[hidden\]\s*\{\s*display: none/)
   })
 })
 

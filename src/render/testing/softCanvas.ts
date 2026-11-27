@@ -148,6 +148,18 @@ export class SoftContext {
     return { data: new Uint8ClampedArray(w * h * 4), width: w, height: h }
   }
 
+  getImageData(x: number, y: number, w: number, h: number): { data: Uint8ClampedArray; width: number; height: number } {
+    const out = this.createImageData(w, h)
+    for (let yy = 0; yy < h; yy++)
+      for (let xx = 0; xx < w; xx++) {
+        const cx = x + xx
+        const cy = y + yy
+        if (cx < 0 || cy < 0 || cx >= this.canvas.width || cy >= this.canvas.height) continue
+        for (let k = 0; k < 4; k++) out.data[(yy * w + xx) * 4 + k] = this.canvas.data[(cy * this.canvas.width + cx) * 4 + k] ?? 0
+      }
+    return out
+  }
+
   putImageData(image: { data: Uint8ClampedArray; width: number; height: number }, x: number, y: number): void {
     for (let yy = 0; yy < image.height; yy++)
       for (let xx = 0; xx < image.width; xx++) {

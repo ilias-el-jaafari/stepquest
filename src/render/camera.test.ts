@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { Camera, nearestZoom, nextZoom, ZOOM_LEVELS } from './camera.ts'
-import { backingSize, MAX_PIXELS, MAX_SIDE } from './viewport.ts'
+import { backingRatio, backingSize, MAX_DPR, MAX_PIXELS, MAX_SIDE } from './viewport.ts'
 
 const seed = 20261204
 const zoom = fc.constantFrom(...ZOOM_LEVELS)
@@ -111,8 +111,18 @@ describe('zoom ladder', () => {
 })
 
 describe('backing store (B5)', () => {
-  it('leaves normal phones alone', () => {
-    expect(backingSize(390, 844, 3)).toEqual({ w: 1170, h: 2532, dpr: 3 })
+  it('leaves normal phones alone up to the ratio cap', () => {
+    expect(backingSize(390, 844, 2)).toEqual({ w: 780, h: 1688, dpr: 2 })
+    expect(backingSize(390, 844, 1)).toEqual({ w: 390, h: 844, dpr: 1 })
+  })
+  it('caps the backing ratio at MAX_DPR: a 3x iPhone gets 2.25 times fewer pixels', () => {
+    expect(MAX_DPR).toBe(2)
+    const b = backingSize(390, 844, 3)
+    expect(b).toEqual({ w: 780, h: 1688, dpr: 2 })
+    expect((1170 * 2532) / (b.w * b.h)).toBeCloseTo(2.25, 1)
+    expect(backingRatio(3)).toBe(2)
+    expect(backingRatio(1.5)).toBe(1.5)
+    expect(backingRatio(Number.NaN)).toBe(1)
   })
   it('property: always within 8192 px per side and 16.7 Mpx, and never above the wanted ratio', () => {
     fc.assert(
@@ -121,15 +131,16 @@ describe('backing store (B5)', () => {
         expect(b.w).toBeLessThanOrEqual(MAX_SIDE)
         expect(b.h).toBeLessThanOrEqual(MAX_SIDE)
         expect(b.w * b.h).toBeLessThanOrEqual(MAX_PIXELS)
-        expect(b.dpr).toBeLessThanOrEqual(dpr + 1e-12)
-        if (Math.round(cw * dpr) <= MAX_SIDE && Math.round(ch * dpr) <= MAX_SIDE && Math.round(cw * dpr) * Math.round(ch * dpr) <= MAX_PIXELS) expect(b.dpr).toBe(dpr)
+        const wanted = backingRatio(dpr)
+        expect(b.dpr).toBeLessThanOrEqual(wanted + 1e-12)
+        if (Math.round(cw * wanted) <= MAX_SIDE && Math.round(ch * wanted) <= MAX_SIDE && Math.round(cw * wanted) * Math.round(ch * wanted) <= MAX_PIXELS) expect(b.dpr).toBe(wanted)
         else expect(Math.abs(b.w / cw - b.dpr)).toBeLessThan(1 / cw + 1e-9)
       }),
       { seed },
     )
   })
   it('a hidden canvas has no backing store to size', () => {
-    expect(backingSize(0, 0, 3)).toEqual({ w: 0, h: 0, dpr: 3 })
+    expect(backingSize(0, 0, 3)).toEqual({ w: 0, h: 0, dpr: 2 })
   })
 })
 

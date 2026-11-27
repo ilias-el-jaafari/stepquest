@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chunkKey, LruCache } from './chunkPlan.ts'
 import { FrameScheduler } from './frameScheduler.ts'
 import { FootprintLayer } from './footprintLayer.ts'
-import { TWEEN_MAX_MS, WalkerMotion } from './walkerMotion.ts'
+import { WalkerMotion } from './walkerMotion.ts'
 import { installSoftCanvas } from './testing/softCanvas.ts'
 import type { View } from './view.ts'
 
@@ -71,9 +71,10 @@ describe('WalkerMotion', () => {
     m.moveTo({ x: 14, y: 10 }, { x: 10, y: 10 }, 1000, false)
     expect(m.facing).toBe('right')
     expect(m.isTweening(1100)).toBe(true)
-    expect(m.position(1000 + TWEEN_MAX_MS + 1)).toEqual({ x: 14, y: 10 })
     expect(m.isWalking(1500, false)).toBe(true)
-    expect(m.isWalking(1000 + 1300, false)).toBe(false)
+    // With no more fixes the walker settles (it does not stop dead mid-way) and the walk cycle ends.
+    expect(m.isTweening(1000 + 5000)).toBe(false)
+    expect(m.isWalking(1000 + 5000, false)).toBe(false)
     expect(m.isWalking(1500, true)).toBe(false)
   })
   it('jumps without a tween when the user prefers reduced motion', () => {

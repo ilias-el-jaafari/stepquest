@@ -14,12 +14,42 @@ import { FrameScheduler } from './frameScheduler.ts'
 import { P } from './palette.ts'
 import type { Facing, Sprite } from './sprites.ts'
 import { drawRails } from './streetMarks.ts'
-import { backingSize, watchPixelRatio } from './viewport.ts'
+import { makeCanvas, nowMs, releaseCanvas } from './env.ts'
+import { backingRatio, backingSize, MAX_PIXELS, watchPixelRatio } from './viewport.ts'
 import type { View } from './view.ts'
 
 export { DETAIL_ZOOM, FAR_ZOOM, ZOOM_LEVELS }
 export { CHUNK_BUDGET_MS, PREFETCH_MARGIN, WATER_FRAME_MS, WATER_FRAMES, waterFrame } from './chunkLayer.ts'
 export type { Markers, QuestOverlay, RouteShape }
+
+/** Device px kept around the screen in the cached scene, a multiple of 32 so patterns keep their phase. */
+const SCENE_STEP = 32
+/** The scene (map, water, tracks, tint, night light) is redrawn when the camera has moved more than this many px of margin. */
+export function sceneMargin(w: number, h: number): number {
+  let m = Math.round((Math.min(w, h) * 0.25) / SCENE_STEP) * SCENE_STEP
+  while (m > 0 && (w + 2 * m) * (h + 2 * m) > MAX_PIXELS / 2) m -= SCENE_STEP
+  return Math.max(0, m)
+}
+
+/** The map as drawn without the overlay, kept between frames: a frame that only moves the walker blits it. */
+type Scene = {
+  canvas: HTMLCanvasElement
+  ctx: CanvasRenderingContext2D
+  /** Size and margin in device px; the screen is the window `margin` px inside. */
+  w: number
+  h: number
+  margin: number
+  /** The view this scene was drawn for. */
+  scale: number
+  dpr: number
+  zoom: number
+  originX: number
+  originY: number
+  light: Lighting
+}
+
+/** What the demo camera is asked for (see `autoShot`). */
+type Shot = { bounds: BBox; blend: number; closeZoom: number }
 
 /**
  * The map renderer: a thin facade that owns the canvas and wires the layers of one frame, in order:
@@ -44,6 +74,14 @@ export class MapRenderer {
   private lastViewKey = ''
   /** Last CSS size of the canvas that had a layout (kept while the canvas is hidden). */
   private lastCss: { w: number; h: number } | undefined
+  private scene: Scene | undefined
+  /** Something the scene shows changed (data, light, water frame): draw it again. A camera move alone does not set this. */
+  private sceneDirty = true
+  /** Camera follows the displayed walker every frame (set by `follow`, cleared by `stopFollow` and by a pan). */
+  private following = false
+  private shot: Shot | undefined
+  /** Frames drawn and scene redraws, for tests and diagnostics. */
+  readonly stats = { frames: 0, sceneDraws: 0 }
   private readonly view: View = { w: 0, h: 0, dpr: 1, zoom: 16, cssW: 0, cssH: 0, scale: 16, originX: 0, originY: 0, camX: 0, camY: 0, detail: true }
 
   constructor(canvas: HTMLCanvasElement, map: TileGrid | MapSource) {
@@ -53,7 +91,11 @@ export class MapRenderer {
     this.source = source
     this.grid = grid
     this.camera = new Camera(grid.cols, grid.rows)
-    const tick = () => this.requestRender()
+    // These come from the layers (data arrived, a water or flicker step, the sky): the scene shows them.
+    const tick = () => {
+      this.sceneDirty = true
+      this.requestRender()
+    }
     this.chunks = new ChunkLayer(source, tick)
     this.stopSource = source.subscribe(tick)
     this.lightingLayer = new LightingLayer(grid, this.chunks, tick)
@@ -87,7 +129,7 @@ export class MapRenderer {
     const ch = this.canvas.clientHeight
     if (cw > 0 && ch > 0) return (this.lastCss = { w: cw, h: ch })
     if (!this.lastCss) {
-      const r = typeof devicePixelRatio === 'number' && devicePixelRatio > 0 ? devicePixelRatio : 1
+      const r = backingRatio(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1)
       this.lastCss = { w: cw > 0 ? cw : this.canvas.width / r, h: ch > 0 ? ch : this.canvas.height / r }
     }
     return this.lastCss
@@ -169,11 +211,32 @@ export class MapRenderer {
     this.requestRender()
   }
 
-  /** Move the camera to a point without changing zoom (follow mode). */
+  /**
+   * Follow mode: from now on the camera sits on the walker as it is drawn every frame (so it glides with it),
+   * not on the last fix. The first call also centres on `p`.
+   */
   follow(p: LatLon): void {
-    const t = this.grid.toTileXY(p)
-    this.camera.centerOn(t.x, t.y)
+    if (!this.following || !this.overlay.walkerTile(nowMs())) {
+      const t = this.grid.toTileXY(p)
+      this.camera.centerOn(t.x, t.y)
+    }
+    this.following = true
     this.requestRender()
+  }
+
+  /** Leave follow mode: the camera stays where it is. */
+  stopFollow(): void {
+    this.following = false
+  }
+
+  /** Hand the camera back from the demo run. */
+  clearShot(): void {
+    this.shot = undefined
+  }
+
+  /** True while the camera follows the walker or the demo camera runs. */
+  get cameraLocked(): boolean {
+    return this.following || this.shot !== undefined
   }
 
   centerOn(p: LatLon, zoom?: number): void {
@@ -184,20 +247,28 @@ export class MapRenderer {
 
   /** The demo camera: `blend` 0 is close on the player, 1 shows the whole `bounds` (never below the quest floor). */
   autoShot(player: LatLon, bounds: BBox, blend: number, closeZoom: number): void {
+    this.shot = { bounds, blend, closeZoom }
+    this.applyShot(this.grid.toTileXY(player))
+    this.requestRender()
+  }
+
+  private applyShot(player: Pt): void {
+    const s = this.shot
+    if (!s) return
+    const { bounds, blend, closeZoom } = s
     this.syncSize()
     this.applyFloor()
     const a = this.grid.toTileXY({ lat: bounds.south, lon: bounds.west })
     const b = this.grid.toTileXY({ lat: bounds.north, lon: bounds.east })
     const shot = shotAt({
       blend,
-      player: this.grid.toTileXY(player),
+      player,
       bounds: { minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minY: Math.min(a.y, b.y), maxY: Math.max(a.y, b.y) },
       viewport: { w: this.cssWidth, h: this.cssHeight },
       closeZoom,
       minZoom: this.camera.minZoom,
     })
     this.camera.centerOn(shot.x, shot.y, Math.max(shot.zoom, this.camera.minZoom))
-    this.requestRender()
   }
 
   /** Fit a set of points on screen, choosing the largest zoom level that fits. */
@@ -223,6 +294,9 @@ export class MapRenderer {
   }
 
   panBy(dxCss: number, dyCss: number): void {
+    // A drag takes the camera back from the walker (the screen above also turns follow off).
+    this.following = false
+    this.shot = undefined
     this.syncSize()
     this.camera.panBy(dxCss, dyCss)
     this.requestRender()
@@ -255,12 +329,14 @@ export class MapRenderer {
   /** Preview a time of day for the lighting only (minutes after local midnight), or undefined for real time. */
   setClockOverride(minutes: number | undefined): void {
     this.lightingLayer.setClockOverride(minutes)
+    this.sceneDirty = true
     this.requestRender()
   }
 
   /** Light the map as at this moment (epoch ms; the demo run's dusk), or undefined for the usual clock. */
   setClockAt(ms: number | undefined): void {
     this.lightingLayer.setClockAt(ms)
+    this.sceneDirty = true
     this.requestRender()
   }
 
@@ -284,6 +360,12 @@ export class MapRenderer {
     this.scheduler.request()
   }
 
+  /** Draw now instead of at the next animation frame (a resize callback runs before paint, so no stretched frame is ever shown). */
+  renderNow(): void {
+    this.scheduler.cancel()
+    this.render()
+  }
+
   dispose(): void {
     this.scheduler.cancel()
     this.stopPixelRatio()
@@ -292,6 +374,8 @@ export class MapRenderer {
     this.lightingLayer.dispose()
     this.chunks.dispose()
     this.overlay.dispose()
+    if (this.scene) releaseCanvas(this.scene.canvas)
+    this.scene = undefined
   }
 
   render(): void {
@@ -308,9 +392,16 @@ export class MapRenderer {
     if (!ctx) return
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.imageSmoothingEnabled = false
+    this.stats.frames++
+
+    // One clock reading per frame: the camera, the walker sprite and the pickups all use it.
+    const now = nowMs()
+    const cam = this.camera
+    const shown = this.overlay.walkerTile(now)
+    if (shown && this.shot) this.applyShot(shown)
+    else if (shown && this.following) cam.centerOn(shown.x, shown.y)
 
     const { w, h } = b
-    const cam = this.camera
     const scale = cam.zoom * b.dpr // device px per tile
     const v = this.view
     v.w = w
@@ -326,10 +417,82 @@ export class MapRenderer {
     v.camY = cam.y
     v.detail = cam.zoom >= DETAIL_ZOOM
 
+    const light = this.lightingLayer.lighting
+    const at = this.updateScene(v, light)
+    if (at) ctx.drawImage(this.scene!.canvas, at.sx, at.sy, w, h, 0, 0, w, h)
+    // The sparse part of the work, once per idle moment: one ring chunk per frame, outside any scene redraw.
+    if (!this.sceneDirty && this.chunks.prefetchStep()) this.requestRender()
+
+    if (this.overlay.draw(ctx, v, light, now)) this.requestRender()
+    this.reportView(v)
+  }
+
+  /**
+   * Make the cached scene fit this view: draw it again when something it shows changed, the zoom or size
+   * changed, or the camera left its margin; otherwise it is reused as it is. Returns where the screen
+   * window starts inside the scene canvas.
+   */
+  private updateScene(v: View, light: Lighting): { sx: number; sy: number } | undefined {
+    const margin = sceneMargin(v.w, v.h)
+    let s = this.scene
+    const fits =
+      s !== undefined &&
+      !this.sceneDirty &&
+      s.light === light &&
+      s.margin === margin &&
+      s.w === v.w + 2 * margin &&
+      s.h === v.h + 2 * margin &&
+      s.scale === v.scale &&
+      s.dpr === v.dpr &&
+      s.zoom === v.zoom &&
+      Math.abs(v.originX - s.originX) <= margin &&
+      Math.abs(v.originY - s.originY) <= margin
+    if (!fits) {
+      if (v.w <= 0 || v.h <= 0) return undefined
+      const w = v.w + 2 * margin
+      const h = v.h + 2 * margin
+      if (!s || s.w !== w || s.h !== h) {
+        if (s) releaseCanvas(s.canvas)
+        const canvas = makeCanvas(w, h)
+        const sctx = canvas.getContext('2d', { alpha: false })
+        if (!sctx) return undefined
+        s = { canvas, ctx: sctx, w, h, margin, scale: 0, dpr: 0, zoom: 0, originX: 0, originY: 0, light }
+        this.scene = s
+      }
+      s.margin = margin
+      s.scale = v.scale
+      s.dpr = v.dpr
+      s.zoom = v.zoom
+      s.originX = v.originX
+      s.originY = v.originY
+      s.light = light
+      this.sceneDirty = false
+      this.stats.sceneDraws++
+      const stand = this.paintScene(s, v, light)
+      // Chunks that did not fit in the frame budget are stand-ins for now: draw the scene again next frame.
+      if (stand) {
+        this.sceneDirty = true
+        this.requestRender()
+      }
+    }
+    const s2 = this.scene!
+    return { sx: s2.margin - (v.originX - s2.originX), sy: s2.margin - (v.originY - s2.originY) }
+  }
+
+  /** Everything under the overlay, drawn into the scene canvas (which is `margin` px larger than the screen on every side). Returns true while stand-ins remain. */
+  private paintScene(s: Scene, screen: View, light: Lighting): boolean {
+    const ctx = s.ctx
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.imageSmoothingEnabled = false
+    const m = s.margin
+    // The view of the scene canvas: the same map position, the screen window shifted by the margin.
+    const v: View = { ...screen, w: s.w, h: s.h, cssW: s.w / screen.dpr, cssH: s.h / screen.dpr, originX: screen.originX + m, originY: screen.originY + m, inset: m }
+    const scale = v.scale
+
     // Ground colour (never black) where nothing is loaded; the loaded area is a shade lighter. In a
     // streamed world the tiles without data are left clear by the layers, so this shows through there.
     ctx.fillStyle = P.groundB
-    ctx.fillRect(0, 0, w, h)
+    ctx.fillRect(0, 0, v.w, v.h)
     if (!this.grid.covered) {
       ctx.fillStyle = P.groundA
       ctx.fillRect(v.originX, v.originY, Math.round(this.grid.cols * scale), Math.round(this.grid.rows * scale))
@@ -338,11 +501,10 @@ export class MapRenderer {
     let frame: ReturnType<ChunkLayer['draw']> | undefined
     if (v.detail) {
       frame = this.chunks.draw(ctx, v)
-      if (frame.pending) this.requestRender()
       this.chunks.drawWater(ctx, v, frame.plan)
     } else {
       // Far out: the simplified map (streets, water, parks; no houses), quick for a whole world on screen.
-      this.chunks.drawOverview(ctx, v, cam.zoom <= FAR_ZOOM)
+      this.chunks.drawOverview(ctx, v, v.zoom <= FAR_ZOOM)
     }
     // A source whose frame moved describes another grid until the map view rebuilds this renderer.
     const current = this.source.grid === this.grid
@@ -356,15 +518,12 @@ export class MapRenderer {
 
     // Day cycle: multiply the map by the sky tint, then add window and lamp light. The route,
     // gems and walker are drawn afterwards, so they keep their full colours.
-    const light = this.lightingLayer.lighting
     if (light.darkness > 0.005) {
       this.lightingLayer.drawTint(ctx, v, light)
       if (frame) this.lightingLayer.drawNightLights(ctx, v, frame.plan, frame.painted, light)
       else this.lightingLayer.drawNightDots(ctx, v, light)
     } else this.lightingLayer.idle()
-
-    if (this.overlay.draw(ctx, v, light)) this.requestRender()
-    this.reportView(v)
+    return frame?.pending ?? false
   }
 
   private reportView(v: View): void {

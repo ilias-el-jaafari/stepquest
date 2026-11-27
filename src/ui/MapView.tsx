@@ -99,7 +99,7 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
     // `?time=19:45` previews the lighting at that local time (screenshots, demo video).
     if (typeof location !== 'undefined') renderer.setClockOverride(parseTimeParam(location.search))
     renderer.requestRender()
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => renderer.requestRender())
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => renderer.renderNow())
     observer?.observe(canvas)
 
     const detach = attachMapInput(canvas, renderer, () => ({
@@ -138,6 +138,7 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
     if (!r) return
     r.setQuest(quest)
     if (follow && quest?.player) r.follow(quest.player)
+    else r.stopFollow()
   }, [quest, follow, map, frame])
 
   useEffect(() => {
@@ -151,6 +152,7 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
   // After the follow effect above, so the demo camera has the last word on the zoom and the centre.
   useEffect(() => {
     if (shot && quest?.player) rendererRef.current?.autoShot(quest.player, shot.bounds, shot.blend, DEMO_CLOSE_ZOOM)
+    else rendererRef.current?.clearShot()
   }, [shot, quest, map, frame])
 
   const pickupN = pickup?.n ?? 0

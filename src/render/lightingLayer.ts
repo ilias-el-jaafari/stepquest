@@ -222,21 +222,33 @@ export class LightingLayer {
     this.scheduleFlicker(false, false)
     if (light.lamps <= 0.02) return
     const { originX, originY, scale, w, h } = view
+    const inset = view.inset ?? 0
     const cols = Math.ceil(this.grid.cols / CHUNK)
     const rows = Math.ceil(this.grid.rows / CHUNK)
-    const c0 = Math.max(0, Math.floor(-originX / scale / CHUNK))
-    const c1 = Math.min(cols - 1, Math.floor((w - originX) / scale / CHUNK))
-    const r0 = Math.max(0, Math.floor(-originY / scale / CHUNK))
-    const r1 = Math.min(rows - 1, Math.floor((h - originY) / scale / CHUNK))
+    // Chunk ranges for the screen (the canvas minus its margin) and for the whole canvas.
+    const range = (x0: number, y0: number, x1: number, y1: number) => ({
+      c0: Math.max(0, Math.floor((x0 - originX) / scale / CHUNK)),
+      c1: Math.min(cols - 1, Math.floor((x1 - originX) / scale / CHUNK)),
+      r0: Math.max(0, Math.floor((y0 - originY) / scale / CHUNK)),
+      r1: Math.min(rows - 1, Math.floor((y1 - originY) / scale / CHUNK)),
+    })
+    const screen = range(inset, inset, w - inset, h - inset)
+    const all = range(0, 0, w, h)
     const dot = Math.max(1, Math.min(3, Math.round(scale * 2)))
-    const budget = { left: MAX_LAMPS_PER_FRAME }
     ctx.globalCompositeOperation = 'lighter'
     ctx.fillStyle = DOT_COLOR
     ctx.globalAlpha = light.lamps * 0.8
-    for (let cy = r0; cy <= r1 && budget.left > 0; cy++) {
-      for (let cx = c0; cx <= c1 && budget.left > 0; cx++) {
-        for (const lamp of this.chunkLamps(cx, cy, budget)) {
-          ctx.fillRect(Math.round(originX + (lamp.x + 0.5) * scale - dot / 2), Math.round(originY + (lamp.y + 0.5) * scale - dot / 2), dot, dot)
+    // The screen first, with the frame's lamp budget; the margin around it has a budget of its own, so the
+    // lamps on screen do not depend on how much margin there is.
+    for (const pass of inset > 0 ? [0, 1] : [0]) {
+      const budget = { left: MAX_LAMPS_PER_FRAME }
+      for (let cy = all.r0; cy <= all.r1 && budget.left > 0; cy++) {
+        for (let cx = all.c0; cx <= all.c1 && budget.left > 0; cx++) {
+          const onScreen = cx >= screen.c0 && cx <= screen.c1 && cy >= screen.r0 && cy <= screen.r1
+          if (onScreen !== (pass === 0)) continue
+          for (const lamp of this.chunkLamps(cx, cy, budget)) {
+            ctx.fillRect(Math.round(originX + (lamp.x + 0.5) * scale - dot / 2), Math.round(originY + (lamp.y + 0.5) * scale - dot / 2), dot, dot)
+          }
         }
       }
     }

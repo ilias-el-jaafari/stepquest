@@ -113,6 +113,11 @@ export class OverlayLayer {
     if (next) this.walker.moveTo(this.grid.toTileXY(next), prev ? this.grid.toTileXY(prev) : undefined, nowMs(), prefersReducedMotion())
   }
 
+  /** Where the walker is shown at `now` (tile units) while a quest runs; undefined outside one. */
+  walkerTile(now: number): { x: number; y: number } | undefined {
+    return this.quest?.player ? this.walker.position(now) : undefined
+  }
+
   /** Start the sparkle animation for a collected checkpoint. */
   pickup(point: LatLon): void {
     this.pickups.push({ point, t0: nowMs() })
@@ -129,7 +134,7 @@ export class OverlayLayer {
   }
 
   /** Draw avoided tape, route, gems, walker, bubble and pickups. Returns true when another frame is needed. */
-  draw(ctx: CanvasRenderingContext2D, v: View, light: Lighting): boolean {
+  draw(ctx: CanvasRenderingContext2D, v: View, light: Lighting, now: number = nowMs()): boolean {
     let animating = false
     if (this.avoided.length) drawAvoided(ctx, v, this.avoided)
 
@@ -192,7 +197,7 @@ export class OverlayLayer {
           ctx.fill()
           ctx.stroke()
         }
-        const w = this.drawWalker(ctx, v, player, spriteScale, light)
+        const w = this.drawWalker(ctx, v, player, spriteScale, light, now)
         animating ||= w.animating
         if (this.bubble) drawBubble(ctx, this.bubble, w.at, v.dpr, v.w, v.h)
       }
@@ -200,14 +205,13 @@ export class OverlayLayer {
       if (this.markers.end) drawSprite(FINISH_FLAG, this.markers.end, 0.9)
       if (this.markers.start) {
         drawSprite(START_MAT, this.markers.start, 0.75)
-        const w = this.drawWalker(ctx, v, this.markers.start, spriteScale, light)
+        const w = this.drawWalker(ctx, v, this.markers.start, spriteScale, light, now)
         animating ||= w.animating
         if (this.bubble) drawBubble(ctx, this.bubble, w.at, v.dpr, v.w, v.h)
       }
     }
 
     // Pickup animation: the gem jumps up and bursts into stepped sparkles.
-    const now = nowMs()
     if (this.pickups.some((p) => now - p.t0 >= PICKUP_MS)) this.pickups = this.pickups.filter((p) => now - p.t0 < PICKUP_MS)
     for (const p of this.pickups) {
       const k = (now - p.t0) / PICKUP_MS
@@ -233,8 +237,7 @@ export class OverlayLayer {
     return animating || this.pickups.length > 0
   }
 
-  private drawWalker(ctx: CanvasRenderingContext2D, v: View, p: LatLon, spriteScale: number, light: Lighting): { at: Anchor; animating: boolean } {
-    const now = nowMs()
+  private drawWalker(ctx: CanvasRenderingContext2D, v: View, p: LatLon, spriteScale: number, light: Lighting, now: number): { at: Anchor; animating: boolean } {
     const reduced = prefersReducedMotion()
     const m = this.walker
     const target = this.grid.toTileXY(p)

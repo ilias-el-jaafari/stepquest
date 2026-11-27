@@ -21,6 +21,8 @@ export type View = {
   /** Camera centre in tile units. */
   camX: number
   camY: number
+  /** Device px of the canvas that lie outside the screen on every side (the cached scene's margin); absent or 0 when the canvas is the screen. */
+  inset?: number
   /** True at or above `DETAIL_ZOOM`, where real tiles are drawn. */
   detail: boolean
 }

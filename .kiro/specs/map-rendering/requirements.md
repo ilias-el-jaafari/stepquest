@@ -344,3 +344,25 @@ Related: requirement 21 (drawing; 21.1, 21.7 and 21.10 are amended here), [routi
 4. WHEN the start (or finish) lies in a cell outside the frame, THE SYSTEM SHALL make a new world centred on the walk and load the walking records into it; WHEN the cells are in the frame, THE SYSTEM SHALL add them to the world on screen without clearing the plan or the start.
 5. THE SYSTEM SHALL enrich walking records from Overpass cells: a cell from the device cache at once, a cell from the network only in the background, one request at a time, each ending after 12 s, never while a plan waits. An Overpass way is matched to a tile way when most of the tile way's sample points lie within 6 m of it and run within 25° of its direction; the match gives the tile way the `safety` flags and the street name. Overpass geometry SHALL NOT enter a cell that has a walking record; its activity points and industrial rings do. Every enrichment makes a new snapshot of the world (earlier snapshots keep what they had).
 6. THE SYSTEM SHALL keep `data.source` `'tiles'` for a world whose graph comes from walking records (`'overpass'` once an Overpass record was added to a cell without a walking record), so a saved quest on such a map is restored as a live map, not as the demo.
+
+### Requirement 24 (task 79): Frame performance on a phone
+
+**User Story:** As a walker with an iPhone, I want the map to pan, zoom and follow my walker smoothly, so that the quest feels like a game and not a slideshow.
+
+Related: requirements 12, 20 and 22 (this requirement bounds their cost), [quest](../quest/requirements.md) requirement 6f (the walker's motion), [demo-mode](../demo-mode/requirements.md) requirement D7.
+
+Budgets are measured with the benchmark harness of `design.md` ("Frame performance"): Chrome headless, 390 × 844 at device ratio 3, CPU throttled 4×, a quest on the simulator, night 22:30 and day 12:00, at ×1 and ×20.
+
+#### Acceptance Criteria
+
+1. WHILE the camera pans, or the simulated walk runs with the camera following the walker, THE SYSTEM SHALL draw at least 50 frames per second on the benchmark harness, by day and by night, at ×1 and ×20.
+2. WHEN the user zooms out and in over the ladder, THE SYSTEM SHALL NOT run a task longer than 200 ms from drawing the map, and the drawing tasks of the whole sequence SHALL add up to less than 1.5 s.
+3. THE SYSTEM SHALL draw the map under the overlay (ground, terrain chunks, water, tracks, tint, window and lamp light) into a cached scene, and SHALL draw that scene again only when something it shows changed: map data, the zoom or the canvas size, the lighting (a new clock value, a flicker or ripple step, the sky timer), a chunk that was a stand-in, or a camera move beyond the scene's margin. A frame that only moves the walker, the pickups, the bubble or the camera inside the margin SHALL be one blit of the scene plus the overlay.
+4. THE SYSTEM SHALL keep a margin of a quarter of the shorter screen side (a multiple of 32 device pixels, none if the scene would pass half of `MAX_PIXELS`) around the screen in the scene, so that panning and following need a new scene about once per 20 frames at walking speed.
+5. THE SYSTEM SHALL draw nothing when nothing changed (no frame is requested at rest), and SHALL repaint flicker, firefly and ripple animations from timers of at most 4 Hz (`FLICKER_MS` 500, fireflies at 250, water at 450).
+6. THE SYSTEM SHALL back the canvas at no more than `MAX_DPR` (2) device pixels per CSS pixel; the canvas is scaled up by the browser with `image-rendering: pixelated`, and every art pixel still lands on whole backing pixels at the zoom ladder's levels.
+7. THE SYSTEM SHALL build a terrain chunk by copying tile pixels (read back once per atlas tile) into one image buffer and writing it with one `putImageData`, not with one `drawImage` per tile, and SHALL paint the ring of prefetch chunks one per idle frame outside any scene redraw.
+8. THE SYSTEM SHALL show the walker and, in follow mode and in the demo camera, the camera at the position given by `WalkerMotion` at the time of the frame: a function of the clock, continuous at every fix, moving the walker by about speed × frame time on every frame (0.55 to 1.6 times) with fixes every 0.2 to 2.5 s, at any frame rate, and settling without a fix. A jump of more than `TELEPORT_TILES` (a reroute or a resume) SHALL place the walker instead of walking it.
+9. THE SYSTEM SHALL NOT update React state per animation frame: the quest state changes once per fix and the HUD clock once per second.
+10. WHEN the user opens another tab on a phone, THE SYSTEM SHALL keep the map canvas element and its size (the planner under the map keeps its room, hidden and not focusable), so that no resize, no rebuild and no stretched bitmap is shown; a resize of the map SHALL be drawn before the next paint.
+11. THE SYSTEM SHALL keep every golden frame unchanged and the heap after a collection no higher than before this task, within 1 MB.

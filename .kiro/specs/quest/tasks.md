@@ -89,3 +89,9 @@ Findings and rationale: see "Architecture review (Nov 2026)" in [design.md](desi
 
 - [x] 78.7 "Use my location" loads the streets around the fix before it reports success, a placed start prefetches them, a failed load says so with Retry (see [routing tasks](../routing/tasks.md) 78.7 and 78.9)
   - _Requirements: 6e.1 to 6e.4_
+
+
+## The walker glides (task 79)
+
+- [x] 79.6 `WalkerMotion` glide and camera follow from the shown position (see [map-rendering tasks](../map-rendering/tasks.md) 79)
+  - _Requirements: 6f.1 to 6f.3_

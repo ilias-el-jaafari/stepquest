@@ -14,3 +14,5 @@ Part of the StepQuest specs; see [../README.md](../README.md). Requirements: [re
     - _Requirements: D3.3, D3.4, D4.3, D4.4_
   - [x] 77.6 App test with failing `fetch`: whole run to the summary, tap, reduced motion, normal visit unchanged
     - _Requirements: D2, D3, D4.3, D4.4, D5.1_
+- [x] 79.8 The HUD of the demo run has no "Simulation ×N" badge (`QuestScreen`, `AppDemo.test.tsx`)
+  - _Requirements: D7.1, D7.2_

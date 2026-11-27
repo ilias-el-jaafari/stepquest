@@ -82,3 +82,13 @@ Related: [routing](../routing/requirements.md) (rerouting, Requirement 7c), [voi
 2. WHEN the start is placed by a map tap, by typed coordinates or by a saved quest, THE SYSTEM SHALL start the same load at once, in the background, so that the plan button usually finds the streets already there; a press while it still runs joins it instead of starting another.
 3. IF that load fails, THEN the locate message SHALL say so with a "Retry" button, and the plan button SHALL still try again on its own when pressed (requirement 12.4 of [routing](../routing/requirements.md)).
 4. THE SYSTEM SHALL keep the start the fix gave: a loaded area SHALL NOT move the start to another place.
+
+### Requirement 6f (task 79): The walker glides
+
+**User Story:** As a walker watching my hero, I want it to move smoothly, so that the quest does not look like a slideshow.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL draw the walker, and in follow mode the camera, at a position that moves on every frame between fixes, at the speed measured from the last fixes, at ×1 (a fix every 2 s) as at higher speeds, as set out in [map-rendering](../map-rendering/requirements.md) requirement 24.8.
+2. THE SYSTEM SHALL decouple that motion from the location source and the simulator: a fix changes the quest state once, and the frame loop reads the shown position from the clock.
+3. THE SYSTEM SHALL keep the walk cycle on while fixes keep coming (held for 1.5 fix intervals, at least 1.2 s), and stop it when they stop.

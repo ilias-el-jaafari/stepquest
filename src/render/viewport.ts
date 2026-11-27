@@ -8,11 +8,20 @@
 export const MAX_SIDE = 8192
 export const MAX_PIXELS = 16_777_216
 
+/**
+ * The most device pixels per CSS pixel the canvas backs. A 3× phone would fill 2.25 times the pixels of a 2× backing
+ * for no visible gain on 16 × 16 pixel art (the browser scales the canvas up with nearest-neighbour, `image-rendering: pixelated`).
+ */
+export const MAX_DPR = 2
+
+/** The ratio the canvas is backed at for a screen ratio. */
+export const backingRatio = (dpr: number): number => (dpr > 0 && Number.isFinite(dpr) ? Math.min(dpr, MAX_DPR) : 1)
+
 export type Backing = { w: number; h: number; /** Effective device pixels per CSS pixel. */ dpr: number }
 
 /** Backing-store size for a CSS size and pixel ratio, lowering the ratio when the limits would be exceeded. */
 export function backingSize(cssW: number, cssH: number, dpr: number, maxSide = MAX_SIDE, maxPixels = MAX_PIXELS): Backing {
-  const ratio = dpr > 0 && Number.isFinite(dpr) ? dpr : 1
+  const ratio = backingRatio(dpr)
   let w = Math.round(cssW * ratio)
   let h = Math.round(cssH * ratio)
   let eff = ratio

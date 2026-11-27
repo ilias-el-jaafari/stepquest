@@ -56,3 +56,12 @@ Related: [quest](../quest/requirements.md) (simulation, summary, requirement 6d)
 #### Acceptance Criteria
 
 1. THE SYSTEM SHALL add no new player-facing text; any later text SHALL follow `copy-voice.md` in English and Spanish.
+
+### Requirement D7 (task 79): No simulation badge
+
+**User Story:** As someone recording the demo, I want a clean HUD, so that the video does not show a "Simulation ×N" label.
+
+#### Acceptance Criteria
+
+1. WHILE the demo run (`?demo=1`) plays, THE SYSTEM SHALL NOT show the "Simulation ×N" badge in the HUD (the GPS line is left out; the screen-awake note still shows when it is on).
+2. WHEN a normal quest runs on the simulator from the Bag, THE SYSTEM SHALL keep showing the badge.

@@ -83,6 +83,9 @@ describe('demo mode (?demo=1)', () => {
     expect(document.documentElement.lang).toBe('es')
     expect(host.querySelector('[role="dialog"][aria-modal="true"]:not([data-testid])')).toBeNull()
     expect(host.querySelector('[data-testid="collected"]')?.textContent).toMatch(/^\d+\/\d+$/)
+    // The recording shows no "Simulación ×N" badge (a real quest on the simulator keeps it).
+    expect(host.querySelector('[data-testid="hud"]')!.textContent).not.toMatch(/Simulaci/)
+    expect(host.querySelector('[data-testid="hud-gps"]')).toBeNull()
 
     // The camera drives itself until the first tap; the walk goes on after it.
     await waitFor(() => shots.mock.calls.length > 3)

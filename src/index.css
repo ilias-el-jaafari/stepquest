@@ -1164,6 +1164,15 @@ button.hud-msg.sound-resume {
   display: none;
 }
 
+/* Phones: the planner under the map keeps its room while another tab covers the map, so the map (and its canvas) never changes size on a tab change. */
+@media (max-width: 899.98px) {
+  .sheet.keep-space[hidden] {
+    display: flex;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
 .sheet:not(.planner) {
   position: absolute;
   inset: 0;

@@ -214,3 +214,25 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 
 - [x] 78. Walking graph from vector tiles, Overpass as enrichment: see [routing tasks](../routing/tasks.md) 78.1 to 78.9
   - _Requirements: 23.1 to 23.6; 21.1, 21.7, 21.10 amended_
+
+## Frame performance (task 79, requirement 24)
+
+- [x] 79. Performance regression on the phone: profile, then fix
+  - [x] 79.1 Spec: requirement 24 (budgets), design "Frame performance" (method, causes, results), quest 6f, demo-mode D7
+    - _Requirements: 24.1 to 24.11_
+  - [x] 79.2 Profile with the harness and a V8 CPU profile; record the causes and costs
+  - [x] 79.3 `ChunkLayer`, `TileAtlas`: chunks from pixel copies and one `putImageData`; `prefetchStep` outside the scene redraw
+    - _Requirements: 24.2, 24.7_
+  - [x] 79.4 `MapRenderer`: cached scene with margin, dirty flags, one clock reading per frame, `renderNow` for resizes
+    - _Requirements: 24.3, 24.4, 24.5, 24.9_
+  - [x] 79.5 `viewport.ts`: `MAX_DPR`; `lightingLayer.ts`: screen and margin lamp budgets (golden unchanged)
+    - _Requirements: 24.6, 24.11_
+  - [x] 79.6 `WalkerMotion` glide, camera follow and demo shot from the shown walker position
+    - _Requirements: 24.8; quest 6f_
+  - [x] 79.7 Planner keeps its room on a tab change (`Sheet keepSpace`, CSS)
+    - _Requirements: 24.10_
+  - [x] 79.8 No simulation badge in the demo
+    - _Requirements: demo-mode D7_
+  - [x] 79.9 Tests: scene cache, glide property, ratio cap, tab switch, demo badge; goldens unchanged; before and after numbers in the design
+    - _Requirements: 24.1 to 24.11_
+  - [ ] 79.10 Follow-ups (not needed for the budgets): cache rail stamps per zoom; render voice phrases in a worker
