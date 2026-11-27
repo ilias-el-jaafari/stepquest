@@ -42,6 +42,14 @@ A handheld-RPG overworld, in the spirit of Game Boy Color / Game Boy Advance era
 - Motion: at most 16 animated items per frame, stepping at 12 Hz (bats flap at 6 Hz and orbit in 14 to 22 s within 0.55 tile, fog drifts 0.3 tile over 30 s, skeletons wave at 3 Hz). Reduced motion stops everything (first frames, no drift, no flicker, no timer). Static items live in the cached scene, animated ones in the overlay under the route and the hero.
 - Settings: "Halloween decor" / "Decoración de Halloween", on by default; `?decor=0` turns it off for a visit.
 
+## Landmark sprites (landmarks spec)
+
+- Twelve original sprites in code (`src/sights/art.ts`), built from rectangles on a small grid and outlined in ink automatically: university (pediment, four columns, steps), school (bell tower with a flag, long low front), hospital (white block, teal plus sign on a sign, no red cross), church (bell tower with spire and cross, nave with a rose window), mosque (teal dome, minaret with a pointed cap, arched hall), synagogue (blue gable, gold six-pointed star, arched windows), temple (two plum stepped roofs, columns), town hall (clock tower, blue balcony band), tower (crenellated stone), arch (gate with an attic band), statue (gold figure with a torch on a column), fountain (tiered basin with a jet). Generic shapes only: no logos, brands, real facades or other games' art.
+- Size: about 14 to 28 art pixels wide and 18 to 30 tall (1 to 2 tiles), drawn at their own size and scaled with the tile art (nearest neighbour). Light from the top-left, ink outline, no sprite wider than 2 tiles.
+- Palette (`SIGHT`): ink `#1b1a2e`, wall `#f4ead2` / shade `#d3c3a0`, stone `#cfc8b8` / shade `#a39a86` / light `#ebe5d6`, terracotta `#c8553d` / `#8f3a2c`, blue `#4b6fb5` / `#2f4a82`, teal `#2fa59a` / `#1d6f6a`, gold `#ffd84a` / `#c99a10`, window glass `#5d93c9`, door `#8a5a3a` / `#5a381e`, plum `#8d5bb0` / `#5b3379`, white `#fbf7ec`, moss `#5d8c4a`, water `#7fc4ff` / `#bfe4ff`. Night window light `#ffe27a`.
+- Shown only along the planned route (within 50 m), from zoom 8; names (8 px Press Start 2P scale, ink on a paper outline, at most 22 characters) from zoom 20, under the sprite. Painted into the cached scene before the sky tint, so night darkens them; after the tint the glass pixels light up warm and a faint warm glow (three stepped rings, additive) surrounds the building.
+- Standing: on the nearest free ground within 6 tiles of the point, never on a street, path, crossing or water, never on the route, start, finish or a gem, never overlapping another sight.
+
 ## Tile rules (task 51)
 
 - Light comes from the top-left: highlights on top and left edges, shade on the bottom and right. Kerbs on the south and east side of a road are bright, north and west are shaded; zebra bars shade their lower or right row.

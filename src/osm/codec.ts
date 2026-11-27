@@ -1,4 +1,5 @@
 import type { BBox } from '../geo/geo.ts'
+import { MONUMENT_CLASSES, SIGHT_KINDS, type Sight } from '../sights/types.ts'
 import { FEATURE_KINDS, LANDMARK_KINDS, type OsmData, type OsmWay, type Poi } from './types.ts'
 
 /**
@@ -6,15 +7,15 @@ import { FEATURE_KINDS, LANDMARK_KINDS, type OsmData, type OsmWay, type Poi } fr
  * coordinates are delta-encoded integers (1e-6 degrees ≈ 0.1 m), and each way
  * is a flat array `[kind, highwayIndex, flags, styleIndex, ...deltaNodeIndices]`
  * (version 1 had no style index). Landmarks are `[kind, lat1e6, lon1e6]` triples.
- * Version 3 adds street names and safety flags per way (`wn`, `ws`), industrial
+ * Version 5 adds sights (`sg`, `sgn`). Version 3 adds street names and safety flags per way (`wn`, `ws`), industrial
  * land rings (`ind`, node indices) and lively places (`act`, lat/lon 1e6 pairs).
  * Version 4 adds the bridge flag and multipolygon holes (`holes`: per way index,
- * delta-encoded node rings). Decoding accepts versions 1 to 4 and rejects
+ * delta-encoded node rings). Decoding accepts versions 1 to 5 and rejects
  * anything inconsistent with a {@link CorruptDataError}; encoding always writes
  * {@link CODEC_VERSION}.
  */
 export type CompactOsm = {
-  v: 1 | 2 | 3 | 4
+  v: 1 | 2 | 3 | 4 | 5
   bbox: [number, number, number, number]
   timestamp: string
   source: OsmData['source']
@@ -30,6 +31,9 @@ export type CompactOsm = {
   wn?: number[]
   /** Per way: safety flags. */
   ws?: number[]
+  /** Version 5: sights, rows of `[kind, lat1e6, lon1e6, rank + 1 (0 = none), name index + 1 (0 = none), monument class + 1 (0 = none), flags]`; names in `sgn`. */
+  sg?: number[]
+  sgn?: string[]
   ind?: number[][]
   act?: number[]
   /** Version 4: inner rings, `w` is the index into `ways`, `r` the delta-encoded node rings. */
@@ -37,7 +41,7 @@ export type CompactOsm = {
 }
 
 /** Version written by {@link encodeOsm}. The area cache keys include it, so a change here retires old entries. */
-export const CODEC_VERSION = 4
+export const CODEC_VERSION = 5
 
 /** Thrown by {@link decodeOsm} for data that is not a map extract this code wrote (damaged cache, other version). */
 export class CorruptDataError extends Error {
@@ -154,8 +158,25 @@ export function encodeOsm(data: OsmData): CompactOsm {
   const { south, west, north, east } = data.bbox
   const pois: number[] = []
   for (const p of data.pois) pois.push(LANDMARK_KINDS.indexOf(p.kind), Math.round(p.lat * SCALE), Math.round(p.lon * SCALE))
+  const sg: number[] = []
+  const sgn: string[] = []
+  const sgIndex = new Map<string, number>()
+  for (const s of data.sights ?? []) {
+    let nm = 0
+    if (s.name) {
+      let at = sgIndex.get(s.name)
+      if (at === undefined) {
+        at = sgn.length
+        sgn.push(s.name)
+        sgIndex.set(s.name, at)
+      }
+      nm = at + 1
+    }
+    const mc = s.monument ? MONUMENT_CLASSES.indexOf(s.monument) + 1 : 0
+    sg.push(SIGHT_KINDS.indexOf(s.kind), Math.round(s.lat * SCALE), Math.round(s.lon * SCALE), s.rank === undefined ? 0 : Math.max(0, Math.round(s.rank)) + 1, nm, mc, (s.wikidata ? 1 : 0) | (s.wikipedia ? 2 : 0))
+  }
   const act = (data.activity ?? []).map((v) => Math.round(v * SCALE))
-  return { v: CODEC_VERSION, bbox: [south, west, north, east], timestamp: data.timestamp, source: data.source, highways, dlat, dlon, ways, ids, subs, pois, names, wn, ws, ind: data.industrial ?? [], act, ...(holes.length ? { holes } : {}) }
+  return { v: CODEC_VERSION, bbox: [south, west, north, east], timestamp: data.timestamp, source: data.source, highways, dlat, dlon, ways, ids, subs, pois, names, wn, ws, ind: data.industrial ?? [], act, ...(sg.length ? { sg, sgn } : {}), ...(holes.length ? { holes } : {}) }
 }
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -166,7 +187,7 @@ function validate(c: CompactOsm): void {
     throw new CorruptDataError(`Corrupt map data: ${what}`)
   }
   if (!c || typeof c !== 'object') bad('not an object')
-  if (c.v !== 1 && c.v !== 2 && c.v !== 3 && c.v !== 4) throw new CorruptDataError(`Unsupported map data version ${String(c.v)}`)
+  if (c.v !== 1 && c.v !== 2 && c.v !== 3 && c.v !== 4 && c.v !== 5) throw new CorruptDataError(`Unsupported map data version ${String(c.v)}`)
   if (!Array.isArray(c.bbox) || c.bbox.length !== 4 || !c.bbox.every(isNum)) bad('bbox')
   if (!Array.isArray(c.dlat) || !Array.isArray(c.dlon) || c.dlat.length !== c.dlon.length) bad('coordinates')
   if (!c.dlat.every(isNum) || !c.dlon.every(isNum)) bad('coordinates')
@@ -248,8 +269,20 @@ export function decodeOsm(stored: CompactOsm | string): OsmData {
     const kind = LANDMARK_KINDS[raw[i] ?? -1]
     if (kind && isNum(raw[i + 1]) && isNum(raw[i + 2])) pois.push({ kind, lat: (raw[i + 1] ?? 0) / SCALE, lon: (raw[i + 2] ?? 0) / SCALE })
   }
+  const sights: Sight[] = []
+  const sg = compact.v >= 5 ? (compact.sg ?? []) : []
+  for (let i = 0; i + 6 < sg.length; i += 7) {
+    const kind = SIGHT_KINDS[sg[i] ?? -1]
+    if (!kind || !isNum(sg[i + 1]) || !isNum(sg[i + 2])) continue
+    const rank = sg[i + 3] ?? 0
+    const nm = sg[i + 4] ?? 0
+    const mc = MONUMENT_CLASSES[(sg[i + 5] ?? 0) - 1]
+    const flags = sg[i + 6] ?? 0
+    const name = nm > 0 ? compact.sgn?.[nm - 1] : undefined
+    sights.push({ kind, lat: (sg[i + 1] ?? 0) / SCALE, lon: (sg[i + 2] ?? 0) / SCALE, ...(name ? { name } : {}), ...(rank > 0 ? { rank: rank - 1 } : {}), ...(mc ? { monument: mc } : {}), ...(flags & 1 ? { wikidata: true } : {}), ...(flags & 2 ? { wikipedia: true } : {}) })
+  }
   const [south, west, north, east] = compact.bbox
   const bbox: BBox = { south, west, north, east }
   const extra = compact.v >= 3 ? { industrial: compact.ind ?? [], activity: (compact.act ?? []).map((v) => v / SCALE) } : {}
-  return { bbox, lat, lon, ways, pois, ...extra, source: compact.source, timestamp: compact.timestamp }
+  return { bbox, lat, lon, ways, pois, ...(sights.length ? { sights } : {}), ...extra, source: compact.source, timestamp: compact.timestamp }
 }

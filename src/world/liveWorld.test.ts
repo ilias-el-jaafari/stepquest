@@ -265,3 +265,24 @@ describe('moving the frame (requirement 20.17)', () => {
     expect(lw.inFrame(far)).toBe(false)
   })
 })
+
+describe('live world: sights from drawn cells', () => {
+  it('adds the sights of drawn cells to the world data with a new snapshot that keeps the graph', () => {
+    const lw = LiveWorld.fromData(loadDemoOsm())
+    const before = lw.world()
+    const graph = before.graph
+    expect(before.data.sights).toBeUndefined()
+    const rec = records[0]!
+    const p = { lat: (rec.coverage.south + rec.coverage.north) / 2, lon: (rec.coverage.west + rec.coverage.east) / 2 }
+    const drawn = { ...rec, data: { ...rec.data, sights: [{ kind: 'townHall' as const, ...p, name: 'Ajuntament' }] } }
+    lw.addDrawn([drawn])
+    const after = lw.world()
+    expect(after).not.toBe(before)
+    expect(after.data.sights).toEqual([{ kind: 'townHall', ...p, name: 'Ajuntament' }])
+    expect(after.graph).toBe(graph)
+    // The same sight again changes nothing.
+    lw.addDrawn([drawn])
+    expect(lw.world()).toBe(after)
+  })
+})
+

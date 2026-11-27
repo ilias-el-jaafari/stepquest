@@ -34,6 +34,15 @@ Wisp is the guide: cheeky, warm, a little spooky, never mean. Rules for every `g
 | Keeping the ghost's pace | Al ritmo del fantasma |
 | Falling behind... the ghost is waiting for you! | Te estás quedando atrás… ¡el fantasma te espera! |
 
+## Wisp points out sights (landmarks spec)
+
+Lines in `ghost.sight.*` (plain) and `ghost.sightNamed.*` (with `{name}`), names in `sight.kind.*`, the summary heading `summary.sights` ("Places discovered" / "Lugares descubiertos").
+
+1. **Point, then play.** "Look, the Town Hall!" / "¡Mira, el Ayuntamiento!": say what it is, add one light remark at most (bells, a dome, recess). Never facts or history, never opinions about a religion: places of worship get the same warm, respectful tone ("Look, a mosque! What a dome!").
+2. One short sentence, 45 characters at most with no name; with a name the template stays under 25 characters and the name is cut to 22.
+3. Spanish is its own line ("Eso de ahí es {name}. ¡Cuánto cerebro!"), always «tú», never a translation of the English.
+4. A line never interrupts another and there are 20 s between two of them.
+
 ## Mischief in errors
 
 Floor Mesters (UX, Kiro): "an error message that makes me laugh. If I smile and still know what to tap next, you've won me over." Owning spec: [error-copy](../specs/error-copy/requirements.md), which lists every state and its key. Every error, empty, offline, permission and loading-failure line follows these rules:

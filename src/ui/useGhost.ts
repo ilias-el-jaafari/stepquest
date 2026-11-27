@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { audioEngine } from '../audio/engine.ts'
 import { demoGapScript } from '../demo/script.ts'
-import { checkpointLine, NIGHT_LINES, shouldScare, type GhostLine } from '../ghost/director.ts'
+import { announceNext } from '../sights/route.ts'
+import type { SightMark } from '../sights/types.ts'
+import { checkpointLine, NIGHT_LINES, shouldScare, sightLine, SIGHT_GAP_MS, type GhostLine } from '../ghost/director.ts'
 import { nextPacerStatus, pacerElapsedMs, pacerGapM, paceFor, pausePacer, rebasePacer, resumePacer, startPacer, type Pace, type PacerPlan, type PacerStatus } from '../ghost/pacer.ts'
 import type { Phase } from '../render/daylight.ts'
 import { nowMs } from '../render/env.ts'
@@ -21,6 +23,8 @@ type Args = {
   seed: number
   /** Suggested duration of the walk, minutes, when there is one. */
   durationMin?: number
+  /** The sights along the route: Wisp points each one out once, when the hero comes close. */
+  sights?: readonly SightMark[]
   /** The self-playing demo: the ghost follows the scripted gap so every status shows early. */
   demo?: boolean
 }
@@ -35,7 +39,7 @@ export function questPace(quest: QuestState, durationMin?: number): Pace {
  * the first fix of a real walk and after the finish), the gap status for the HUD with hysteresis, and the
  * lines it says (gem comments and the night scare; the finish is the summary's). The map draws the ghost from `plan`.
  */
-export function useGhost({ quest, pickup, phase, seed, durationMin, demo }: Args) {
+export function useGhost({ quest, pickup, phase, seed, durationMin, demo, sights }: Args) {
   const rate = quest.simulated ? (quest.sim?.timeScale ?? 1) : 1
   const [plan, setPlan] = useState<PacerPlan>(() => {
     const p = startPacer(nowMs(), questPace(quest, durationMin), { rate, alongM: quest.alongM })
@@ -132,6 +136,25 @@ export function useGhost({ quest, pickup, phase, seed, durationMin, demo }: Args
     audioEngine().playSfx('scare')
     speak(NIGHT_LINES)
   }, [phase, finished])
+
+  // Sights: one line per place, never over another line and never closer together than SIGHT_GAP_MS.
+  const sayRef = useRef(say)
+  const announced = useRef(new Set<string>())
+  const lastSightAt = useRef(-Infinity)
+  useEffect(() => {
+    sayRef.current = say
+  })
+  const player = quest.player
+  useEffect(() => {
+    if (finished || !player || !sights?.length || sayRef.current) return
+    const now = nowMs()
+    if (now - lastSightAt.current < SIGHT_GAP_MS) return
+    const mark = announceNext(player, sights, announced.current)
+    if (!mark) return
+    announced.current.add(mark.id)
+    lastSightAt.current = now
+    speak([sightLine(mark)])
+  }, [player, sights, finished])
 
   return { plan: finished ? undefined : plan, status: finished ? ('warmup' as const) : status, gapM, say, pace: questPace(quest, durationMin) }
 }

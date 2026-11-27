@@ -10,6 +10,7 @@ import { isMapSource, type MapSource } from '../render/mapSource.ts'
 import type { MapLoad } from '../world/streamer.ts'
 import { PAN_REACH_M } from '../lod/config.ts'
 import type { TileGrid } from '../tiles/grid.ts'
+import type { SightMark } from '../sights/types.ts'
 import { walkerFor } from '../hero/look.ts'
 import { useLook } from '../hero/useLook.ts'
 import type { LodLayer } from '../lod/layer.ts'
@@ -28,6 +29,8 @@ type Props = {
   onTap: (p: LatLon, zoom: number) => void
   /** The level-of-detail layer around the hero; absent when it is off. */
   lod?: LodLayer
+  /** The sights along the route (landmarks spec); drawn as buildings, with names at quest zoom. */
+  sights?: readonly SightMark[]
   /** The map follows the view, so the camera may roam `PAN_REACH_M` around the hero (the walker, else `home`) instead of staying near the frame. */
   roam?: boolean
   /** Where the walker stands (start point), for the "go to start" button. */
@@ -65,7 +68,7 @@ type Props = {
  * Memoised on purpose: the screen around it re-renders on every keystroke and every clock tick,
  * and the map only needs to follow its own props (callers pass stable callbacks and objects).
  */
-export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, lod, roam, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve, onViewBox, load, clockAt, shot }: Props) {
+export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, lod, roam, home, quest, follow, pickup, onUserPan, avoided, sights, onLocate, locating, onView, bubble, bottomReserve, onViewBox, load, clockAt, shot }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<HTMLDivElement>(null)
@@ -153,6 +156,10 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
   useEffect(() => {
     rendererRef.current?.setMarkers(markers)
   }, [markers, map, frame])
+
+  useEffect(() => {
+    rendererRef.current?.setSights(sights ?? [])
+  }, [sights, map, frame])
 
   useEffect(() => {
     rendererRef.current?.setAvoided(avoided ?? [])

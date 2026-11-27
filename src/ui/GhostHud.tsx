@@ -1,4 +1,6 @@
 import { ghostSprite, type GhostPose } from '../ghost/art.ts'
+import type { SightNamedKey } from '../ghost/director.ts'
+import type { PlainKey } from '../i18n/en.ts'
 import type { PacerStatus } from '../ghost/pacer.ts'
 import { useI18n } from '../i18n/index.ts'
 import { PixelSvg } from './PixelIcons.tsx'
@@ -22,7 +24,7 @@ export const GAP_SHOWN_M = 5
 export function GhostHud({ say, status, gapM }: Props) {
   const { t } = useI18n()
   const paceKey = status === 'ahead' ? 'ghost.pace.ahead' : status === 'behind' ? 'ghost.pace.behind' : status === 'on' ? 'ghost.pace.on' : undefined
-  const text = say ? t(say.key) : paceKey ? t(paceKey) : ''
+  const text = say ? (say.name !== undefined ? t(say.key as SightNamedKey, { name: say.name }) : t(say.key as PlainKey)) : paceKey ? t(paceKey) : ''
   const pose: GhostPose = say?.pose ?? 'float'
   const showGap = gapM !== undefined && status !== 'warmup' && Math.abs(gapM) >= GAP_SHOWN_M
   const gapText = showGap ? t(gapM > 0 ? 'ghost.gapBehind' : 'ghost.gapAhead', { m: Math.abs(gapM) }) : ''

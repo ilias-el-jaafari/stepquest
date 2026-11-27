@@ -174,6 +174,7 @@ export function cellFromTiles(c: CellId, tiles: readonly LoadedTile[], detail: b
   const lon: number[] = []
   const ways: OsmWay[] = []
   const pois: OsmData['pois'] = []
+  const sights: NonNullable<OsmData['sights']> = []
   let id = 1
   for (const t of [...tiles].sort((a, b) => a.id.y - b.id.y || a.id.x - b.id.x)) {
     const boxes = wayBoxes(t.data)
@@ -195,7 +196,8 @@ export function cellFromTiles(c: CellId, tiles: readonly LoadedTile[], detail: b
       ways.push({ ...w, id: id++, nodes: w.nodes.map(node), ...(w.holes ? { holes: w.holes.map((h) => h.map(node)) } : {}), ...(anchor ? { anchor } : {}) })
     })
     for (const p of t.data.pois) if (inHalfOpen(box, p.lat, p.lon)) pois.push(p)
+    for (const s of t.data.sights ?? []) if (inHalfOpen(box, s.lat, s.lon)) sights.push(s)
   }
-  const data: OsmData = { bbox: box, lat: Float64Array.from(lat), lon: Float64Array.from(lon), ways, pois, industrial: [], activity: [], source: 'tiles', timestamp: '' }
+  const data: OsmData = { bbox: box, lat: Float64Array.from(lat), lon: Float64Array.from(lon), ways, pois, ...(sights.length ? { sights } : {}), industrial: [], activity: [], source: 'tiles', timestamp: '' }
   return { cell: c, coverage: box, data, savedAt: 0 }
 }

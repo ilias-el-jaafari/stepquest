@@ -1,6 +1,8 @@
 import type { BBox } from '../geo/geo.ts'
 import { dedupePois } from '../osm/landmarks.ts'
 import type { OsmData, OsmWay, Poi } from '../osm/types.ts'
+import { dedupeSights } from '../sights/classify.ts'
+import type { Sight } from '../sights/types.ts'
 import { cellKey, cellOf } from './cells.ts'
 import { boxArea, unionBox } from './coverage.ts'
 import type { CellRecord } from './slice.ts'
@@ -56,6 +58,7 @@ export class WorldData {
   /** Indices of the ways that came from vector-tile walking records (they carry no tags until enriched). */
   readonly tileWays = new Set<number>()
   pois: Poi[] = []
+  sights: Sight[] = []
   industrial: number[][] = []
   activity: number[] = []
   /** Coverage per cell key (the larger one when a cell was seen partly first). */
@@ -66,6 +69,15 @@ export class WorldData {
   private readonly byId = new Map<string, number[]>()
   private readonly seenActivity = new Set<string>()
   private readonly seenIndustrial = new Set<string>()
+
+  /** Add sights (drawn records carry them, walking records do not); true when the list changed. */
+  addSights(list: readonly Sight[] | undefined): boolean {
+    if (!list?.length) return false
+    const merged = dedupeSights([...this.sights, ...list])
+    const changed = merged.length !== this.sights.length || merged.some((s, i) => s !== this.sights[i])
+    if (changed) this.sights = merged
+    return changed
+  }
 
   /** Add one record; returns the index of the first way it appended (the graph reads from there). */
   addRecord(rec: CellRecord): { firstWay: number } {
@@ -114,6 +126,7 @@ export class WorldData {
       this.activity.push(act[i]!, act[i + 1]!)
     }
     if (data.pois.length) this.pois = dedupePois([...this.pois, ...data.pois])
+    if (data.sights?.length) this.sights = dedupeSights([...this.sights, ...data.sights])
     const key = cellKey(rec.cell)
     const had = this.coverage.get(key)
     if (!had || boxArea(rec.coverage) > boxArea(had)) this.coverage.set(key, rec.coverage)
@@ -192,6 +205,7 @@ export class WorldData {
       lon: Float64Array.from(this.lon),
       ways,
       pois: this.pois.slice(),
+      ...(this.sights.length ? { sights: this.sights.slice() } : {}),
       industrial: this.industrial.slice(),
       activity: this.activity.slice(),
       coverage,

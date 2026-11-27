@@ -1,9 +1,11 @@
+import type { SightMark } from '../sights/types.ts'
 import type { PlainKey } from '../i18n/en.ts'
 import type { Phase } from '../render/daylight.ts'
 import type { GhostPose } from './art.ts'
 
 /** One thing the ghost says: a dictionary key (no placeholders), how it poses and how long the bubble stays. */
-export type GhostLine = { key: PlainKey; pose: GhostPose; ms: number }
+export type SightNamedKey = 'ghost.sightNamed.university' | 'ghost.sightNamed.school' | 'ghost.sightNamed.hospital' | 'ghost.sightNamed.monument'
+export type GhostLine = { key: PlainKey | SightNamedKey; pose: GhostPose; ms: number; /** The place's name, for the `{name}` of a sight line. */ name?: string }
 
 const CHECKPOINT_KEYS = ['ghost.cp.1', 'ghost.cp.2', 'ghost.cp.3', 'ghost.cp.4', 'ghost.cp.5'] as const
 
@@ -29,3 +31,29 @@ export const NIGHT_LINES: readonly GhostLine[] = [
 export function shouldScare(phase: Phase, alreadyScared: boolean): boolean {
   return !alreadyScared && (phase === 'dusk' || phase === 'night')
 }
+
+/** Sight kinds whose line names the place when the data has a name. */
+const NAMED_SIGHT: Record<string, 'university' | 'school' | 'hospital' | 'monument'> = {
+  university: 'university',
+  school: 'school',
+  hospital: 'hospital',
+  tower: 'monument',
+  arch: 'monument',
+  statue: 'monument',
+  fountain: 'monument',
+}
+/** A name is cut to this many characters so the bubble stays short. */
+export const SIGHT_NAME_MAX = 22
+
+/** What Wisp says about a sight the hero passes: a keyed line, with the name when there is one to say. */
+export function sightLine(mark: Pick<SightMark, 'kind' | 'name'>): GhostLine {
+  const named = NAMED_SIGHT[mark.kind]
+  if (named && mark.name) {
+    const name = mark.name.length > SIGHT_NAME_MAX ? `${mark.name.slice(0, SIGHT_NAME_MAX - 1).trimEnd()}…` : mark.name
+    return { key: `ghost.sightNamed.${named}`, pose: 'float', ms: 4200, name }
+  }
+  return { key: `ghost.sight.${mark.kind}`, pose: 'float', ms: 3800 }
+}
+
+/** At least this long between two lines about sights, so a street of schools is not chatter. */
+export const SIGHT_GAP_MS = 20_000

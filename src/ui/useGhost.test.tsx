@@ -8,6 +8,8 @@ import type { Phase } from '../render/daylight.ts'
 import { placeCheckpoints } from '../routing/checkpoints.ts'
 import { createQuest, type QuestState } from '../quest/quest.ts'
 import type { QuestRoute } from '../quest/types.ts'
+import { sightsAlongRoute } from '../sights/route.ts'
+import type { SightMark } from '../sights/types.ts'
 import { useGhost } from './useGhost.ts'
 import type { Pickup } from './useQuestRunner.ts'
 
@@ -25,8 +27,8 @@ let root: Root
 let out: ReturnType<typeof useGhost> | undefined
 let now = 0
 
-function Probe(p: { quest: QuestState; pickup?: Pickup; phase: Phase }) {
-  const g = useGhost({ quest: p.quest, pickup: p.pickup, phase: p.phase, seed: 3 })
+function Probe(p: { quest: QuestState; pickup?: Pickup; phase: Phase; sights?: readonly SightMark[] }) {
+  const g = useGhost({ quest: p.quest, pickup: p.pickup, phase: p.phase, seed: 3, sights: p.sights })
   useEffect(() => {
     out = g
   })
@@ -118,5 +120,55 @@ describe('useGhost', () => {
     expect(out!.plan!.pausedAt).toBeUndefined()
     await render({ quest: { ...real, lastFixAt: 2, finishedAt: 2 }, phase: 'day' })
     expect(out!.plan).toBeUndefined()
+  })
+})
+
+describe('useGhost: sights', () => {
+  const near = destination(destination(origin, 90, 300), 0, 20)
+  const far = destination(destination(origin, 90, 700), 0, 30)
+  const marks = sightsAlongRoute(
+    [
+      { kind: 'townHall', lat: near.lat, lon: near.lon },
+      { kind: 'university', lat: far.lat, lon: far.lon, name: 'Facultat de Dret' },
+    ],
+    points,
+  )
+  const at = (alongM: number, simulated = true): QuestState => ({ ...sim(), alongM, simulated, player: destination(origin, 90, alongM) })
+
+  it('says one short line when the hero comes close, and only once per place', async () => {
+    await render({ quest: at(0), phase: 'day', sights: marks })
+    expect(out!.say).toBeUndefined()
+    await render({ quest: at(150), phase: 'day', sights: marks })
+    expect(out!.say).toBeUndefined()
+    await render({ quest: at(300), phase: 'day', sights: marks })
+    expect(out!.say?.key).toBe('ghost.sight.townHall')
+    await tick(10_000)
+    expect(out!.say).toBeUndefined()
+    // Walking on the spot or back again repeats nothing, even after the gap between two sight lines.
+    await tick(30_000)
+    await render({ quest: at(305), phase: 'day', sights: marks })
+    await render({ quest: at(300), phase: 'day', sights: marks })
+    expect(out!.say).toBeUndefined()
+  })
+
+  it('names a faculty, waits out the gap and does not talk over another line', async () => {
+    await render({ quest: at(300), phase: 'day', sights: marks })
+    expect(out!.say?.key).toBe('ghost.sight.townHall')
+    await tick(10_000)
+    // Too soon after the last sight line: nothing yet.
+    await render({ quest: at(700), phase: 'day', sights: marks })
+    expect(out!.say).toBeUndefined()
+    await tick(11_000)
+    await render({ quest: at(701), phase: 'day', sights: marks })
+    expect(out!.say).toMatchObject({ key: 'ghost.sightNamed.university', name: 'Facultat de Dret' })
+  })
+
+  it('leaves a showing line alone', async () => {
+    const q = at(10)
+    await render({ quest: q, phase: 'day', sights: marks })
+    await render({ quest: q, phase: 'dusk', sights: marks })
+    expect(out!.say?.key).toBe('ghost.boo')
+    await render({ quest: at(300), phase: 'dusk', sights: marks })
+    expect(out!.say?.key).toBe('ghost.boo')
   })
 })

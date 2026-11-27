@@ -11,6 +11,8 @@ import type { Lighting } from './daylight.ts'
 import { OverlayLayer, type Markers, type QuestOverlay, type RouteShape } from './overlayLayer.ts'
 import { LightingLayer } from './lightingLayer.ts'
 import { DecorLayer } from './decorLayer.ts'
+import { SightLayer } from './sightLayer.ts'
+import type { SightMark } from '../sights/types.ts'
 import { decorOn } from '../decor/pref.ts'
 import { FrameScheduler } from './frameScheduler.ts'
 import { P } from './palette.ts'
@@ -72,6 +74,8 @@ export class MapRenderer {
   private readonly lightingLayer: LightingLayer
   private readonly overlay: OverlayLayer
   private readonly decor: DecorLayer
+  private readonly sights: SightLayer
+  private readonly stopSightWatch: () => void
   private routeTiles: { x: number; y: number }[] = []
   private markerTiles: { x: number; y: number }[] = []
   private keepOut: ReadonlySet<number> | undefined
@@ -111,6 +115,12 @@ export class MapRenderer {
     this.lightingLayer = new LightingLayer(grid, this.chunks, tick)
     this.overlay = new OverlayLayer(grid, this.lightingLayer)
     this.decor = new DecorLayer(grid, () => this.requestRender(), decorOn(), source.town)
+    this.sights = new SightLayer(grid)
+    // Sights look for their spot again when the loaded map changes (not on every water or flicker step).
+    this.stopSightWatch = source.subscribe(() => {
+      if (!this.sights.hasMarks) return
+      this.sights.invalidate()
+    })
     this.stopPixelRatio = watchPixelRatio(tick)
   }
 
@@ -217,6 +227,13 @@ export class MapRenderer {
     this.requestRender()
   }
 
+  /** The sights along the route (landmarks spec); an empty list shows none. */
+  setSights(marks: readonly SightMark[]): void {
+    if (!this.sights.setMarks(marks)) return
+    this.sceneDirty = true
+    this.requestRender()
+  }
+
   /** Keep the decor off the route, the start and the finish: every tile within 1 of them is left bare. */
   private updateKeepOut(): void {
     const keep = new Set<number>()
@@ -244,6 +261,8 @@ export class MapRenderer {
     if (same) return
     this.keepOut = keep
     this.decor.setKeepOut(keep)
+    this.sights.setKeepOut(keep)
+    if (this.sights.hasMarks) this.sceneDirty = true
     if (this.decor.isEnabled) this.sceneDirty = true
   }
 
@@ -453,6 +472,7 @@ export class MapRenderer {
     this.viewListener = undefined
     this.lightingLayer.dispose()
     this.decor.dispose()
+    this.stopSightWatch()
     this.chunks.dispose()
     this.overlay.dispose()
     if (this.scene) releaseCanvas(this.scene.canvas)
@@ -508,6 +528,9 @@ export class MapRenderer {
     // Diagnostics for browser checks: decor items on screen (still, moving).
     const dc = `${this.decor.stats.onScreen},${this.decor.stats.animated}`
     if (this.canvas.dataset && this.canvas.dataset.decor !== dc) this.canvas.dataset.decor = dc
+    // Sights standing on the map and drawn in the last scene paint.
+    const sg = `${this.sights.stats.placed},${this.sights.stats.drawn}`
+    if (this.canvas.dataset && this.canvas.dataset.sights !== sg) this.canvas.dataset.sights = sg
     if (this.overlay.draw(ctx, v, light, now)) this.requestRender()
     this.reportView(v)
   }
@@ -605,6 +628,7 @@ export class MapRenderer {
 
     // Halloween decor: still items under the sky tint, so the night tints them too.
     if (frame) this.decor.drawStatic(ctx, v, frame.plan, frame.painted, light)
+    if (frame) this.sights.drawStatic(ctx, v, frame.painted)
     // Day cycle: multiply the map by the sky tint, then add window and lamp light. The route,
     // gems and walker are drawn afterwards, so they keep their full colours.
     if (light.darkness > 0.005) {
@@ -612,7 +636,9 @@ export class MapRenderer {
       if (frame) this.lightingLayer.drawNightLights(ctx, v, frame.plan, frame.painted, light)
       else this.lightingLayer.drawNightDots(ctx, v, light)
       if (frame) this.decor.drawNight(ctx, v, light)
+      if (frame) this.sights.drawNight(ctx, v, light, frame.painted)
     } else this.lightingLayer.idle()
+    if (frame) this.sights.drawLabels(ctx, v, frame.painted)
     // Street names last: they are signs, not part of the lit map.
     this.lod?.drawLabels(ctx, v, this.grid)
     return frame?.pending ?? false

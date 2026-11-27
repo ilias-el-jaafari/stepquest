@@ -8,6 +8,7 @@ import { es } from '../i18n/es.ts'
 import { I18nProvider } from '../i18n/index.ts'
 import { summarize, type Summary } from '../quest/summary.ts'
 import { WALKER } from '../render/sprites.ts'
+import type { SightMark } from '../sights/types.ts'
 import { SummaryScreen } from './SummaryScreen.tsx'
 
 declare global {
@@ -25,9 +26,9 @@ function stubCanvas() {
   return fillRect
 }
 
-async function show(summary: Summary, locale: 'en' | 'es' = 'en', on = { back: vi.fn(), next: vi.fn() }) {
+async function show(summary: Summary, locale: 'en' | 'es' = 'en', on = { back: vi.fn(), next: vi.fn() }, sights: SightMark[] = []) {
   localStorage.setItem('stepquest.locale', locale)
-  await act(async () => root.render(<I18nProvider><SummaryScreen summary={summary} walker={WALKER.down[0]!} seed={7} onBack={on.back} onNew={on.next} /></I18nProvider>))
+  await act(async () => root.render(<I18nProvider><SummaryScreen summary={summary} sights={sights} walker={WALKER.down[0]!} seed={7} onBack={on.back} onNew={on.next} /></I18nProvider>))
   return on
 }
 const q = (id: string) => host.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
@@ -172,5 +173,34 @@ describe('copy fit', () => {
         2 * 12 + 2 * 14 + 8 + 48 + 14 + lines(t('summary.title.complete'), perLine(GLYPH.h2)) * 14 * 1.3 + 14 + longestLead * 8 * 1.5 + 10 + 90 + 12 + 3 * 28 + 12 + 2 * (2 * 10 + 24) + 8
       expect(height).toBeLessThanOrEqual(vh)
     }
+  })
+})
+
+describe('SummaryScreen: places discovered', () => {
+  const mark = (i: number, kind: SightMark['kind'], name?: string): SightMark => ({ id: `s${i}`, kind, lat: 0, lon: 0, alongM: i, lateralM: 0, ...(name ? { name } : {}) })
+
+  it('shows no heading without sights', async () => {
+    await show(done)
+    expect(host.querySelector('[data-testid="summary-sights"]')).toBeNull()
+  })
+
+  it('lists names, or the kind without a name, with an icon each, in both languages', async () => {
+    await show(done, 'es', undefined, [mark(1, 'townHall'), mark(2, 'university', 'Facultat de Dret')])
+    const list = q('summary-sights')
+    expect(list.querySelector('h3')?.textContent).toBe('Lugares descubiertos')
+    expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Ayuntamiento', 'Facultat de Dret'])
+    expect(list.querySelectorAll('li svg')).toHaveLength(2)
+  })
+
+  it('speaks English too', async () => {
+    await show(done, 'en', undefined, [mark(1, 'townHall')])
+    expect(q('summary-sights').querySelector('h3')?.textContent).toBe('Places discovered')
+    expect(q('summary-sights').querySelector('li')?.textContent).toBe('Town Hall')
+  })
+
+  it('shortens a long list to six and says how many more', async () => {
+    await show(done, 'en', undefined, Array.from({ length: 9 }, (_, i) => mark(i, 'school', `School ${i}`)))
+    expect(q('summary-sights').querySelectorAll('li')).toHaveLength(6)
+    expect(q('summary-sights').textContent).toContain('and 3 more')
   })
 })

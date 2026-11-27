@@ -33,6 +33,10 @@ OpenFreeMap is free and asks for fair use, caching and the credit below. Rules (
 - **Identification.** A web page cannot set `User-Agent` (a forbidden header); the browser sends its own, plus the page's `Referer`, which names StepQuest's origin. A Node script that fetches tiles sends a descriptive User-Agent with a contact address (`StepQuest-…/1.0 (ilias.el.jaafari.el.idrissi@gmail.com)`) and reads only a handful of tiles.
 - **Attribution (ODbL, OpenFreeMap, OpenMapTiles).** The text "OpenFreeMap © OpenMapTiles © OpenStreetMap contributors" (`OSM_ATTRIBUTION`; `map.creditTiles`, `map.creditSchema` and `map.attribution` in both languages, Spanish "OpenFreeMap © OpenMapTiles © colaboradores de OpenStreetMap"), each part linked (`https://openfreemap.org`, `https://www.openmaptiles.org/`, `https://www.openstreetmap.org/copyright`), is always visible on the map, in the bundled demo and in live data, in the bottom-left corner (requirements 18 and 21.12), on one line at 320 px. Never hide, shrink to unreadable size or move it behind a menu. The bundled extract `src/data/benicalap.osm.json` is ODbL data: keep it credited, and rebuild it only with `npm run fixture`.
 
+## Sights (landmarks spec)
+
+Sights (faculties, schools, hospitals, places of worship, the town hall, monuments) come from the `poi` layer of the z14 tiles that are fetched anyway. They add no request, no zoom and no Overpass query; if the tiles fail there are simply fewer sights. Cached tiles are stored with codec version 5 (the version in the key retires old entries; nothing is downloaded early).
+
 ## LOD ring prefetch (requirement 25, `src/lod/prefetch.ts`)
 
 Around the hero (the walker, else the planner's start) the app loads the z14 tiles within R (10 km by default, 2 to 15 km with `?lod=<km>`) so the far zooms draw every street and name and a street 10 km away can be picked. That is about 125 tiles at València and about 230 at 60° north, 8 to 10 MB on the wire in a measured cold run (dense centre tiles are 400 to 570 KB).

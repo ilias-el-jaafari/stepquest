@@ -786,6 +786,50 @@ input[aria-invalid='true'] {
   font-size: 7px;
 }
 
+.summary-sights {
+  margin: 0 0 12px;
+  text-align: left;
+}
+
+.summary-sights h3 {
+  margin: 0 0 6px;
+  font-size: 8px;
+  color: #4b4a66;
+}
+
+.summary-sights ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.summary-sights li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.summary-sights li svg {
+  flex: none;
+}
+
+.summary-sights li span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-sights-more {
+  margin: 4px 0 0;
+  font-size: 7px;
+}
+
 .summary-buttons {
   display: grid;
   gap: 8px;

@@ -94,6 +94,7 @@ export function sliceToCells(data: OsmData, cells: readonly CellId[] = cellsInBB
         lon: Float64Array.from(lon),
         ways,
         pois: data.pois.filter((p) => inHalfOpen(p.lat, p.lon)),
+        ...(data.sights?.length ? { sights: data.sights.filter((s) => inHalfOpen(s.lat, s.lon)) } : {}),
         industrial,
         activity,
         source: data.source,

@@ -1,6 +1,8 @@
 import type { BBox } from '../geo/geo.ts'
 import { classifyWay, isArea, isBridge, isCrossing, isIndustrialLand, isLively, isRoundaboutTag, isTunnel, isWalkable, safetyFlags, wayStyle, type Tags } from './classify.ts'
 import { dedupePois, landmarkKind } from './landmarks.ts'
+import { dedupeSights, sightFromTags } from '../sights/classify.ts'
+import type { Sight } from '../sights/types.ts'
 import { assembleRings, buildPolygons, type Ring } from './multipolygon.ts'
 import type { OsmData, OsmWay, Poi } from './types.ts'
 
@@ -34,6 +36,7 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
   const ways: OsmWay[] = []
   // Landmark candidates, ranked so outlines beat points and stations beat their entrances.
   const candidates: { poi: Poi; rank: number }[] = []
+  const sights: Sight[] = []
   const industrial: number[][] = []
   const activity: number[] = []
   const inBox = (p: { lat: number; lon: number }) => p.lat >= bbox.south && p.lat <= bbox.north && p.lon >= bbox.west && p.lon <= bbox.east
@@ -69,6 +72,10 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
       if (isLively(tags) && typeof element.lat === 'number' && typeof element.lon === 'number' && inBox({ lat: element.lat, lon: element.lon })) {
         activity.push(round6(element.lat), round6(element.lon))
       }
+      if (typeof element.lat === 'number' && typeof element.lon === 'number' && inBox({ lat: element.lat, lon: element.lon })) {
+        const sight = sightFromTags(tags, element.lat, element.lon)
+        if (sight) sights.push(sight)
+      }
       const kind = landmarkKind(tags, false)
       if (kind && typeof element.lat === 'number' && typeof element.lon === 'number' && inBox({ lat: element.lat, lon: element.lon })) {
         candidates.push({ poi: { kind, lat: element.lat, lon: element.lon }, rank: tags.railway === 'subway_entrance' ? 2 : 1 })
@@ -79,6 +86,8 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
       // Multipolygon hospitals and stations: only their centre is used (needs `out center`).
       const kind = landmarkKind(element.tags ?? {}, true)
       if (kind && element.center && inBox(element.center)) candidates.push({ poi: { kind, ...element.center }, rank: 0 })
+      const sight = element.center && inBox(element.center) ? sightFromTags(element.tags ?? {}, element.center.lat, element.center.lon) : undefined
+      if (sight) sights.push(sight)
       const tags = element.tags ?? {}
       const areaKind = tags.type === 'multipolygon' ? classifyWay(tags) : undefined
       if (areaKind === 'building' || areaKind === 'park' || areaKind === 'water') {
@@ -117,6 +126,11 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
     if (landmark) {
       const centre = element.center ?? centroid(way.geometry)
       if (centre && inBox(centre)) candidates.push({ poi: { kind: landmark, ...centre }, rank: 0 })
+    }
+    {
+      const centre = element.center ?? centroid(way.geometry)
+      const sight = centre && inBox(centre) ? sightFromTags(tags, centre.lat, centre.lon) : undefined
+      if (sight) sights.push(sight)
     }
     if (isLively(tags) && !tags.highway) {
       const centre = element.center ?? centroid(way.geometry)
@@ -181,6 +195,7 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
   }
   candidates.sort((a, b) => a.rank - b.rank)
   const pois = dedupePois(candidates.map((c) => c.poi))
+  const dedupedSights = dedupeSights(sights)
 
   return {
     bbox,
@@ -188,6 +203,7 @@ export function normalizeOverpass(json: OverpassResponse, bbox: BBox, source: Os
     lon: Float64Array.from(lon),
     ways,
     pois,
+    ...(dedupedSights.length ? { sights: dedupedSights } : {}),
     industrial,
     activity,
     source,

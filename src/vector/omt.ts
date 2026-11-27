@@ -2,6 +2,8 @@ import { VectorTile, classifyRings } from '@mapbox/vector-tile'
 import { PbfReader } from 'pbf'
 import { classifyWay, isBridge, isTunnel, isWalkable, wayStyle, type Tags } from '../osm/classify.ts'
 import { dedupePois, landmarkKind } from '../osm/landmarks.ts'
+import { dedupeSights, sightFromPoi } from '../sights/classify.ts'
+import type { Sight } from '../sights/types.ts'
 import type { OsmData, OsmWay, Poi } from '../osm/types.ts'
 import { latOf, lonOf, tileBBox, type TileId } from './tileMath.ts'
 
@@ -228,6 +230,7 @@ export function tileToOsm(bytes: Uint8Array, t: TileId, opts: TileOptions = {}):
   const lon: number[] = []
   const ways: OsmWay[] = []
   const candidates: Poi[] = []
+  const sightCandidates: Sight[] = []
   let id = 1
   const nodeFrom = (e: number) => (p: P) => {
     lat.push(latOf((t.y * e + p.y) / e, t.z))
@@ -293,11 +296,14 @@ export function tileToOsm(bytes: Uint8Array, t: TileId, opts: TileOptions = {}):
           if (opts.coarse || f.type !== 1) break
           const pt = poiTags(p)
           const kind = pt && landmarkKind(pt, false)
-          if (!kind) break
           for (const ring of f.loadGeometry()) {
             for (const q of ring) {
               if (q.x < 0 || q.y < 0 || q.x >= e || q.y >= e) continue
-              candidates.push({ kind, lat: latOf((t.y * e + q.y) / e, t.z), lon: lonOf((t.x * e + q.x) / e, t.z) })
+              const la = latOf((t.y * e + q.y) / e, t.z)
+              const lo = lonOf((t.x * e + q.x) / e, t.z)
+              if (kind) candidates.push({ kind, lat: la, lon: lo })
+              const sight = sightFromPoi(p, la, lo)
+              if (sight) sightCandidates.push(sight)
             }
           }
           break
@@ -315,6 +321,7 @@ export function tileToOsm(bytes: Uint8Array, t: TileId, opts: TileOptions = {}):
     lon: Float64Array.from(lon),
     ways,
     pois: opts.coarse ? [] : dedupePois(candidates),
+    sights: opts.coarse ? [] : dedupeSights(sightCandidates),
     industrial: [],
     activity: [],
     source: 'tiles',

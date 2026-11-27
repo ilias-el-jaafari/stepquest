@@ -213,13 +213,37 @@ export class LiveWorld implements MapSource {
   /** Add drawn records (vector-tile detail, requirement 21.5): tiles and town, never data or graph. Returns the cells painted. */
   addDrawn(records: readonly CellRecord[]): CellId[] {
     const painted: CellId[] = []
+    let sights = false
     for (const rec of records) {
       if (!this.inFrame(rec.cell)) continue
       const k = cellKey(rec.cell)
+      if (this.data.addSights(rec.data.sights)) sights = true
       this.drawn.set(k, rec)
       if (this.refresh(k)) painted.push(rec.cell)
     }
+    if (sights) this.withSights()
     return this.commit(painted)
+  }
+
+  /**
+   * New sights arrived with drawn cells (landmarks spec): the current snapshot gets a new identity with
+   * the longer list, and keeps its graph and safety context (those are built from the walking data only).
+   */
+  private withSights(): void {
+    const prev = this.snap
+    if (!prev) return
+    const data = { ...prev.data, sights: this.data.sights.slice() }
+    this.snap = {
+      data,
+      grid: prev.grid,
+      live: this,
+      get graph() {
+        return prev.graph
+      },
+      get safety() {
+        return prev.safety
+      },
+    }
   }
 
   /**

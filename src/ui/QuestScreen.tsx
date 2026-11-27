@@ -22,6 +22,8 @@ import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { DialogueBox } from './DialogueBox.tsx'
 import type { LodLayer } from '../lod/layer.ts'
 import { MapView } from './MapView.tsx'
+import type { SightMark } from '../sights/types.ts'
+import { passedSights } from '../sights/route.ts'
 import { SummaryScreen } from './SummaryScreen.tsx'
 import { SoundMenu } from './SoundMenu.tsx'
 import type { Pickup } from './useQuestRunner.ts'
@@ -37,6 +39,8 @@ type Props = {
   /** What the map shows now (read-only state on the map element). */
   load?: MapLoad
   quest: QuestState
+  /** The sights along the route (drawn on the map, pointed out by Wisp, listed in the summary). */
+  sights?: readonly SightMark[]
   pickup: Pickup | undefined
   error: LocationErrorCode | undefined
   wakeActive: boolean
@@ -78,7 +82,7 @@ function seedOf(id: string): number {
 /** The HUD sits 10 px above the screen edge; the stack's own bottom margin is 8 px, plus a little air. */
 const HUD_GAP = 6
 
-export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, error, wakeActive, resumed, walker, onEnd, onUseSim, demo = false }: Props) {
+export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, error, wakeActive, resumed, walker, onEnd, onUseSim, demo = false, sights }: Props) {
   const { t, locale } = useI18n()
   const { engine, status, settings: sound, phrase } = useAudio()
   const [now, setNow] = useState(() => Date.now())
@@ -149,7 +153,9 @@ export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, er
   const timeParam = typeof location === 'undefined' ? undefined : parseTimeParam(location.search)
   const lightMs = clockAt ?? (timeParam === undefined ? now : atLocalMinutes(now, timeParam))
   const phase = player ? lightingAt(lightMs, player).phase : 'day'
-  const ghost = useGhost({ quest, pickup, phase, seed: seedOf(quest.id), demo: quest.id === DEMO_QUEST_ID })
+  // Places the hero has walked past (all of them once the flag is reached).
+  const discovered = useMemo(() => (sights ? (quest.finishedAt !== undefined ? sights : passedSights(sights, quest.alongM)) : []), [sights, quest.alongM, quest.finishedAt])
+  const ghost = useGhost({ quest, sights, pickup, phase, seed: seedOf(quest.id), demo: quest.id === DEMO_QUEST_ID })
   const ghostPlan = ghost.plan
   const ghostPose = ghost.say?.pose ?? 'float'
   const overlay = useMemo(
@@ -265,6 +271,7 @@ export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, er
                 onTap={ignoreTap}
                 home={player}
                 quest={overlay}
+                sights={sights}
                 follow={follow && quest.finishedAt === undefined}
                 pickup={pickup}
                 bubble={phrase?.text}
@@ -385,9 +392,9 @@ export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, er
             </div>
 
             {finished && finishDone && !completeClosed && (
-              <SummaryScreen summary={summarize(stats, 'complete')} walker={walker} seed={seedOf(quest.id)} onBack={() => setCompleteClosed(true)} onNew={onEnd} />
+              <SummaryScreen summary={summarize(stats, 'complete')} sights={discovered} walker={walker} seed={seedOf(quest.id)} onBack={() => setCompleteClosed(true)} onNew={onEnd} />
             )}
-            {!finished && paused && <SummaryScreen summary={paused} walker={walker} seed={seedOf(quest.id)} onBack={() => setPaused(undefined)} onNew={onEnd} />}
+            {!finished && paused && <SummaryScreen summary={paused} sights={discovered} walker={walker} seed={seedOf(quest.id)} onBack={() => setPaused(undefined)} onNew={onEnd} />}
             {confirming && <ConfirmDialog {...END_CONFIRM} testId="confirm-end" onYes={pauseHere} onNo={() => setConfirming(false)} />}
           </div>
         </div>

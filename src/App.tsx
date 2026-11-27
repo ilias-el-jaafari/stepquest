@@ -35,6 +35,7 @@ import { useArea, worldBox } from './app/useArea.ts'
 import { useNumberFields } from './app/useNumberFields.ts'
 import { usePlanner } from './app/usePlanner.ts'
 import { useToday } from './app/useToday.ts'
+import { useSights } from './sights/useSights.ts'
 
 type Reroute = (q: QuestState) => Promise<ReroutePatch | undefined>
 
@@ -137,6 +138,8 @@ export default function App() {
     if (shown) return shown.points
     return settings.mode === 'oneway' && end ? [start, end] : [start]
   }, [shown, start, end, settings.mode])
+  const planSights = useSights(world?.data.sights, shown?.points)
+  const questSights = useSights(world?.data.sights, runner.quest?.route.points, runner.quest?.id)
   const focusKey = shown ? `route:${shown.nodes.length}:${shown.distanceM}` : `pts:${settings.mode}:${end ? 'e' : ''}:${world ? 'w' : ''}`
 
   const finishNote = settings.mode === 'oneway' && state.finishNote && end && state.finishNote.at.lat === end.lat && state.finishNote.at.lon === end.lon ? state.finishNote : undefined
@@ -189,6 +192,7 @@ export default function App() {
         roam={roam}
         load={load}
         quest={runner.quest}
+        sights={questSights}
         pickup={runner.pickup}
         error={runner.error}
         wakeActive={runner.wakeActive}
@@ -231,6 +235,7 @@ export default function App() {
                 roam={roam}
                 home={start}
                 avoided={avoidedLines}
+                sights={planSights}
                 onLocate={onLocate}
                 locating={locating}
                 onView={onView}

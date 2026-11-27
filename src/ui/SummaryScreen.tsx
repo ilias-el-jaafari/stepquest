@@ -8,11 +8,15 @@ import { prefersReducedMotion } from '../render/env.ts'
 import type { Sprite } from '../render/sprites.ts'
 import { createShow, showIsOver, showPixels, stepShow, type Show } from './celebration.ts'
 import { GHOST_FLOAT, GHOST_HAPPY } from '../ghost/art.ts'
+import { SIGHT_SPRITES } from '../sights/art.ts'
+import type { SightMark } from '../sights/types.ts'
 import { PixelSvg } from './PixelIcons.tsx'
 import { useModal } from './useModal.ts'
 
 type Props = {
   summary: Summary
+  /** The places the hero walked past, in route order ("Places discovered"). */
+  sights?: readonly SightMark[]
   /** The player's own hero. */
   walker: Sprite
   /** Seed of the celebration (the quest id), so a reload draws the same fireworks. */
@@ -24,12 +28,14 @@ type Props = {
 /** One logical pixel of the celebration is this many CSS pixels. */
 const PIXEL = 4
 const FALLBACK = { w: 80, h: 140 }
+/** Places listed in the summary before "and n more". */
+const MAX_LISTED = 6
 
 /**
  * The end-of-quest screen: a full-screen dialog with the stats, the title earned and a pixel
  * celebration (confetti, fireworks, a hopping hero). "Paused" is the calm variant.
  */
-export function SummaryScreen({ summary, walker, seed, onBack, onNew }: Props) {
+export function SummaryScreen({ summary, sights = [], walker, seed, onBack, onNew }: Props) {
   const { t, locale } = useI18n()
   const panel = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -141,6 +147,20 @@ export function SummaryScreen({ summary, walker, seed, onBack, onNew }: Props) {
             <dd data-testid="summary-gems">{gems}</dd>
           </div>
         </dl>
+        {sights.length > 0 && (
+          <section className="summary-sights" data-testid="summary-sights" aria-label={t('summary.sights')}>
+            <h3>{t('summary.sights')}</h3>
+            <ul>
+              {sights.slice(0, MAX_LISTED).map((s) => (
+                <li key={s.id} data-kind={s.kind}>
+                  <PixelSvg art={SIGHT_SPRITES[s.kind]} size={24} />
+                  <span>{s.name ?? t(`sight.kind.${s.kind}`)}</span>
+                </li>
+              ))}
+            </ul>
+            {sights.length > MAX_LISTED && <p className="summary-sights-more">{t('summary.sightsMore', { n: sights.length - MAX_LISTED })}</p>}
+          </section>
+        )}
         <div className="summary-buttons">
           <button type="button" className="pix-btn primary" data-autofocus data-testid="summary-back" onClick={onBack}>
             {t('summary.back')}
