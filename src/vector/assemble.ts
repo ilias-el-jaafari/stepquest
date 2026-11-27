@@ -1,4 +1,5 @@
 import type { BBox } from '../geo/geo.ts'
+import { ringBox } from '../sights/geometry.ts'
 import type { OsmData, OsmWay } from '../osm/types.ts'
 import { cellBBox, type CellId } from '../world/cells.ts'
 import { SLICE_MARGIN_DEG, type CellRecord } from '../world/slice.ts'
@@ -175,6 +176,7 @@ export function cellFromTiles(c: CellId, tiles: readonly LoadedTile[], detail: b
   const ways: OsmWay[] = []
   const pois: OsmData['pois'] = []
   const sights: NonNullable<OsmData['sights']> = []
+  const grounds: NonNullable<OsmData['grounds']> = []
   let id = 1
   for (const t of [...tiles].sort((a, b) => a.id.y - b.id.y || a.id.x - b.id.x)) {
     const boxes = wayBoxes(t.data)
@@ -197,7 +199,12 @@ export function cellFromTiles(c: CellId, tiles: readonly LoadedTile[], detail: b
     })
     for (const p of t.data.pois) if (inHalfOpen(box, p.lat, p.lon)) pois.push(p)
     for (const s of t.data.sights ?? []) if (inHalfOpen(box, s.lat, s.lon)) sights.push(s)
+    // Areas go to every cell their box meets (a campus is bigger than a cell); the world keeps one copy.
+    for (const g of t.data.grounds ?? []) {
+      const [south, west, north, east] = ringBox(g.ring)
+      if (meets({ south, west, north, east }, near)) grounds.push(g)
+    }
   }
-  const data: OsmData = { bbox: box, lat: Float64Array.from(lat), lon: Float64Array.from(lon), ways, pois, ...(sights.length ? { sights } : {}), industrial: [], activity: [], source: 'tiles', timestamp: '' }
+  const data: OsmData = { bbox: box, lat: Float64Array.from(lat), lon: Float64Array.from(lon), ways, pois, ...(sights.length ? { sights } : {}), ...(grounds.length ? { grounds } : {}), industrial: [], activity: [], source: 'tiles', timestamp: '' }
   return { cell: c, coverage: box, data, savedAt: 0 }
 }

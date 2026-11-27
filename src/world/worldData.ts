@@ -2,7 +2,7 @@ import type { BBox } from '../geo/geo.ts'
 import { dedupePois } from '../osm/landmarks.ts'
 import type { OsmData, OsmWay, Poi } from '../osm/types.ts'
 import { dedupeSights } from '../sights/classify.ts'
-import type { Sight } from '../sights/types.ts'
+import type { Ground, Sight } from '../sights/types.ts'
 import { cellKey, cellOf } from './cells.ts'
 import { boxArea, unionBox } from './coverage.ts'
 import type { CellRecord } from './slice.ts'
@@ -59,6 +59,8 @@ export class WorldData {
   readonly tileWays = new Set<number>()
   pois: Poi[] = []
   sights: Sight[] = []
+  grounds: Ground[] = []
+  private readonly seenGrounds = new Set<string>()
   industrial: number[][] = []
   activity: number[] = []
   /** Coverage per cell key (the larger one when a cell was seen partly first). */
@@ -77,6 +79,19 @@ export class WorldData {
     const changed = merged.length !== this.sights.length || merged.some((s, i) => s !== this.sights[i])
     if (changed) this.sights = merged
     return changed
+  }
+
+  /** Add areas of sights (one copy of each piece, whichever cells carried it); true when the list grew. */
+  addGrounds(list: readonly Ground[] | undefined): boolean {
+    let grew = false
+    for (const g of list ?? []) {
+      const key = `${g.kind}:${g.mode}:${g.ring.length}:${g.ring[0]},${g.ring[1]}:${g.ring[g.ring.length - 2]},${g.ring[g.ring.length - 1]}`
+      if (this.seenGrounds.has(key)) continue
+      this.seenGrounds.add(key)
+      this.grounds.push(g)
+      grew = true
+    }
+    return grew
   }
 
   /** Add one record; returns the index of the first way it appended (the graph reads from there). */
@@ -127,6 +142,7 @@ export class WorldData {
     }
     if (data.pois.length) this.pois = dedupePois([...this.pois, ...data.pois])
     if (data.sights?.length) this.sights = dedupeSights([...this.sights, ...data.sights])
+    this.addGrounds(data.grounds)
     const key = cellKey(rec.cell)
     const had = this.coverage.get(key)
     if (!had || boxArea(rec.coverage) > boxArea(had)) this.coverage.set(key, rec.coverage)
@@ -206,6 +222,7 @@ export class WorldData {
       ways,
       pois: this.pois.slice(),
       ...(this.sights.length ? { sights: this.sights.slice() } : {}),
+      ...(this.grounds.length ? { grounds: this.grounds.slice() } : {}),
       industrial: this.industrial.slice(),
       activity: this.activity.slice(),
       coverage,

@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import type { LatLon } from '../geo/geo.ts'
+import { linkSights } from './grounds.ts'
 import { sightsAlongRoute, topMonuments } from './route.ts'
-import { sightId, type Sight, type SightMark } from './types.ts'
+import { sightId, type Ground, type Sight, type SightMark } from './types.ts'
 
 const NONE: readonly SightMark[] = []
 
@@ -25,11 +26,13 @@ export class MonumentLock {
 }
 
 /** The sights along a route (landmarks spec). Monuments count only when among the two best of the loaded map. */
-export function useSights(sights: readonly Sight[] | undefined, route: readonly LatLon[] | undefined, lockKey?: string): readonly SightMark[] {
+export function useSights(sights: readonly Sight[] | undefined, route: readonly LatLon[] | undefined, lockKey?: string, grounds?: readonly Ground[]): readonly SightMark[] {
   const lock = useMemo(() => new MonumentLock(), [])
+  // Linking to grounds and footprints runs when the loaded sights or areas change, not per route.
+  const linked = useMemo(() => (sights?.length ? linkSights(sights, grounds) : undefined), [sights, grounds])
   return useMemo(() => {
-    if (!sights?.length || !route || route.length < 2) return NONE
-    const marks = sightsAlongRoute(sights, route, undefined, lock.choose(sights, lockKey))
+    if (!linked?.length || !sights || !route || route.length < 2) return NONE
+    const marks = sightsAlongRoute(linked, route, undefined, lock.choose(sights, lockKey))
     return marks.length ? marks : NONE
-  }, [sights, route, lockKey, lock])
+  }, [linked, sights, route, lockKey, lock])
 }

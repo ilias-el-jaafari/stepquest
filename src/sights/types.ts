@@ -27,6 +27,16 @@ export type Sight = {
   wikipedia?: boolean
 }
 
+/**
+ * The real area of a sight (task 92). `grounds`: a landuse polygon (university, school, hospital campus);
+ * `footprint`: the building polygon that holds the sight's point. `ring` is flat `[lat, lon, lat, lon, ...]`,
+ * not closed, clipped at the tile edge like every polygon of the tiles.
+ */
+export type Ground = { kind: SightKind; mode: 'grounds' | 'footprint'; ring: number[] }
+
+/** A sight with the rings of its linked area (one or more pieces, flat lat/lon). */
+export type LinkedSight = Sight & { area?: { mode: Ground['mode']; rings: number[][] } }
+
 /** A sight kept for one route: where it is and where it lies along the way. */
 export type SightMark = {
   id: string
@@ -36,8 +46,10 @@ export type SightMark = {
   name?: string
   /** Metres along the route to the point closest to the sight. */
   alongM: number
-  /** Metres from the route. */
+  /** Metres from the route (to the grounds or footprint when it has one). */
   lateralM: number
+  /** The area to draw at its real size, when the data has one. */
+  area?: { mode: Ground['mode']; rings: number[][] }
 }
 
 /** Draw only sights this close to the route (metres). */

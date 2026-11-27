@@ -115,7 +115,7 @@ export class MapRenderer {
     this.lightingLayer = new LightingLayer(grid, this.chunks, tick)
     this.overlay = new OverlayLayer(grid, this.lightingLayer)
     this.decor = new DecorLayer(grid, () => this.requestRender(), decorOn(), source.town)
-    this.sights = new SightLayer(grid)
+    this.sights = new SightLayer(grid, source.town)
     // Sights look for their spot again when the loaded map changes (not on every water or flicker step).
     this.stopSightWatch = source.subscribe(() => {
       if (!this.sights.hasMarks) return
@@ -473,6 +473,7 @@ export class MapRenderer {
     this.lightingLayer.dispose()
     this.decor.dispose()
     this.stopSightWatch()
+    this.sights.dispose()
     this.chunks.dispose()
     this.overlay.dispose()
     if (this.scene) releaseCanvas(this.scene.canvas)
@@ -529,7 +530,7 @@ export class MapRenderer {
     const dc = `${this.decor.stats.onScreen},${this.decor.stats.animated}`
     if (this.canvas.dataset && this.canvas.dataset.decor !== dc) this.canvas.dataset.decor = dc
     // Sights standing on the map and drawn in the last scene paint.
-    const sg = `${this.sights.stats.placed},${this.sights.stats.drawn}`
+    const sg = `${this.sights.stats.placed},${this.sights.stats.drawn},${this.sights.stats.campuses},${this.sights.stats.chunks}`
     if (this.canvas.dataset && this.canvas.dataset.sights !== sg) this.canvas.dataset.sights = sg
     if (this.overlay.draw(ctx, v, light, now)) this.requestRender()
     this.reportView(v)
@@ -627,6 +628,8 @@ export class MapRenderer {
     if (this.grid.rails.length) drawRails(ctx, v, this.grid.rails, this.grid.cols, this.grid.rows)
 
     // Halloween decor: still items under the sky tint, so the night tints them too.
+    // The decor stays off the special buildings of the sights.
+    this.decor.setBlocked(this.sights.hasMarks ? this.sights.blockedTiles() : undefined)
     if (frame) this.decor.drawStatic(ctx, v, frame.plan, frame.painted, light)
     if (frame) this.sights.drawStatic(ctx, v, frame.painted)
     // Day cycle: multiply the map by the sky tint, then add window and lamp light. The route,
@@ -638,7 +641,6 @@ export class MapRenderer {
       if (frame) this.decor.drawNight(ctx, v, light)
       if (frame) this.sights.drawNight(ctx, v, light, frame.painted)
     } else this.lightingLayer.idle()
-    if (frame) this.sights.drawLabels(ctx, v, frame.painted)
     // Street names last: they are signs, not part of the lit map.
     this.lod?.drawLabels(ctx, v, this.grid)
     return frame?.pending ?? false

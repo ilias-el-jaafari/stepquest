@@ -79,7 +79,7 @@ describe('sight art', () => {
       }
     }
     for (const k of SIGHT_KINDS) expect({ w: l.day[k].w, h: l.day[k].h }).toEqual(spriteSize(k))
-    expect(l.width * l.height).toBeLessThan(160_000)
+    expect(l.width * l.height).toBeLessThan(280_000)
   })
 
   it('draws each kind differently', () => {

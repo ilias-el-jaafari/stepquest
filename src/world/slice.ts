@@ -1,4 +1,5 @@
 import type { BBox } from '../geo/geo.ts'
+import { ringBox } from '../sights/geometry.ts'
 import type { OsmData, OsmWay } from '../osm/types.ts'
 import { cellBBox, cellKey, cellsInBBox, type CellId } from './cells.ts'
 import { intersectBoxes } from './coverage.ts'
@@ -84,6 +85,10 @@ export function sliceToCells(data: OsmData, cells: readonly CellId[] = cellsInBB
     const activity: number[] = []
     const act = data.activity ?? []
     for (let i = 0; i + 1 < act.length; i += 2) if (inHalfOpen(act[i]!, act[i + 1]!)) activity.push(act[i]!, act[i + 1]!)
+    const groundsHere = (data.grounds ?? []).filter((g) => {
+      const [south, west, north, east] = ringBox(g.ring)
+      return meets({ south, west, north, east }, near)
+    })
     out.push({
       cell,
       coverage,
@@ -95,6 +100,7 @@ export function sliceToCells(data: OsmData, cells: readonly CellId[] = cellsInBB
         ways,
         pois: data.pois.filter((p) => inHalfOpen(p.lat, p.lon)),
         ...(data.sights?.length ? { sights: data.sights.filter((s) => inHalfOpen(s.lat, s.lon)) } : {}),
+        ...(groundsHere.length ? { grounds: groundsHere } : {}),
         industrial,
         activity,
         source: data.source,

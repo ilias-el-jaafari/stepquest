@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { townFor } from '../town/layout.ts'
+import { layoutLookup } from '../town/lookup.ts'
 import { loadDemoOsm } from '../osm/demo.ts'
 import { SIGHT_KINDS, type SightMark } from '../sights/types.ts'
 import { Terrain } from '../tiles/grid.ts'
@@ -51,21 +53,20 @@ describe('SightLayer', () => {
     expect(layer.stats.drawn).toBe(layer.standing.length)
   })
 
-  it('hides sights in the overview and names them only at quest zoom', () => {
+  it('hides sights in the overview and never writes a name, at any zoom', () => {
     const layer = new SightLayer(grid)
     layer.setMarks(marks(8))
     const far = recorder()
     layer.drawStatic(far.ctx, view(4), painted)
-    layer.drawLabels(far.ctx, view(4), painted)
-    expect(far.calls.drawImage + far.calls.fillText).toBe(0)
-    const mid = recorder()
-    layer.drawStatic(mid.ctx, view(12), painted)
-    layer.drawLabels(mid.ctx, view(12), painted)
-    expect(mid.calls.drawImage).toBeGreaterThan(0)
-    expect(mid.calls.fillText).toBe(0)
-    const near = recorder()
-    layer.drawLabels(near.ctx, view(24), painted)
-    expect(near.calls.fillText).toBe(layer.standing.length)
+    expect(far.calls.drawImage).toBe(0)
+    for (const zoom of [8, 12, 24, 48]) {
+      const r = recorder()
+      layer.drawStatic(r.ctx, view(zoom), painted)
+      layer.drawNight(r.ctx, view(zoom), NIGHT, painted)
+      expect(r.calls.drawImage).toBeGreaterThan(0)
+      expect(r.calls.fillText + r.calls.strokeText).toBe(0)
+    }
+    expect((layer as unknown as Record<string, unknown>).drawLabels).toBeUndefined()
   })
 
   it('lights windows and glows only when dark', () => {
@@ -98,30 +99,26 @@ describe('SightLayer', () => {
     expect(calls.drawImage).toBe(0)
   })
 
-  it('keeps every name inside the view, however close the sight is to the screen edge', () => {
-    const layer = new SightLayer(grid)
-    layer.setMarks(marks(8))
-    const sight = layer.standing[0]!
-    for (const [w, h] of [[390, 844], [320, 568]] as const) {
-      // Slide the map so the sight's centre sits on each edge in turn.
-      for (const edge of [0, w / 2, w]) {
-        const xs: { x: number; w: number; y: number }[] = []
-        const ctx = {
-          drawImage: () => {}, strokeText: () => {}, measureText: (s: string) => ({ width: s.length * 8 }),
-          fillText: (s: string, x: number, y: number) => xs.push({ x, w: s.length * 8, y }),
-          fillStyle: '', strokeStyle: '', font: '', lineWidth: 1, lineJoin: 'miter', textAlign: 'start', textBaseline: 'alphabetic', globalAlpha: 1, globalCompositeOperation: 'source-over',
-        } as unknown as CanvasRenderingContext2D
-        const scale = 24
-        const v: View = { w, h, dpr: 1, zoom: scale, cssW: w, cssH: h, scale, originX: edge - (sight.x + sight.w / 2) * scale, originY: h - 40 - (sight.y + sight.h) * scale, camX: 0, camY: 0, detail: true }
-        layer.drawLabels(ctx, v, painted)
-        for (const l of xs) {
-          expect(l.x - l.w / 2).toBeGreaterThanOrEqual(0)
-          expect(l.x + l.w / 2).toBeLessThanOrEqual(w)
-          expect(l.y).toBeGreaterThanOrEqual(0)
-          expect(l.y + 7).toBeLessThanOrEqual(h)
-        }
-        expect(xs.length).toBeGreaterThan(0)
-      }
-    }
+  it('draws a sight with an area at its real size: a campus, crowns, blocked decor tiles, and the fixed sprite only without one', () => {
+    const town = layoutLookup(townFor(grid))
+    const layer = new SightLayer(grid, town)
+    const ring = [[20, 20], [60, 20], [60, 60], [20, 60]].flatMap(([x, y]) => {
+      const p = grid.tileToLatLon(x!, y!)
+      return [p.lat, p.lon]
+    })
+    const c = grid.tileToLatLon(40, 40)
+    const withArea: SightMark = { id: 'u', kind: 'university', lat: c.lat, lon: c.lon, alongM: 0, lateralM: 0, area: { mode: 'grounds', rings: [ring] } }
+    layer.setMarks([withArea])
+    expect(layer.areas).toHaveLength(1)
+    expect(layer.blockedTiles().size).toBeGreaterThan(20)
+    for (const i of layer.blockedTiles()) expect(grid.terrain[i]).toBe(Terrain.building)
+    // With buildings in the grounds there is no fixed sprite; without an area there is.
+    expect(layer.standing).toHaveLength(0)
+    const plain = new SightLayer(grid, town)
+    plain.setMarks([{ ...withArea, area: undefined, id: 'p' }])
+    expect(plain.standing).toHaveLength(1)
+    expect(plain.blockedTiles().size).toBe(0)
+    // Changing only the area changes the marks.
+    expect(layer.setMarks([{ ...withArea, area: { mode: 'footprint', rings: [ring] } }])).toBe(true)
   })
 })

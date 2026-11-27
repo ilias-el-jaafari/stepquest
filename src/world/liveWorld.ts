@@ -218,6 +218,7 @@ export class LiveWorld implements MapSource {
       if (!this.inFrame(rec.cell)) continue
       const k = cellKey(rec.cell)
       if (this.data.addSights(rec.data.sights)) sights = true
+      if (this.data.addGrounds(rec.data.grounds)) sights = true
       this.drawn.set(k, rec)
       if (this.refresh(k)) painted.push(rec.cell)
     }
@@ -232,7 +233,7 @@ export class LiveWorld implements MapSource {
   private withSights(): void {
     const prev = this.snap
     if (!prev) return
-    const data = { ...prev.data, sights: this.data.sights.slice() }
+    const data = { ...prev.data, sights: this.data.sights.slice(), ...(this.data.grounds.length ? { grounds: this.data.grounds.slice() } : {}) }
     this.snap = {
       data,
       grid: prev.grid,

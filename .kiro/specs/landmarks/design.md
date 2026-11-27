@@ -16,7 +16,10 @@ Artworks (`art_gallery/artwork`, 62 in the same tile: falla statues, murals) are
 | `src/sights/art.ts` | Palette `SIGHT`, one `Sprite` per kind built from a tiny grid builder, `litOverlay`, `sightAtlasLayout`. Pure. |
 | `src/sights/place.ts` | `placeSights(marks, grid, keep, town)`: free spot search, no overlap. Pure over a grid. |
 | `src/sights/useSights.ts` | Hook: world sights + route -> marks, with the quest's top two fixed. |
-| `src/render/sightLayer.ts` | Atlas on first use, `drawStatic` (before the tint), `drawNight` (lit windows and glow, after the tint), `drawLabels`. |
+| `src/sights/grounds.ts` | `groundKind(landuseClass)`, `linkSights(sights, grounds)` (point in polygon, nearest of the kind, pieces joined by shared end points, sights sharing grounds merged), `areaDistanceM`. Pure. |
+| `src/sights/campus.ts` | `buildCampus(grid, town, marks)`: per tile roles (lawn, paving, tree, roof, wall) inside the area, whole-house replacement, main building and crown spot. Pure over a grid. |
+| `src/render/campusArt.ts` | Per kind material (`CAMPUS_STYLE`), tile painters for roof, wall, lawn, paving and the night window layer; cached tile bitmaps. |
+| `src/render/sightLayer.ts` | Atlas on first use, per-chunk campus bitmaps (day, lit), `drawStatic` (before the tint), `drawNight` (lit windows and halo, after the tint). No labels. |
 | `src/ghost/director.ts` | `sightLine(mark)`: key and placeholders for Wisp. |
 | `src/ui/SummaryScreen.tsx` | The "Places discovered" list. |
 
@@ -42,7 +45,7 @@ Sprite size in tiles: `ceil(w/16)` by `ceil(h/16)`, base row at the bottom. Cand
 
 ## Rendering
 
-The atlas holds, per kind, the day sprite and a "lit" overlay (only the window and lamp pixels in warm yellow, rest transparent) side by side; painted once, like the decor atlas. `drawStatic` blits day sprites into the cached scene before the tint (so they darken at night). `drawNight` blits the lit overlay and one cached glow (stepped rings, `lighter`) after the tint. Labels use `ctx.font` of the pixel font at `max(6, 0.3 × zoom)` px with a paper stroke; drawn after the tint. Culling by screen box; no arrays are built per paint (the placed list is built when it goes stale). The overlay (route, hero, Wisp) draws above the scene, so nothing here can cover them; the keep-out set keeps footprints off the route tiles.
+The atlas holds, per kind, the day sprite and a "lit" overlay (only the window and lamp pixels in warm yellow, rest transparent) side by side; painted once, like the decor atlas. `drawStatic` blits day sprites into the cached scene before the tint (so they darken at night). `drawNight` blits the lit overlay and one cached glow (stepped rings, `lighter`) after the tint. There are no name labels on the map (task 92). Culling by screen box; no arrays are built per paint (the placed list is built when it goes stale). The overlay (route, hero, Wisp) draws above the scene, so nothing here can cover them; the keep-out set keeps footprints off the route tiles.
 
 ## Wisp and the summary
 
@@ -51,3 +54,15 @@ The atlas holds, per kind, the day sprite and a "lit" overlay (only the window a
 ## Performance
 
 Static: one `drawImage` per visible sight per scene paint (a few). Nothing runs per frame except what the scene cache already skips. The corridor filter runs when the route or the world's sights change, not per frame. Measured with the 4×-throttled benchmark: see tasks.md.
+
+## Real footprint (task 92)
+
+**Data (measured on the z14 tiles of València, Tarongers and the town hall):** `landuse` holds `university` (1 to 3 per tile), `school` (17 to 21), `hospital` (2 to 3) and also `college`, `kindergarten`, `library`, `stadium`; there is none for places of worship or the town hall (`poi` `town_hall/townhall`, `place_of_worship/*`). `building` polygons carry only `render_height`, `colour`. So `omt.ts` keeps, as `OsmData.grounds` (`Ground = { kind, mode: 'grounds' | 'footprint', ring }`, ring as flat lat/lon, clipped at the tile edge like every polygon): the landuse polygons of the four classes, and the building polygons that contain a sight point of the same tile (or lie within 25 m of it, nearest first). `assemble.ts` hands a piece to the cell of its first vertex, `worldData.ts` merges (identical rings once), `codec.ts` writes `gr` (version 6). Pieces cut by a tile edge are joined when they share an end point (rounded to 1e-6°).
+
+**Linking (`grounds.ts`):** for a sight, the pieces of its kind: the group (joined pieces) containing its point, else the nearest group within 60 m (university also takes `college`); with no `grounds`, the `footprint` group likewise within 25 m. The linked sight keeps the rings. Two sights linked to the same group become one (the better `sightScore`). The corridor filter measures to ring edges (and 0 inside), with a bounding-box pre-test.
+
+**Campus map (`campus.ts`):** for each mark with rings, the tile bounding box is scanned once, a tile belongs to the area when its centre is inside a ring. Roles: `grounds`: building tiles become `roof` or `wall` (a building tile whose south neighbour is not a building is the façade row), non-building ground becomes `lawn`, `paving` (within one tile of a building or a street) or `tree` (hash 1 in 14 of lawn, never beside a building); road, path, crossing and water tiles are left alone. A house lot (from `TownLookup.houseAt`) with at least a third of its tiles in the area is taken whole (tiles not in the area become lawn); lots with less are removed from the area. `footprint`: every area tile not street or water is building. The main building is the 8-connected group of building tiles that holds the tile of the sight's point (else the nearest within 3 tiles, else the largest); its crown spot is the middle of its south row. Pure, deterministic, tested for arbitrary rectangles and polygons.
+
+**Painting:** `campusArt.ts` paints 16 × 16 tiles per (kind, role, edge mask, variant): roof tiles with the kind's pattern and a dark outline on the sides that touch a non-building tile, façade tiles with windows (door at the crown column), lawn, paving and tree tiles. Chunk bitmaps (512 × 512, transparent) are built on first draw into an LRU of 24 and dropped when the map or the marks change; the lit bitmap holds only the window pixels. The crown is the kind's sprite body (no plate) blitted from the atlas, centred on the crown spot, so it can rise above the footprint. Night: the lit bitmaps over the tint and one cached halo sprite per building, scaled to its box, with `lighter`.
+
+**Order:** chunk tiles and houses (existing) -> campus chunk bitmaps (cover the houses) -> crowns and fixed sprites -> decor (skips campus building tiles through `DecorLayer.setBlocked`).

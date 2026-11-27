@@ -23,7 +23,7 @@ A walk should show what is worth seeing on it. StepQuest draws a few **sights** 
 
 ### Requirement L2: Only along the route
 
-1. THE SYSTEM SHALL draw a sight only when its distance to the route polyline is at most `CORRIDOR_M`. With no route, no sight is drawn.
+1. THE SYSTEM SHALL draw a sight only when its distance to the route polyline is at most `CORRIDOR_M`. The distance is measured to the sight's grounds or footprint when it has one (0 when the route runs inside it), otherwise to its point. With no route, no sight is drawn.
 2. THE SYSTEM SHALL compute the distance in a local metric projection, to the segments of the polyline, and SHALL also give each kept sight its distance along the route (`alongM`).
 3. WHEN the route changes (new plan, new quest, reroute), THE SYSTEM SHALL recompute which sights are shown.
 
@@ -43,8 +43,8 @@ A walk should show what is worth seeing on it. StepQuest draws a few **sights** 
 
 1. THE SYSTEM SHALL stand each sprite on the closest free spot to its point (at most 6 tiles away) whose whole footprint is loaded, is not a street, path, crossing or water, does not touch the route, the start, the finish or a checkpoint (the decor keep-out set), and does not overlap another sight. IF there is no such spot, THE SYSTEM SHALL show nothing for that sight.
 2. THE SYSTEM SHALL draw sights into the cached scene, before the sky tint, so day and night tint them like the tiles; a redraw of the scene happens only when the sights, the keep-out set or the loaded map change, never per frame.
-3. THE SYSTEM SHALL hide sights below zoom 8 (the overview) and show a name label (Press Start 2P, ink on paper outline) from zoom 20, under the sprite, in the scene.
-4. WHEN it is dark, THE SYSTEM SHALL light the windows (warm yellow, drawn after the tint) and add a faint warm glow around the building. Sprites and labels never allocate in the frame loop.
+3. THE SYSTEM SHALL hide sights below zoom 8 (the overview) and SHALL NOT write names on the map at any zoom (task 92: names live only in Wisp's lines and the summary list).
+4. WHEN it is dark, THE SYSTEM SHALL light the windows (warm yellow, drawn after the tint) and add a faint warm glow around the building. Sprites never allocate in the frame loop.
 5. THE SYSTEM SHALL keep sights out of the HUD's way by not drawing on top of the route, the hero or Wisp (both are drawn in the overlay above the scene).
 
 ### Requirement L6: Wisp comments
@@ -67,3 +67,18 @@ A walk should show what is worth seeing on it. StepQuest draws a few **sights** 
 ### Requirement L9: Tests
 
 1. THE SYSTEM SHALL test: classification per tag set (religion mapping with unknown), the corridor filter (property test: shown only inside, none beyond), the top-two ranking (determinism under shuffling), the atlas and sprite validity, Wisp's single trigger per sight, the summary list, the codec round trip and i18n parity.
+
+### Requirement L10: Real footprint (task 92)
+
+1. THE SYSTEM SHALL read the area of a sight from the same z14 tiles: `landuse` polygons of class `university`, `college`, `school` and `hospital` are its **grounds**; for every sight without grounds (places of worship, the town hall, a school with no landuse polygon) the `building` polygon that contains its point, or the nearest one within 25 m, is its **footprint**. No new request is made.
+2. THE SYSTEM SHALL link a sight to the grounds of its kind that contain its point (else the nearest within 60 m), joining the pieces of one polygon that the tile edge cut (shared end points), and SHALL merge sights that share grounds into the most important one.
+3. THE SYSTEM SHALL draw a sight that has an area at the scale of that area. Inside **grounds**: every building tile becomes a special building (one large building per connected footprint, any shape), every ordinary house whose lot is at least one third inside is replaced whole, and the rest is campus ground (lawn, paving beside the buildings, a few trees). Inside a **footprint**: the footprint tiles become the special building. Streets, paths, crossings and water are never covered. Nothing in the area is an ordinary house, and no tile outside the area is special, except whole replaced house lots.
+4. THE SYSTEM SHALL build the special tiles per 32 × 32 chunk into the cached scene (day and lit layers), when the sights, the loaded map or the chunk change, never per frame, and SHALL keep the Halloween decor off the special building tiles.
+5. THE SYSTEM SHALL give the main building (the footprint at the sight's point, else the largest) a crown: the kind's landmark part (pediment and dome, bell tower, minarets, clock tower …) at the front, standing on the footprint. A sight with no area keeps its fixed sprite on a paving plate.
+6. THE SYSTEM SHALL keep the route, the start, the finish and the gems visible: they draw above the scene.
+
+### Requirement L11: Unmistakable designs (task 92)
+
+1. THE SYSTEM SHALL give every kind its own material palette (wall, roof, trim) and a distinct silhouette, different from the house tiles: university sandstone with columns and a dome, hospital white with teal and green bands, school brick with a clock, church pale stone with slate roof and bell tower, mosque ivory with teal domes and minarets, synagogue blue-grey with arched front, temple lacquered red with tiered gold roofs, town hall stone with a clock tower, balcony and flags. Special roofs and façades use a dark outline on every free edge.
+2. THE SYSTEM SHALL light the windows of special buildings at night and add a faint warm halo around each; the lit layer is built with the chunk, the halo is a cached sprite.
+

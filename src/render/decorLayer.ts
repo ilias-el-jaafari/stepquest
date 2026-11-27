@@ -61,6 +61,7 @@ const GLOW_TILES = { jack: 2.8, candle: 2, lantern: 2.4, cauldron: 3.2 } as cons
 export class DecorLayer {
   private enabled: boolean
   private keep: ReadonlySet<number> = NO_KEEP
+  private blocked: ReadonlySet<number> = NO_KEEP
   private plan: ChunkPlan | undefined
   private painted: ReadonlySet<number> | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -110,6 +111,11 @@ export class DecorLayer {
     this.keep = tiles ?? NO_KEEP
   }
 
+  /** Tiles of special buildings (landmarks spec, task 92): nothing stands on them. */
+  setBlocked(tiles: ReadonlySet<number> | undefined): void {
+    this.blocked = tiles ?? NO_KEEP
+  }
+
   dispose(): void {
     this.stopTimer()
   }
@@ -123,7 +129,8 @@ export class DecorLayer {
   private shown(it: DecorItem, cap: number, density: number, night: boolean): boolean {
     if (it.order >= cap && !it.animated) return false
     if (it.rank >= density || (it.nightOnly && !night)) return false
-    return !this.keep.has(it.ty * this.grid.cols + it.tx)
+    const at = it.ty * this.grid.cols + it.tx
+    return !this.keep.has(at) && !this.blocked.has(at)
   }
 
   private blit(ctx: CanvasRenderingContext2D, id: SpriteId, frame: number, footX: number, footY: number, px: number, anchorLeft = false): void {

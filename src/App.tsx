@@ -138,8 +138,8 @@ export default function App() {
     if (shown) return shown.points
     return settings.mode === 'oneway' && end ? [start, end] : [start]
   }, [shown, start, end, settings.mode])
-  const planSights = useSights(world?.data.sights, shown?.points)
-  const questSights = useSights(world?.data.sights, runner.quest?.route.points, runner.quest?.id)
+  const planSights = useSights(world?.data.sights, shown?.points, undefined, world?.data.grounds)
+  const questSights = useSights(world?.data.sights, runner.quest?.route.points, runner.quest?.id, world?.data.grounds)
   const focusKey = shown ? `route:${shown.nodes.length}:${shown.distanceM}` : `pts:${settings.mode}:${end ? 'e' : ''}:${world ? 'w' : ''}`
 
   const finishNote = settings.mode === 'oneway' && state.finishNote && end && state.finishNote.at.lat === end.lat && state.finishNote.at.lon === end.lon ? state.finishNote : undefined

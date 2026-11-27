@@ -40,11 +40,11 @@ describe('sights from a tile', () => {
 })
 
 describe('codec', () => {
-  it('writes version 5 and round-trips sights', () => {
+  it('writes the current version and round-trips sights', () => {
     const data = tileToOsm(tile(), T)
     const compact = encodeOsm(data)
     expect(compact.v).toBe(CODEC_VERSION)
-    expect(CODEC_VERSION).toBe(5)
+    expect(CODEC_VERSION).toBe(6)
     const back = decodeOsm(JSON.parse(JSON.stringify(compact)))
     expect(back.sights).toHaveLength(data.sights!.length)
     for (const s of data.sights!) {

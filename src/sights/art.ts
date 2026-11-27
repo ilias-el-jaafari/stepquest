@@ -361,18 +361,30 @@ const BIG: Partial<Record<SightKind, () => Grid>> = {
     return g
   },
   university() {
-    const g = university().doubled(10)
-    // A gold-tipped flagpole over the pediment, and two small urns on the corners of the entablature.
-    g.rect(23, 0, 2, 4, 'G').rect(23, 4, 2, 6, 'K')
-    flag(g, 25, 2, 8, 'B', 'b')
-    g.rect(5, 17, 3, 3, 'S').rect(40, 17, 3, 3, 'S')
+    const g = university().doubled(18)
+    // A dome on a drum behind the pediment, with a gold lantern: the silhouette no house has.
+    const dome = [6, 10, 14, 16, 18, 18, 18]
+    dome.forEach((w, k) => g.rect(24 - Math.floor(w / 2), 6 + k, w, 1, k < 5 ? 'l' : 's'))
+    g.rect(15, 13, 18, 5, 'S').rect(15, 17, 18, 1, 's')
+    for (const x of [17, 21, 25, 29]) g.rect(x, 14, 2, 3, 'V')
+    g.rect(22, 0, 4, 3, 'G').rect(23, 3, 2, 3, 'g')
+    flag(g, 40, 6, 8, 'B', 'b')
+    g.rect(5, 25, 3, 3, 'S').rect(40, 25, 3, 3, 'S')
     return g
   },
   school() {
     const g = school().doubled(8)
     flag(g, 20, 0, 10, 'R', 'r')
-    // A big bell in the tower.
-    disc(g, 24, 23, 2, 'G')
+    // A clock in the tower (glass lights at night) with two hands.
+    disc(g, 24, 24, 4, 'H')
+    disc(g, 24, 24, 3, 'V')
+    g.rect(24, 21, 1, 3, 'K').rect(24, 24, 2, 1, 'K')
+    return g
+  },
+  hospital() {
+    const g = hospital().doubled(0)
+    // Bands of teal and green across the white block: how a hospital reads from afar. No red cross.
+    g.rect(4, 20, 36, 2, 'T').rect(4, 22, 36, 1, 'N')
     return g
   },
   mosque() {
@@ -397,6 +409,19 @@ export const HOUSE_FOOTPRINT_PX = 48 * 48
 
 /** The building itself, outlined in ink (no plate). */
 export const SIGHT_BODIES: Record<SightKind, string[]> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, outlined((BIG[k] ?? (() => BUILDERS[k]().doubled()))())])) as Record<SightKind, string[]>
+
+/** Materials per kind (letters of `SIGHT` redefined): wall, stone, roof, blue and ink, so no two kinds share a look or the house tiles' colours. */
+export const KIND_COLORS: Partial<Record<SightKind, Record<string, string>>> = {
+  university: { K: '#46341a', W: '#ecd49a', w: '#b99a5e', S: '#dcbb7b', s: '#9c7a3e', l: '#fff1c9', Q: '#eadba8', q: '#dccb94' },
+  hospital: { K: '#2d4a55', W: '#fbfdfd', w: '#c3ced6', S: '#dfe6eb', s: '#9fb0ba', l: '#ffffff', H: '#f4f7f9', Q: '#e5ecf0', q: '#d2dce3' },
+  school: { K: '#43160f', W: '#cf6c52', w: '#9e4632', R: '#b84c3a', r: '#6f261d', l: '#fbf7ec', Q: '#e8cfba', q: '#d9bca3' },
+  church: { K: '#232030', W: '#e8e1cd', w: '#b0a78e', R: '#5f6b80', r: '#2f3646', Q: '#e2dcd0', q: '#d0c8ba' },
+  mosque: { K: '#103a38', W: '#f7f0dd', w: '#cdc2a2', S: '#e3b53c', s: '#a07c18', Q: '#f0e7cd', q: '#e1d5b2' },
+  synagogue: { K: '#1d2748', W: '#eaedf4', w: '#a9b3c9', B: '#8497bd', b: '#46598a', Q: '#dfe3ed', q: '#cbd2e0' },
+  temple: { K: '#33100b', W: '#ecdcb4', w: '#b99f6e', P: '#c2392b', p: '#6c1a13', S: '#b52e22', s: '#7d1f17', Q: '#ebd1aa', q: '#ddbd8d' },
+  townHall: { K: '#2a2540', W: '#cdbf9a', w: '#9c8f6c', B: '#8d92a1', b: '#4d5163', Q: '#ddd7c6', q: '#ccc4ae' },
+}
+const colorsOf = (k: SightKind): Record<string, string> => ({ ...SIGHT, ...(KIND_COLORS[k] ?? {}) })
 
 /** Body on a rounded paving plate along its foot, with two gold sparkles at the corners: the sight reads as a place worth the detour. */
 function onPlate(kind: SightKind, body: readonly string[]): string[] {
@@ -429,18 +454,22 @@ function onPlate(kind: SightKind, body: readonly string[]): string[] {
 }
 
 /** One sprite per kind: day colours, ink outline and paving plate included. */
-export const SIGHT_SPRITES: Record<SightKind, Sprite> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, { rows: onPlate(k, SIGHT_BODIES[k]), colors: SIGHT }])) as Record<SightKind, Sprite>
+export const SIGHT_SPRITES: Record<SightKind, Sprite> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, { rows: onPlate(k, SIGHT_BODIES[k]), colors: colorsOf(k) }])) as Record<SightKind, Sprite>
+
+/** The building alone, without its plate, for the crown of a main building on the map (task 92). */
+export const SIGHT_CROWNS: Record<SightKind, Sprite> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, { rows: SIGHT_BODIES[k], colors: colorsOf(k) }])) as Record<SightKind, Sprite>
 
 /** The night overlay of a sprite: only its window glass, in warm light (drawn after the tint). */
 export function litOverlay(s: Sprite): Sprite {
   return { rows: s.rows.map((r) => r.replace(/[^V]/g, '.').replace(/V/g, 'Y')), colors: { Y: SIGHT_LIT } }
 }
+export const SIGHT_CROWN_LIT: Record<SightKind, Sprite> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, litOverlay(SIGHT_CROWNS[k])])) as Record<SightKind, Sprite>
 export const SIGHT_LIT_SPRITES: Record<SightKind, Sprite> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, litOverlay(SIGHT_SPRITES[k])])) as Record<SightKind, Sprite>
 
 export const spriteSize = (k: SightKind): { w: number; h: number } => ({ w: SIGHT_SPRITES[k].rows[0]?.length ?? 0, h: SIGHT_SPRITES[k].rows.length })
 
 export type AtlasSlot = { x: number; y: number; w: number; h: number }
-export type SightAtlasLayout = { width: number; height: number; day: Record<SightKind, AtlasSlot>; lit: Record<SightKind, AtlasSlot> }
+export type SightAtlasLayout = { width: number; height: number; day: Record<SightKind, AtlasSlot>; lit: Record<SightKind, AtlasSlot>; crown: Record<SightKind, AtlasSlot>; crownLit: Record<SightKind, AtlasSlot> }
 
 const ATLAS_WIDTH = 288
 
@@ -448,12 +477,14 @@ const ATLAS_WIDTH = 288
 export function sightAtlasLayout(): SightAtlasLayout {
   const day = {} as Record<SightKind, AtlasSlot>
   const lit = {} as Record<SightKind, AtlasSlot>
+  const crown = {} as Record<SightKind, AtlasSlot>
+  const crownLit = {} as Record<SightKind, AtlasSlot>
   let x = 0
   let y = 0
   let rowH = 0
-  for (const frames of [day, lit]) {
+  for (const frames of [day, lit, crown, crownLit]) {
     for (const k of SIGHT_KINDS) {
-      const { w, h } = spriteSize(k)
+      const { w, h } = frames === crown || frames === crownLit ? { w: SIGHT_CROWNS[k].rows[0]?.length ?? 0, h: SIGHT_CROWNS[k].rows.length } : spriteSize(k)
       if (x + w > ATLAS_WIDTH) {
         x = 0
         y += rowH + 1
@@ -464,5 +495,5 @@ export function sightAtlasLayout(): SightAtlasLayout {
       rowH = Math.max(rowH, h)
     }
   }
-  return { width: ATLAS_WIDTH, height: y + rowH, day, lit }
+  return { width: ATLAS_WIDTH, height: y + rowH, day, lit, crown, crownLit }
 }

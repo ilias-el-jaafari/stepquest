@@ -3,7 +3,9 @@ import { PbfReader } from 'pbf'
 import { classifyWay, isBridge, isTunnel, isWalkable, wayStyle, type Tags } from '../osm/classify.ts'
 import { dedupePois, landmarkKind } from '../osm/landmarks.ts'
 import { dedupeSights, sightFromPoi } from '../sights/classify.ts'
-import type { Sight } from '../sights/types.ts'
+import { distanceToRingM, pointInRing } from '../sights/geometry.ts'
+import { FOOTPRINT_REACH_M, groundKind, hasFootprint } from '../sights/grounds.ts'
+import type { Ground, Sight } from '../sights/types.ts'
 import type { OsmData, OsmWay, Poi } from '../osm/types.ts'
 import { latOf, lonOf, tileBBox, type TileId } from './tileMath.ts'
 
@@ -223,6 +225,14 @@ export type TileOptions = {
   coarse?: boolean
 }
 
+/** A polygon ring of the tile as flat `[lat, lon, ...]`, clipped at the tile edge like every polygon, not closed. */
+function flatRing(ring: readonly P[], e: number, t: TileId): number[] {
+  const clipped = clipRing(ring, e)
+  const out: number[] = []
+  for (const q of clipped.slice(0, -1)) out.push(latOf((t.y * e + q.y) / e, t.z), lonOf((t.x * e + q.x) / e, t.z))
+  return out.length >= 6 ? out : []
+}
+
 /** Decode one MVT and convert it to the map model (clipped at the tile edge, degrees, OSM-style kinds). */
 export function tileToOsm(bytes: Uint8Array, t: TileId, opts: TileOptions = {}): OsmData {
   const vt = new VectorTile(new PbfReader(bytes))
@@ -231,6 +241,8 @@ export function tileToOsm(bytes: Uint8Array, t: TileId, opts: TileOptions = {}):
   const ways: OsmWay[] = []
   const candidates: Poi[] = []
   const sightCandidates: Sight[] = []
+  const grounds: Ground[] = []
+  const buildingRings: number[][] = []
   let id = 1
   const nodeFrom = (e: number) => (p: P) => {
     lat.push(latOf((t.y * e + p.y) / e, t.z))
@@ -276,13 +288,18 @@ export function tileToOsm(bytes: Uint8Array, t: TileId, opts: TileOptions = {}):
           break
         case 'building':
           tags = polygon ? { building: 'yes' } : undefined
+          if (polygon && !opts.coarse) for (const poly of classifyRings(f.loadGeometry())) if (poly[0]) { const r = flatRing(poly[0], e, t); if (r.length) buildingRings.push(r) }
           break
         case 'landcover':
           tags = polygon ? landcoverTags(p) : undefined
           break
-        case 'landuse':
+        case 'landuse': {
           tags = polygon ? landuseTags(p) : undefined
+          // Campus grounds (university, school, hospital): kept as areas of sights (landmarks spec, task 92).
+          const gk = polygon && !opts.coarse ? groundKind(str(p.class)) : undefined
+          if (gk) for (const poly of classifyRings(f.loadGeometry())) if (poly[0]) { const r = flatRing(poly[0], e, t); if (r.length) grounds.push({ kind: gk, mode: 'grounds', ring: r }) }
           break
+        }
         case 'park':
           tags = polygon && p.class === 'park' ? { leisure: 'park' } : undefined
           break
@@ -315,13 +332,29 @@ export function tileToOsm(bytes: Uint8Array, t: TileId, opts: TileOptions = {}):
       else push(tags, geometry, false, e)
     }
   }
+  const sights = opts.coarse ? [] : dedupeSights(sightCandidates)
+  // The footprint of a sight: the building polygon that holds its point, else the nearest within reach.
+  for (const s of sights) {
+    if (!hasFootprint(s.kind)) continue
+    let best: number[] | undefined
+    let bestD = FOOTPRINT_REACH_M
+    for (const ring of buildingRings) {
+      const d = pointInRing(s.lat, s.lon, ring) ? 0 : distanceToRingM(s.lat, s.lon, ring)
+      if (d < bestD) {
+        best = ring
+        bestD = d
+      }
+    }
+    if (best) grounds.push({ kind: s.kind, mode: 'footprint', ring: best })
+  }
   const data: OsmData = {
     bbox: tileBBox(t),
     lat: Float64Array.from(lat),
     lon: Float64Array.from(lon),
     ways,
     pois: opts.coarse ? [] : dedupePois(candidates),
-    sights: opts.coarse ? [] : dedupeSights(sightCandidates),
+    sights,
+    ...(grounds.length ? { grounds } : {}),
     industrial: [],
     activity: [],
     source: 'tiles',

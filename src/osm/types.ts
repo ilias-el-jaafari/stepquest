@@ -1,5 +1,5 @@
 import type { BBox } from '../geo/geo.ts'
-import type { Sight } from '../sights/types.ts'
+import type { Ground, Sight } from '../sights/types.ts'
 
 export type FeatureKind = 'road' | 'path' | 'building' | 'park' | 'water' | 'waterway' | 'barrier' | 'rail'
 
@@ -75,6 +75,8 @@ export type OsmData = {
   pois: Poi[]
   /** Sights (faculties, schools, hospitals, places of worship, the town hall, monuments; landmarks spec). Absent in data built before codec v5. */
   sights?: Sight[]
+  /** Real areas of sights: campus grounds and building footprints (landmarks spec, task 92). Absent in data built before codec v6. */
+  grounds?: Ground[]
   /** Industrial / railway land as closed rings of node indices (routing avoids walking through it). */
   industrial?: number[][]
   /** Shops, cafés and other places that keep a street lively, as [lat, lon, lat, lon, …]. */
