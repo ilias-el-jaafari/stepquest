@@ -1,6 +1,7 @@
 import fc from 'fast-check'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AudioEngine, lfsrNoise, pulseCoefficients } from './engine.ts'
+import { themeReady } from './musicPlayer.ts'
 import { bubbleDurationMs } from './speechBubble.ts'
 import { AUDIO_STORAGE_KEY, DEFAULT_AUDIO } from './settings.ts'
 import type { VoiceQueue } from './voiceQueue.ts'
@@ -126,6 +127,9 @@ function runner(ctx: FakeContext) {
   }
 }
 
+// The composed loop is loaded lazily; the tests start with it in memory.
+beforeAll(() => themeReady())
+
 beforeEach(() => {
   localStorage.clear()
   FakeContext.instances = []
@@ -231,13 +235,11 @@ describe('audio engine', () => {
     vi.useFakeTimers()
     const engine = new AudioEngine({ ...DEFAULT_AUDIO, muted: true }, fakeWindow())
     engine.unlock()
-    const ctx = FakeContext.instances[0]!
-    const n = ctx.sources.length
+    expect(FakeContext.instances).toHaveLength(0) // muted: a tap creates no AudioContext
     const short = 'Turn left.'
     const long = 'Checkpoint three of ten reached. Next one in four hundred metres, to the north east.'
     engine.say(short, 'en', 2)
     engine.say(long, 'en', 1)
-    expect(ctx.sources.length).toBe(n)
     expect(engine.getSnapshot().phrase?.text).toBe(short)
     vi.advanceTimersByTime(bubbleDurationMs(short) - 1)
     expect(engine.getSnapshot().phrase?.text).toBe(short)
@@ -360,11 +362,14 @@ describe('audio engine', () => {
       FakeContext.instances = []
       const engine = new AudioEngine({ ...DEFAULT_AUDIO, ...patch }, fakeWindow())
       engine.unlock()
-      const ctx = FakeContext.instances[0]!
       engine.playMenuMusic()
-      runner(ctx)(2000)
-      expect(ctx.oscillators).toBe(0)
+      if (patch.muted) {
+        expect(FakeContext.instances).toHaveLength(0)
+        expect(vi.getTimerCount()).toBe(0) // muted: no music timer either
+      } else runner(FakeContext.instances[0]!)(2000)
+      expect(FakeContext.instances[0]?.oscillators ?? 0).toBe(0)
       engine.updateSettings({ muted: false, music: 0.8, voiceOnly: false })
+      const ctx = FakeContext.instances[0]! // the tap that unmutes creates the context
       runner(ctx)(2000)
       expect(ctx.oscillators).toBeGreaterThan(0)
       engine.stopMusic()
@@ -593,23 +598,31 @@ describe('engine lifecycle (review Nov 2026)', () => {
     engine.dispose()
   })
 
-  it('B21: schedules further ahead while the page is hidden', () => {
+  it('B21 (revised): a hidden page fades the music out and stops its timer, and it resumes in place', () => {
     vi.useFakeTimers()
-    const hidden = hiddenWindow()
-    const count = (win: Window & typeof globalThis) => {
-      FakeContext.instances = []
-      const engine = new AudioEngine(DEFAULT_AUDIO, win)
-      engine.unlock()
-      const ctx = FakeContext.instances[0]!
-      engine.startMusic(5)
-      engine.setTempo(120)
-      ctx.currentTime += 0.025
-      vi.advanceTimersByTime(25) // a single timer tick
-      const n = ctx.oscillators
-      engine.dispose()
-      return n
-    }
-    expect(count(hidden)).toBeGreaterThan(count(fakeWindow()) * 3)
+    let visibility: 'visible' | 'hidden' = 'visible'
+    const listeners: (() => void)[] = []
+    const doc = { get visibilityState() { return visibility }, addEventListener: (_t: string, fn: () => void) => listeners.push(fn), removeEventListener() {} }
+    const win = { ...fakeWindow(), document: doc } as unknown as Window & typeof globalThis
+    const engine = new AudioEngine(DEFAULT_AUDIO, win)
+    engine.unlock()
+    const ctx = FakeContext.instances[0]!
+    engine.startMusic(5)
+    engine.setTempo(120)
+    runner(ctx)(500)
+    const before = ctx.oscillators
+    expect(before).toBeGreaterThan(0)
+    visibility = 'hidden'
+    for (const fn of listeners) fn()
+    const timers = vi.getTimerCount()
+    runner(ctx)(1000)
+    expect(ctx.oscillators).toBe(before) // nothing scheduled while hidden
+    visibility = 'visible'
+    for (const fn of listeners) fn()
+    expect(vi.getTimerCount()).toBeGreaterThan(timers)
+    runner(ctx)(500)
+    expect(ctx.oscillators).toBeGreaterThan(before)
+    engine.dispose()
   })
 
   it('B22: music nodes are released when their note ends', () => {
@@ -659,12 +672,12 @@ describe('engine lifecycle (review Nov 2026)', () => {
     on.playSfx('rest')
     expect(ctxOn.oscillators).toBeGreaterThan(afterFanfare)
     for (const settings of [{ ...DEFAULT_AUDIO, muted: true }, { ...DEFAULT_AUDIO, voiceOnly: true }]) {
+      FakeContext.instances = []
       const off = new AudioEngine(settings, fakeWindow())
       off.unlock()
-      const ctx = FakeContext.instances.at(-1)!
       off.playSfx('fanfare')
       off.playSfx('rest')
-      expect(ctx.oscillators).toBe(0)
+      expect(FakeContext.instances[0]?.oscillators ?? 0).toBe(0)
     }
   })
 })

@@ -21,13 +21,8 @@ export function stepSeconds(bpm: number): number {
   return 60 / (sanitizeBpm(bpm) ?? 100) / 4
 }
 
-/**
- * How far ahead (seconds) to schedule. A hidden tab may run the timer only once
- * a second, so it needs much more than a visible one.
- */
-export function lookaheadFor(hidden: boolean): number {
-  return hidden ? 1.5 : 0.15
-}
+/** How far ahead (seconds) to schedule: the timer ticks every 25 ms, so this is several ticks of slack. */
+export const LOOKAHEAD_S = 0.15
 
 /**
  * Steps due between now and now + lookahead. If the clock fell behind (tab

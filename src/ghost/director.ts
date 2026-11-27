@@ -19,7 +19,7 @@ export function finishLine(): GhostLine {
   return { key: 'ghost.finish', pose: 'happy', ms: 6000 }
 }
 
-/** The friendly scare after dusk: a quick "Boo!" pop, then the lit way. Never a sound; reduced motion only drops the pop. */
+/** The friendly scare after dusk: a quick "Boo!" pop, then the lit way. A soft jingle goes with it (`scare` in `audio/sfx.ts`, on the effects channel); reduced motion only drops the pop. */
 export const NIGHT_LINES: readonly GhostLine[] = [
   { key: 'ghost.boo', pose: 'boo', ms: 1500 },
   { key: 'ghost.lit', pose: 'float', ms: 4200 },

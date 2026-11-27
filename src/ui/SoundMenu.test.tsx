@@ -74,6 +74,21 @@ describe('SoundMenu', () => {
     expect(loadAudioSettings()).toMatchObject({ music: 0.35, voiceOnly: true, muted: true })
   })
 
+  it('has its own Chiptune music checkbox (on by default), saved, and only usable while sound is on', async () => {
+    await act(async () => root.render(<I18nProvider><SoundMenu /></I18nProvider>))
+    await act(async () => q<HTMLButtonElement>('[data-testid="sound-button"]')!.click())
+    const box = q<HTMLInputElement>('[data-testid="chiptune-toggle"]')!
+    expect(box.closest('label')!.textContent).toBe('Música chiptune')
+    expect(box.checked).toBe(true)
+    await act(async () => box.click())
+    expect(stored().chiptune).toBe(false)
+    expect(box.checked).toBe(false)
+    await act(async () => box.click())
+    expect(stored().chiptune).toBe(true)
+    await act(async () => engine.updateSettings({ muted: true }))
+    expect(box.disabled).toBe(true)
+  })
+
   it('speaks a test phrase in the current language and closes with Escape', async () => {
     const say = vi.spyOn(engine, 'say')
     await act(async () => root.render(<I18nProvider><SoundMenu placement="up" /></I18nProvider>))

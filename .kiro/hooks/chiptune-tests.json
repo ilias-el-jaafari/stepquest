@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Chiptune loudness and loop tests",
+      "description": "When the composed loop, the jingles, the audio graph or the music player change, run the tests that keep the music in key, seamless, quiet and unclipped, and the jingles within their length and level budget.",
+      "trigger": "PostFileSave",
+      "matcher": "src/audio/(theme|chiptune|sfx|graph|musicPlayer|effects|automation|settings)\\.ts$",
+      "timeout": 120,
+      "action": {
+        "type": "command",
+        "command": "npx vitest run src/audio/theme.test.ts src/audio/musicPlayer.test.ts src/audio/jingles.test.ts src/audio/engineSound.test.ts src/ui/demoAudio.test.tsx"
+      }
+    }
+  ]
+}

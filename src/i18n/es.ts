@@ -290,6 +290,7 @@ export const es: Record<MessageKey, string> = {
   'sound.sfx': 'Efectos',
   'sound.mute': 'Silenciar todo',
   'sound.voiceOnly': 'Solo voz',
+  'sound.chiptune': 'Música chiptune',
   'sound.test': 'Probar voz',
   'sound.close': 'Cerrar',
   'sound.off': 'no',

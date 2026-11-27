@@ -39,7 +39,8 @@ inclusion: always
 ## Sound (Phase 4)
 
 - `src/audio`: everything is synthesized in code with the Web Audio API: the formant voice (`voice/`), the chiptune, the effects. No samples, no third-party speech code (do not port SAM or any other synth).
-- The AudioContext is created only inside a user gesture ("Start quest", the sound button). Keep decision logic pure and testable; only `engine.ts` touches Web Audio.
+- The AudioContext is created only inside a user gesture ("Start quest", the sound button), and never while sound is muted (the tap that unmutes creates it). Keep decision logic pure and testable; only `engine.ts` touches Web Audio.
+- The quest loop is composed by hand in `src/audio/theme.ts` and loaded with a dynamic `import()` the first time music is audible; the main bundle holds none of it. Music has its own setting (`chiptune`, "Chiptune music"), is audible only while sound is on, pauses while the page is hidden and runs no timer when it cannot be heard. Loudness budget: music at full sliders peaks at 0.12 of full scale (`MUSIC_PEAK_CEILING`), jingles at 0.5, with a limiter on the master. Details: [chiptune spec](../specs/chiptune/design.md).
 - Every spoken phrase lives in `src/i18n` under `voice.*`, with plural forms; English words must be in `EN_LEXICON` (a test checks it).
 
 ## Quality bar

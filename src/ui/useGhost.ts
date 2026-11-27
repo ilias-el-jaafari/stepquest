@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { audioEngine } from '../audio/engine.ts'
 import { demoGapScript } from '../demo/script.ts'
 import { checkpointLine, NIGHT_LINES, shouldScare, type GhostLine } from '../ghost/director.ts'
 import { nextPacerStatus, pacerElapsedMs, pacerGapM, paceFor, pausePacer, rebasePacer, resumePacer, startPacer, type Pace, type PacerPlan, type PacerStatus } from '../ghost/pacer.ts'
@@ -127,6 +128,8 @@ export function useGhost({ quest, pickup, phase, seed, durationMin, demo }: Args
   useEffect(() => {
     if (finished || !shouldScare(phase, scared.current)) return
     scared.current = true
+    // A soft "¡Bu!" jingle on the effects channel (mute and volume apply); the loop steps back for it.
+    audioEngine().playSfx('scare')
     speak(NIGHT_LINES)
   }, [phase, finished])
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { BARS_PER_SONG, calmEvents, eventsAt, nextBarStep, MAJOR, makeSong, midiToHz, scaleNote, STEPS_PER_BAR, STEPS_PER_SONG, triad } from './chiptune.ts'
-import { lookaheadFor, scheduleWindow, stepSeconds } from './scheduler.ts'
+import { calmEvents, nextBarStep, midiToHz, STEPS_PER_BAR } from './chiptune.ts'
+import { LOOKAHEAD_S, scheduleWindow, stepSeconds } from './scheduler.ts'
+import { STEPS_PER_LOOP, themeEventsAt } from './theme.ts'
 import { AUDIO_STORAGE_KEY, busGains, clampVolume, DEFAULT_AUDIO, LEGACY_MUTE_KEY, loadAudioSettings, sanitizeAudio, saveAudioSettings, sliderToGain } from './settings.ts'
 import { FINISH, GEM, GEM_LAST, sfxDuration, SFX } from './sfx.ts'
 import { cadence, glideTempo, isStale, MAX_BPM, MENU_BPM, MIN_BPM, PaceTracker, sanitizeBpm, tempoForSpeed } from './tempo.ts'
@@ -27,7 +28,7 @@ describe('audio settings', () => {
 
   it('persists and reloads every field', () => {
     const store = new MemStore()
-    const s = { master: 0.55, music: 0.2, voice: 1, sfx: 0, muted: true, voiceOnly: true }
+    const s = { master: 0.55, music: 0.2, voice: 1, sfx: 0, muted: true, voiceOnly: true, chiptune: false }
     expect(saveAudioSettings(s, store)).toBe(true)
     expect(JSON.parse(store.getItem(AUDIO_STORAGE_KEY)!)).toEqual(s)
     expect(loadAudioSettings(store)).toEqual(s)
@@ -37,6 +38,8 @@ describe('audio settings', () => {
     const store = new MemStore()
     store.setItem(AUDIO_STORAGE_KEY, '{not json')
     expect(loadAudioSettings(store)).toEqual(DEFAULT_AUDIO)
+    expect(sanitizeAudio({ chiptune: 'no' }).chiptune).toBe(true)
+    expect(sanitizeAudio({ chiptune: false }).chiptune).toBe(false)
     expect(sanitizeAudio({ master: 7, music: -1, voice: 'x', sfx: '0.333', muted: 'yes' })).toEqual({ ...DEFAULT_AUDIO, master: 1, music: 0, sfx: 0.33 })
     expect(sanitizeAudio(null)).toEqual(DEFAULT_AUDIO)
     expect(clampVolume(NaN, 0.4)).toBe(0.4)
@@ -54,6 +57,7 @@ describe('audio settings', () => {
     expect(busGains({ ...DEFAULT_AUDIO, muted: true })).toEqual({ master: 0, music: 0, voice: 0, sfx: 0 })
     expect(busGains({ ...DEFAULT_AUDIO, voiceOnly: true })).toEqual({ master: DEFAULT_AUDIO.master, music: 0, voice: DEFAULT_AUDIO.voice, sfx: 0 })
     expect(busGains(DEFAULT_AUDIO).music).toBe(DEFAULT_AUDIO.music)
+    expect(busGains({ ...DEFAULT_AUDIO, chiptune: false })).toEqual({ master: DEFAULT_AUDIO.master, music: 0, voice: DEFAULT_AUDIO.voice, sfx: DEFAULT_AUDIO.sfx })
     expect(sliderToGain(0)).toBe(0)
     expect(sliderToGain(1)).toBe(1)
     expect(sliderToGain(0.5)).toBeLessThan(0.5)
@@ -140,53 +144,8 @@ describe('music scheduler', () => {
   })
 })
 
-describe('procedural chiptune', () => {
-  const inScale = (root: number, midi: number) => MAJOR.includes(((((midi - root) % 12) + 12) % 12) as (typeof MAJOR)[number])
-
-  it('is deterministic per seed and varies between seeds', () => {
-    expect(makeSong(7)).toEqual(makeSong(7))
-    expect(JSON.stringify(makeSong(7).steps)).not.toBe(JSON.stringify(makeSong(8).steps))
-  })
-
-  it('keeps every note in the key and in a playable range', () => {
-    for (let seed = 0; seed < 20; seed++) {
-      const song = makeSong(seed)
-      expect(song.chords).toHaveLength(BARS_PER_SONG)
-      expect(song.steps).toHaveLength(STEPS_PER_SONG)
-      for (const ev of song.steps) {
-        for (const n of [ev.lead, ev.arp, ev.bass]) {
-          if (!n) continue
-          expect(inScale(song.root, n.midi), `seed ${seed} midi ${n.midi}`).toBe(true)
-          expect(n.midi).toBeGreaterThanOrEqual(28)
-          expect(n.midi).toBeLessThanOrEqual(96)
-          expect(n.steps).toBeGreaterThanOrEqual(1)
-        }
-      }
-    }
-  })
-
-  it('puts chord tones on the strong beats and the chord root in the bass', () => {
-    for (let seed = 0; seed < 10; seed++) {
-      const song = makeSong(seed)
-      song.chords.forEach((degree, bar) => {
-        const tones = triad(degree).map((d) => scaleNote(song.root, d) % 12)
-        const base = bar * STEPS_PER_BAR
-        const downbeat = song.steps[base]!
-        expect(downbeat.drum).toBe('kick')
-        expect(downbeat.bass!.midi % 12).toBe(scaleNote(song.root, degree) % 12)
-        const lead = song.steps[base]!.lead
-        if (lead && bar !== BARS_PER_SONG - 1) expect(tones).toContain(lead.midi % 12)
-        expect(song.steps[base + 4]!.drum).toBe('snare')
-      })
-      // The last bar resolves on the tonic.
-      const lastLead = song.steps.slice(-8).find((s) => s.lead)?.lead
-      if (lastLead) expect(lastLead.midi % 12).toBe(song.root % 12)
-    }
-  })
-
-  it('plays one song after another with a new seed each time', () => {
-    expect(eventsAt(3, 5)).toEqual(makeSong(3).steps[5])
-    expect(eventsAt(3, STEPS_PER_SONG + 5)).toEqual(makeSong(4).steps[5])
+describe('chiptune helpers', () => {
+  it('converts MIDI notes to Hz', () => {
     expect(midiToHz(69)).toBe(440)
     expect(midiToHz(81)).toBeCloseTo(880)
   })
@@ -195,10 +154,11 @@ describe('procedural chiptune', () => {
 describe('sound effects', () => {
   it('are short, and the finish jingle is the longest', () => {
     for (const [name, notes] of Object.entries(SFX)) {
-      // The button click is a tick, everything else a little tune.
+      // The button click is a tick, everything else a little tune; the finish fanfare runs 2 to 3 s.
       if (name === 'click') expect(sfxDuration(notes)).toBeLessThan(0.05)
       else expect(sfxDuration(notes)).toBeGreaterThan(0.1)
-      expect(sfxDuration(notes)).toBeLessThan(2)
+      if (name === 'finish') expect(sfxDuration(notes)).toBeGreaterThanOrEqual(2)
+      expect(sfxDuration(notes)).toBeLessThan(name === 'finish' ? 3 : 2)
       for (const n of notes) expect(n.len).toBeGreaterThan(0)
     }
     expect(sfxDuration(FINISH)).toBeGreaterThan(sfxDuration(GEM))
@@ -242,8 +202,8 @@ describe('planning-screen music', () => {
   it('keeps only melody, bass and a soft kick in the calm arrangement', () => {
     let kicks = 0
     let leads = 0
-    for (let step = 0; step < STEPS_PER_SONG; step++) {
-      const raw = eventsAt(7, step)
+    for (let step = 0; step < STEPS_PER_LOOP; step++) {
+      const raw = themeEventsAt(7, step)
       const calm = calmEvents(raw)
       expect(calm.arp).toBeUndefined()
       expect(calm.drum === undefined || calm.drum === 'kick').toBe(true)
@@ -286,26 +246,11 @@ describe('review Nov 2026: regressions', () => {
     expect(tempoForSpeed(1.3, 0)).toBe(MIN_BPM)
   })
 
-  it('B21: a hidden tab schedules at least a second and a half ahead', () => {
-    expect(lookaheadFor(true)).toBeGreaterThanOrEqual(1.5)
-    expect(lookaheadFor(false)).toBeLessThan(0.5)
-    // At the fastest tempo that window holds a sensible number of steps.
-    const { steps } = scheduleWindow({ nextTime: 0, step: 0 }, 0, lookaheadFor(true), MAX_BPM)
-    expect(steps.length).toBeGreaterThan(10)
+  it('B21 (revised, chiptune spec C2.3): the look-ahead is one short window; a hidden page pauses the music instead', () => {
+    expect(LOOKAHEAD_S).toBeLessThan(0.5)
+    const { steps } = scheduleWindow({ nextTime: 0, step: 0 }, 0, LOOKAHEAD_S, MAX_BPM)
+    expect(steps.length).toBeGreaterThan(1)
     expect(steps.length).toBeLessThan(64)
-  })
-
-  it('B18: the last bar holds one tonic, not several overlapping copies', () => {
-    for (let seed = 1; seed <= 40; seed++) {
-      const song = makeSong(seed)
-      const lastBar = song.steps.slice(song.steps.length - STEPS_PER_BAR)
-      const held = lastBar.map((e, i) => ({ i, lead: e.lead })).filter((x) => x.lead && x.i >= 8)
-      expect(held.length, `seed ${seed}`).toBeLessThanOrEqual(1)
-      for (const h of held) {
-        expect(h.lead!.midi).toBe(scaleNote(song.root, 7))
-        expect(h.i + h.lead!.steps).toBe(STEPS_PER_BAR) // holds to the end of the song
-      }
-    }
   })
 
   it('B9, B19, B20: phrases carry their language, use a monotonic clock and may not be blank', () => {

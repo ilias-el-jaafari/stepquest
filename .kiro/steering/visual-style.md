@@ -23,7 +23,14 @@ A handheld-RPG overworld, in the spirit of Game Boy Color / Game Boy Advance era
 - Colours (`src/ghost/art.ts`): ink `#1b1a2e` outline and eyes, sheet `#e9e4ff`, highlight `#ffffff`, shade `#bdb2ee`, blush `#ff8fa3`, lantern gold `#ffd84a`.
 - Frames: float (hem wave every 320 ms), happy (arched eyes, finish), boo (open mouth, night scare). It bobs one art pixel in four steps.
 - It floats 6 m ahead of the pace point on the route, under the hero in draw order, with a warm lantern glow at night. HUD bubble: paper fill, ink outline, 8 px Press Start 2P, the ghost's face on its left.
-- Motion is a pop (0.45 s, 3 steps) for "Boo!", a spin and three twinkling sparkles at the finish. Reduced motion removes all of it; only the walk along the route remains. Never a jump-scare, never a sound.
+- Motion is a pop (0.45 s, 3 steps) for "Boo!", a spin and three twinkling sparkles at the finish. Reduced motion removes all of it; only the walk along the route remains. Never a jump-scare. The scare has a soft "¡Bu!" jingle (see Sound below), never a loud or sudden sound.
+
+## Sound (chiptune spec)
+
+- **Tone:** spooky-cute. Minor key with a whole-tone wander, short tip-toe motifs, bouncy answers; playful, never menacing, never a stinger. The music is the walk's background, not a soundtrack that demands attention.
+- **Loudness:** low. The loop peaks at 0.12 of full scale at full sliders; jingles stay under 0.5 and the scare is the softest of them; the loop steps back to a third while a jingle or the voice plays. Nothing may clip: new voices and jingles are checked against the budget in the tests.
+- **Own work only:** every sound is synthesized in code (pulse 12.5 / 25 / 50 %, triangle, LFSR noise). No samples, no recorded audio, no copyrighted or recognisable melodies; write new motifs from scratch.
+- **Consent:** sound starts only after a tap and never while muted. "Chiptune music" has its own switch; the jingles belong to the effects channel.
 
 ## Halloween decor (halloween-decor spec)
 

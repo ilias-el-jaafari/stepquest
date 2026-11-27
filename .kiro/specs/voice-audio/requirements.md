@@ -57,7 +57,7 @@ Related: [quest](../quest/requirements.md) (events that trigger callouts), [map-
 #### Acceptance Criteria
 
 1. THE SYSTEM SHALL treat a non-finite tempo as "standing still" and SHALL keep every tempo, glide and step length finite and within 1 to 300 BPM.
-2. WHILE the page is hidden, THE SYSTEM SHALL schedule at least 1.5 seconds of music ahead, so that timer throttling does not make the music stutter.
+2. ~~WHILE the page is hidden, THE SYSTEM SHALL schedule at least 1.5 seconds of music ahead.~~ Superseded by [chiptune](../chiptune/requirements.md) C2.3: the music fades out and stops while the page is hidden.
 3. WHEN a gain or ducking change is made, THE SYSTEM SHALL start it from the value the parameter has at that moment, so that it does not jump (no pop) in any browser.
 4. THE SYSTEM SHALL start and end every note and effect envelope at zero gain, and SHALL disconnect the nodes of a note when it ends.
 5. WHEN the last bar of a song is played, THE SYSTEM SHALL play one held tonic, not several overlapping copies of it.

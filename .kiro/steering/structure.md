@@ -22,7 +22,7 @@ src/
   pwa/                   service worker template (filled in by the build) and the update store
   ui/                    React map view, planner, tab sheets, quest HUD, dialogs (modal focus), error boundary, sound menu, data loading hooks
   demo/                  self-playing `?demo=1` run: script, clock and camera maths (pure)
-  audio/                 formant voice, callouts, chiptune, effects, scheduler, sound settings, Web Audio engine
+  audio/                 formant voice, callouts, chiptune (shared helpers, lazy `theme.ts` loop), jingles and effects, scheduler, sound settings, Web Audio engine
   i18n/                  English and Spanish dictionaries
   App.tsx                screen layout: wires app/ state to ui/ components (about 300 lines)
 scripts/                 fixture builder, route probe, screenshot script

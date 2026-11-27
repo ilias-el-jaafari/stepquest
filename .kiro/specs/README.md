@@ -27,6 +27,7 @@ Each folder holds `requirements.md`, `design.md` and `tasks.md`. Requirement ids
 | [ghost-guide](ghost-guide/requirements.md) | Wisp the ghost guide: first-run intro, gem comments, finish celebration, friendly night scare, ghost pacer and its HUD status | G1 to G8 | 84 to 87 |
 | [error-copy](error-copy/requirements.md) | mischief in errors: every error, empty, offline, permission and loading-failure line in Wisp's voice with a clear next tap, Wisp's face on error boxes, checked by a test | E1 to E8 | 88 |
 | [halloween-decor](halloween-decor/requirements.md) | Halloween map decor: pumpkins, bats, cobwebs, skeletons, graves, fog, candles, crows, lamp-post hats; seeded placement, zoom and day/night budgets, 12 Hz capped animation, setting | H1 to H10 | 89 |
+| [chiptune](chiptune/requirements.md) | our own composed quest loop (spooky-cute, minor and whole-tone), gem / scare / finish jingles that duck it, the "Chiptune music" setting, nothing runs while muted, lazy-loaded, loudness budget | C1 to C7 | 90 |
 | [demo-mode](demo-mode/requirements.md) | self-playing `?demo=1` run for the video: auto plan and walk, camera script, dusk-to-night clock, summary | D1 to D8 | 77 |
 
 Where a requirement touches another spec (for example the speech bubble is voice behaviour drawn by the map renderer), the owning spec holds it and the others link to it.

@@ -2,6 +2,7 @@ import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { destination } from '../geo/geo.ts'
+import { audioEngine } from '../audio/engine.ts'
 import { WARMUP_MS } from '../ghost/pacer.ts'
 import type { Phase } from '../render/daylight.ts'
 import { placeCheckpoints } from '../routing/checkpoints.ts'
@@ -94,6 +95,18 @@ describe('useGhost', () => {
     await tick(10_000)
     await render({ quest: q, phase: 'night' })
     expect(out!.say).toBeUndefined()
+  })
+
+  it('plays the soft scare jingle once, with the scare', async () => {
+    const play = vi.spyOn(audioEngine(), 'playSfx').mockImplementation(() => {})
+    const q = sim()
+    await render({ quest: q, phase: 'day' })
+    expect(play).not.toHaveBeenCalled()
+    await render({ quest: q, phase: 'dusk' })
+    expect(play).toHaveBeenCalledWith('scare')
+    await render({ quest: q, phase: 'night' })
+    await render({ quest: q, phase: 'dusk' })
+    expect(play.mock.calls.filter(([n]) => n === 'scare')).toHaveLength(1)
   })
 
   it('waits for the first fix of a real walk and stops at the finish', async () => {

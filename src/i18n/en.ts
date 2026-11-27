@@ -289,6 +289,7 @@ export const en = {
   'sound.sfx': 'Effects',
   'sound.mute': 'Mute all',
   'sound.voiceOnly': 'Voice only',
+  'sound.chiptune': 'Chiptune music',
   'sound.test': 'Test voice',
   'sound.close': 'Close',
   'sound.off': 'off',

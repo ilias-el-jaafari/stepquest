@@ -74,6 +74,10 @@ export function SoundControls({ onClose }: { onClose?: () => void }) {
           <input type="checkbox" checked={settings.voiceOnly} disabled={settings.muted} onChange={(e) => engine.updateSettings({ voiceOnly: e.target.checked })} />
           <span>{t('sound.voiceOnly')}</span>
         </label>
+        <label className="check">
+          <input type="checkbox" checked={settings.chiptune} disabled={settings.muted || settings.voiceOnly} data-testid="chiptune-toggle" onChange={(e) => engine.updateSettings({ chiptune: e.target.checked })} />
+          <span>{t('sound.chiptune')}</span>
+        </label>
       </div>
       {VOLUME_CHANNELS.map((ch) => {
         const disabled = settings.muted || (settings.voiceOnly && (ch === 'music' || ch === 'sfx'))

@@ -41,7 +41,7 @@ export function applyOps(param: ParamLike, ops: readonly AutoOp[]): void {
 }
 
 /** Drop what is scheduled from `time` on and keep the current value there. */
-function holdAt(param: ParamLike, time: number): void {
+export function holdAt(param: ParamLike, time: number): void {
   if (typeof param.cancelAndHoldAtTime === 'function') {
     param.cancelAndHoldAtTime(time)
     return
@@ -50,6 +50,22 @@ function holdAt(param: ParamLike, time: number): void {
   const now = param.value
   param.cancelScheduledValues(time)
   param.setValueAtTime(now, time)
+}
+
+/** Level the loop drops to while a jingle plays. */
+export const JINGLE_DUCK_LEVEL = 0.33
+/** Seconds after a jingle's last note before the loop is brought back. */
+export const JINGLE_TAIL_S = 0.15
+
+/**
+ * The loop under a jingle: glide down at `time`, hold, and glide back up once the
+ * jingle (`seconds` long) and a short tail are over. Scheduled on the audio clock, so it needs no timer.
+ */
+export function jingleDuckOps(time: number, seconds: number): AutoOp[] {
+  return [
+    { kind: 'target', value: JINGLE_DUCK_LEVEL, time, tc: 0.03 },
+    { kind: 'target', value: 1, time: time + seconds + JINGLE_TAIL_S, tc: 0.2 },
+  ]
 }
 
 /** Glide a level to a new value with a time constant (seconds), starting from where it is now. */

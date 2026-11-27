@@ -9,13 +9,15 @@ export type AudioSettings = {
   muted: boolean
   /** Only the spoken callouts: no music and no sound effects. */
   voiceOnly: boolean
+  /** "Chiptune music": the loop and the menu tune. It only matters while sound is on; the jingles are not affected. */
+  chiptune: boolean
 }
 
 export const AUDIO_STORAGE_KEY = `${APP_SLUG}.audio`
 /** The Phase 2 mute flag, migrated into the new settings once. */
 export const LEGACY_MUTE_KEY = `${APP_SLUG}.muted`
 
-export const DEFAULT_AUDIO: AudioSettings = { master: 0.8, music: 0.5, voice: 0.9, sfx: 0.7, muted: false, voiceOnly: false }
+export const DEFAULT_AUDIO: AudioSettings = { master: 0.8, music: 0.8, voice: 0.9, sfx: 0.7, muted: false, voiceOnly: false, chiptune: true }
 
 export const VOLUME_CHANNELS = ['master', 'music', 'voice', 'sfx'] as const
 export type VolumeChannel = (typeof VOLUME_CHANNELS)[number]
@@ -47,6 +49,7 @@ export function sanitizeAudio(raw: unknown): AudioSettings {
     sfx: clampVolume(o.sfx, DEFAULT_AUDIO.sfx),
     muted: typeof o.muted === 'boolean' ? o.muted : DEFAULT_AUDIO.muted,
     voiceOnly: typeof o.voiceOnly === 'boolean' ? o.voiceOnly : DEFAULT_AUDIO.voiceOnly,
+    chiptune: typeof o.chiptune === 'boolean' ? o.chiptune : DEFAULT_AUDIO.chiptune,
   }
 }
 
@@ -79,10 +82,15 @@ export function busGains(s: AudioSettings): { master: number; music: number; voi
   if (s.muted) return { master: 0, music: 0, voice: 0, sfx: 0 }
   return {
     master: s.master,
-    music: s.voiceOnly ? 0 : s.music,
+    music: s.voiceOnly || !s.chiptune ? 0 : s.music,
     voice: s.voice,
     sfx: s.voiceOnly ? 0 : s.sfx,
   }
+}
+
+/** Whether the music can be heard at all: sound on, not "voice only", "Chiptune music" on and a volume above zero. */
+export function musicAudible(s: AudioSettings): boolean {
+  return busGains(s).music > 0 && busGains(s).master > 0
 }
 
 /** Perceived loudness is roughly logarithmic: map a 0…1 slider to a gain with a gentle curve. */

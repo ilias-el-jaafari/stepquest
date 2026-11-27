@@ -13,7 +13,7 @@ import { VoicePlayer } from './voicePlayer.ts'
  *
  * - `graph.ts`        buses, pulse waves, noise (created in a user gesture)
  * - `voicePlayer.ts`  phrase queue, speech, speech bubble, cache
- * - `musicPlayer.ts`  chiptune scheduling and tempo
+ * - `musicPlayer.ts`  chiptune scheduling and tempo (the composed loop in `theme.ts` is loaded lazily)
  * - `effects.ts`      sound effects
  * - `lifecycle.ts`    unlocking and recovery listeners
  *
@@ -58,6 +58,13 @@ export class AudioEngine {
       hidden: () => this.win?.document.visibilityState === 'hidden',
       emit: () => this.emit(),
     })
+    // The music rests while the page is hidden and carries on when it is visible again.
+    this.win?.document?.addEventListener?.('visibilitychange', this.onVisibility)
+  }
+
+  private onVisibility = (): void => {
+    if (this.win?.document.visibilityState === 'hidden') this.music.pageHidden()
+    else this.music.pageVisible()
   }
 
   // ---- state for React (useSyncExternalStore) ----
@@ -91,11 +98,20 @@ export class AudioEngine {
   }
 
   updateSettings(patch: Partial<AudioSettings>): void {
+    const wasMuted = this.settings.muted
     this.settings = { ...this.settings, ...patch }
     saveAudioSettings(this.settings)
     if (this.graph) applyBusGains(this.graph, this.settings)
-    if (this.settings.muted) this.voice.stop()
-    else this.voice.contextChanged()
+    if (this.settings.muted) {
+      this.voice.stop()
+      // Muted means nothing runs: the audio thread rests too.
+      const ctx = this.graph?.ctx
+      if (ctx && ctx.state === 'running' && typeof ctx.suspend === 'function') void ctx.suspend().catch(() => {})
+    } else this.voice.contextChanged()
+    // Settings changes come from a tap: unmuting is where the context may start (or resume).
+    if (wasMuted && !this.settings.muted) this.unlock()
+    // Start or stop the music timer: it only runs while there is something to hear.
+    this.music.refresh()
     this.emit()
   }
 
@@ -107,6 +123,8 @@ export class AudioEngine {
     if (!C) return
     this.cancelArm?.()
     this.cancelArm = undefined
+    // Muted: no context is created or resumed. The tap that unmutes calls this again.
+    if (this.settings.muted) return
     if (this.graph?.ctx.state === 'closed') this.dropGraph()
     if (!this.graph) {
       if (this.win) configureAudioSession(this.win)
@@ -116,7 +134,7 @@ export class AudioEngine {
         if (this.graph?.ctx !== ctx) return
         this.voice.contextChanged()
         this.emit()
-        if (ctx.state !== 'running' && ctx.state !== 'closed' && this.win?.document.visibilityState === 'visible') void ctx.resume().catch(() => {})
+        if (ctx.state !== 'running' && ctx.state !== 'closed' && !this.settings.muted && this.win?.document.visibilityState === 'visible') void ctx.resume().catch(() => {})
       }
       applyBusGains(this.graph, this.settings)
       // Music asked for before the first tap (planning screen) fades in now.
@@ -152,7 +170,7 @@ export class AudioEngine {
     this.recoveryInstalled = true
     installRecovery(this.win, () => {
       const ctx = this.graph?.ctx
-      if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') void ctx.resume().then(() => this.emit(), () => {})
+      if (ctx && ctx.state !== 'running' && ctx.state !== 'closed' && !this.settings.muted) void ctx.resume().then(() => this.emit(), () => {})
     })
   }
 
@@ -220,6 +238,7 @@ export class AudioEngine {
 
   /** Tests and teardown: stop every timer. */
   dispose(): void {
+    this.win?.document?.removeEventListener?.('visibilitychange', this.onVisibility)
     this.music.stop()
     this.voice.dispose()
     duckMusic(this.graph, false)

@@ -1,15 +1,16 @@
-import { rampTo } from './automation.ts'
+import { applyOps, holdAt, jingleDuckOps, rampTo } from './automation.ts'
+import { MUSIC_BUS_MAX } from './chiptune.ts'
 import { busGains, sliderToGain, type AudioSettings } from './settings.ts'
 
 /**
  * The Web Audio graph and its shared resources:
  *
- *   music notes → gate → duck → music ─┐
- *   voice phrases (one gain each) → voice ─┼→ master → destination
- *   sound effects → sfx ───────────────┘
+ *   music notes → gate → duck → jingleDuck → music ─┐
+ *   voice phrases (one gain each) → voice ──────────┼→ master → limiter → destination
+ *   sound effects → sfx ────────────────────────┘
  *
  * `gate` fades the music in and out with the walker, `duck` lowers it while the
- * voice speaks. Created once per AudioContext, inside a user gesture.
+ * voice speaks and `jingleDuck` while a jingle plays (separate, so neither releases the other). Created once per AudioContext, inside a user gesture.
  */
 
 export type Graph = {
@@ -19,6 +20,7 @@ export type Graph = {
   voice: GainNode
   sfx: GainNode
   duck: GainNode
+  jingleDuck: GainNode
   gate: GainNode
   waves: ReadonlyMap<string, PeriodicWave>
   /** One second of LFSR noise for drums and effects. */
@@ -50,14 +52,24 @@ export function lfsrNoise(length: number, short = false): Float32Array {
 /** Build the buses, the pulse waves and the noise buffer for a new context. */
 export function createGraph(ctx: AudioContext): Graph {
   const master = ctx.createGain()
-  master.connect(ctx.destination)
+  // A gentle limiter where the browser has one, so music, jingles and voice together never clip.
+  if (typeof ctx.createDynamicsCompressor === 'function') {
+    const limiter = ctx.createDynamicsCompressor()
+    limiter.threshold.value = -8
+    limiter.knee.value = 6
+    limiter.ratio.value = 12
+    limiter.attack.value = 0.003
+    limiter.release.value = 0.15
+    master.connect(limiter).connect(ctx.destination)
+  } else master.connect(ctx.destination)
   const music = ctx.createGain()
   const voice = ctx.createGain()
   const sfx = ctx.createGain()
   const duck = ctx.createGain()
+  const jingleDuck = ctx.createGain()
   const gate = ctx.createGain()
   gate.gain.value = 0
-  gate.connect(duck).connect(music).connect(master)
+  gate.connect(duck).connect(jingleDuck).connect(music).connect(master)
   voice.connect(master)
   sfx.connect(master)
   const waves = new Map<string, PeriodicWave>()
@@ -68,7 +80,7 @@ export function createGraph(ctx: AudioContext): Graph {
   const samples = lfsrNoise(ctx.sampleRate)
   const noise = ctx.createBuffer(1, samples.length, ctx.sampleRate)
   noise.getChannelData(0).set(samples)
-  return { ctx, master, music, voice, sfx, duck, gate, waves, noise }
+  return { ctx, master, music, voice, sfx, duck, jingleDuck, gate, waves, noise }
 }
 
 /** Move the bus levels to the sliders (50 ms glide, no jumps). */
@@ -76,7 +88,7 @@ export function applyBusGains(g: Graph, settings: AudioSettings): void {
   const gains = busGains(settings)
   const t = g.ctx.currentTime
   rampTo(g.master.gain, sliderToGain(gains.master), t, 0.05)
-  rampTo(g.music.gain, sliderToGain(gains.music), t, 0.05)
+  rampTo(g.music.gain, sliderToGain(gains.music) * MUSIC_BUS_MAX, t, 0.05)
   rampTo(g.voice.gain, sliderToGain(gains.voice) * 1.6, t, 0.05)
   rampTo(g.sfx.gain, sliderToGain(gains.sfx), t, 0.05)
 }
@@ -84,6 +96,14 @@ export function applyBusGains(g: Graph, settings: AudioSettings): void {
 /** Lower the music while the voice speaks. */
 export function duckMusic(g: Graph | undefined, on: boolean): void {
   if (g) rampTo(g.duck.gain, on ? DUCK_LEVEL : 1, g.ctx.currentTime, on ? 0.05 : 0.3)
+}
+
+/** Lower the loop under a jingle of `seconds`, then bring it back (all on the audio clock). */
+export function duckForJingle(g: Graph | undefined, seconds: number): void {
+  if (!g) return
+  const t = g.ctx.currentTime
+  holdAt(g.jingleDuck.gain, t)
+  applyOps(g.jingleDuck.gain, jingleDuckOps(t, seconds))
 }
 
 /** Fade the music in (walking) or out (standing still). */
