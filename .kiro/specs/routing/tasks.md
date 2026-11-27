@@ -77,3 +77,5 @@ Each bug task starts with a failing regression test (fixture-based, Benicalap, n
   - _Requirements: 12.2 to 12.6_
 - [x] 78.9 App-level regression `AppPlanLive.test.tsx` (location outside the extract, Loop and A → B, busy at once, failure and Retry); fails on the code before the fix
   - _Requirements: 12.1 to 12.4; quest 6e.1_
+- [x] 78.10 De-flake `AppPlanLive.test.tsx` "when the streets cannot be loaded…" (timed out after ~21 s on a 2-vCPU runner). Cause: the test set `net.tiles = 'down'` after the app had mounted, but the app finds the walker by itself at start-up, so on a slow machine that first locate fetched its tiles before the switch and ended with "Start set to your location" and no area error. Fix: the app is mounted by `mount()` after the network is set; the tile retry delays (`RETRY_MS`, 1 s and 2 s) are a few ms in this file and restored afterwards. No production change. Under 10 busy loops plus a full run: before, 4 of 5 runs failed at ~21.5 s; after, 5 of 5 pass in 1.8 to 3.0 s (6.0 s locally without load, before)
+  - _Requirements: 12.1 to 12.4_

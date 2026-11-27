@@ -6,6 +6,7 @@ import { I18nProvider } from './i18n/index.ts'
 import type { LatLon } from './geo/geo.ts'
 import { encodeMvt, px, type FixtureFeature } from './vector/testing.ts'
 import { tileBBox } from './vector/tileMath.ts'
+import { RETRY_MS } from './world/walkArea.ts'
 
 /**
  * Regression for the field test on an iPhone (routing requirement 12, quest 6e): "Use my location" in central
@@ -55,7 +56,8 @@ function gridTile(x: number, y: number): Uint8Array {
 type Net = { tiles: 'ok' | 'down'; overpass: string[]; tileRequests: string[] }
 let net: Net
 let host: HTMLDivElement
-let root: Root
+let root: Root | undefined
+const REAL_RETRY_MS = [...RETRY_MS]
 
 function fakeFetch(input: string | URL | Request): Promise<Response> {
   const url = String(input instanceof Request ? input.url : input)
@@ -84,17 +86,30 @@ beforeEach(async () => {
     configurable: true,
     value: { getCurrentPosition: (ok: (p: unknown) => void) => ok({ coords: { latitude: HERE.lat, longitude: HERE.lon, accuracy: 10 }, timestamp: Date.now() }) },
   })
+  // The tile back-off (1 s, then 2 s, per tile) runs on real timers; here it is a few ms so the failure path
+  // does not depend on how fast the machine is. Production keeps its values.
+  RETRY_MS.splice(0, RETRY_MS.length, 5, 10)
   host = document.createElement('div')
   document.body.append(host)
-  root = createRoot(host)
-  await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
 })
 
 afterEach(async () => {
-  await act(async () => root.unmount())
+  if (root) await act(async () => root!.unmount())
+  root = undefined
   host.remove()
+  RETRY_MS.splice(0, RETRY_MS.length, ...REAL_RETRY_MS)
   vi.unstubAllGlobals()
 })
+
+/**
+ * Start the app. Where the browser already allows location the app finds the walker by itself right after
+ * start-up, so a test that needs the tiles down must set `net.tiles` before this, never after.
+ */
+async function mount() {
+  if (root) return
+  root = createRoot(host)
+  await act(async () => root!.render(<I18nProvider><App /></I18nProvider>))
+}
 
 async function waitFor(check: () => boolean, ms = 15_000) {
   const start = Date.now()
@@ -108,6 +123,7 @@ const button = (label: string | RegExp) => [...host.querySelectorAll('button')].
 const click = (el: Element | undefined) => act(async () => (el as HTMLElement).click())
 
 async function useMyLocation() {
+  await mount()
   await waitFor(() => !!host.querySelector('[data-testid="map-canvas"]'))
   // Where the browser already allows location the app finds the walker by itself; elsewhere it offers the button.
   await act(async () => new Promise((r) => setTimeout(r, 100)))
@@ -155,6 +171,7 @@ describe('planning outside the bundled map (field test, iPhone)', () => {
 
   it('when the streets cannot be loaded the plan ends with a message and Retry, and Retry works once they can', async () => {
     net.tiles = 'down'
+    await mount()
     await waitFor(() => !!host.querySelector('[data-testid="map-canvas"]'))
     await act(async () => new Promise((r) => setTimeout(r, 100)))
     const use = button(/Use my location/)
