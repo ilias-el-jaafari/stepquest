@@ -110,7 +110,7 @@ export class MapRenderer {
     this.stopSource = source.subscribe(tick)
     this.lightingLayer = new LightingLayer(grid, this.chunks, tick)
     this.overlay = new OverlayLayer(grid, this.lightingLayer)
-    this.decor = new DecorLayer(grid, () => this.requestRender(), decorOn())
+    this.decor = new DecorLayer(grid, () => this.requestRender(), decorOn(), source.town)
     this.stopPixelRatio = watchPixelRatio(tick)
   }
 
@@ -217,14 +217,14 @@ export class MapRenderer {
     this.requestRender()
   }
 
-  /** Keep the decor off the route, the start and the finish: every tile within 2 of them is left bare. */
+  /** Keep the decor off the route, the start and the finish: every tile within 1 of them is left bare. */
   private updateKeepOut(): void {
     const keep = new Set<number>()
     const { cols, rows } = this.grid
     const mark = (p: { x: number; y: number }) => {
       const x0 = Math.floor(p.x)
       const y0 = Math.floor(p.y)
-      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (x0 + dx >= 0 && y0 + dy >= 0 && x0 + dx < cols && y0 + dy < rows) keep.add((y0 + dy) * cols + x0 + dx)
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (x0 + dx >= 0 && y0 + dy >= 0 && x0 + dx < cols && y0 + dy < rows) keep.add((y0 + dy) * cols + x0 + dx)
     }
     const pts = this.routeTiles
     for (let i = 0; i < pts.length; i++) {
@@ -505,6 +505,9 @@ export class MapRenderer {
     if (!this.sceneDirty && this.chunks.prefetchStep()) this.requestRender()
 
     this.decor.drawAnimated(ctx, v, light, now, shown)
+    // Diagnostics for browser checks: decor items on screen (still, moving).
+    const dc = `${this.decor.stats.onScreen},${this.decor.stats.animated}`
+    if (this.canvas.dataset && this.canvas.dataset.decor !== dc) this.canvas.dataset.decor = dc
     if (this.overlay.draw(ctx, v, light, now)) this.requestRender()
     this.reportView(v)
   }

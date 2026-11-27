@@ -48,7 +48,7 @@ const EMPTY: ChunkDecor = { statics: [], animated: [] }
 export const LAT_STEP = 0.00005
 export const LON_STEP = 0.00006
 /** About one site in this many is a candidate; most fail the terrain test. */
-const ACCEPT = 0.2
+const ACCEPT = 0.55
 const SEED = 0x48414c4c
 
 export function hash3(a: number, b: number, salt: number): number {
@@ -62,7 +62,7 @@ const unit = (h: number): number => h / 4294967296
 const PARK_OK = new Set<number>(['park', 'garden', 'grass', 'wood', 'orchard', 'cemetery'].map((n) => PARK_STYLES.indexOf(n as (typeof PARK_STYLES)[number])))
 const CEMETERY = PARK_STYLES.indexOf('cemetery')
 
-type Category = 'park' | 'cemetery' | 'plaza' | 'poi' | 'corner' | 'web'
+type Category = 'park' | 'cemetery' | 'plaza' | 'poi' | 'corner' | 'yard' | 'web'
 type Pick = readonly (readonly [DecorKind, number])[]
 
 /** Weights per category (the pick is by hash, so it is stable). */
@@ -72,6 +72,7 @@ const TABLE: Record<Exclude<Category, 'web'>, Pick> = {
   plaza: [['lantern', 3], ['pumpkin', 3], ['candle', 2], ['skeleton', 1.5], ['crow', 1], ['jack', 2]],
   poi: [['jack', 4], ['pumpkin', 3], ['candle', 2], ['lantern', 2]],
   corner: [['pumpkin', 3], ['lantern', 3], ['candle', 1]],
+  yard: [['pumpkin', 4], ['jack', 2], ['candle', 1.5], ['lantern', 1.5], ['crow', 1], ['bat', 1.5]],
 }
 
 function pickKind(pick: Pick, h: number): DecorKind {
@@ -87,6 +88,9 @@ function pickKind(pick: Pick, h: number): DecorKind {
 
 const NIGHT_ONLY = new Set<DecorKind>(['bat', 'fog'])
 const ANIMATED = new Set<DecorKind>(['bat', 'fog', 'skeleton'])
+
+/** Whether a building-terrain tile is open yard (no house, landmark, tree, fence or gate on or just south of it). */
+export type YardTest = (x: number, y: number) => boolean
 
 const poiCache = new WeakMap<TileGrid, Set<number>>()
 const cache = new WeakMap<TileGrid, Map<number, Map<number, ChunkDecor>>>()
@@ -139,6 +143,20 @@ export function clearOfStreets(grid: TileGrid, x: number, y: number): boolean {
   return true
 }
 
+/**
+ * The tile and the one above it (where a sprite's head reaches) are loaded and not a street. Small still
+ * items only need this, so they can stand in yards and verges right beside a road, never on it.
+ */
+export function tileClear(grid: TileGrid, x: number, y: number, yard?: YardTest): boolean {
+  for (const dy of [0, -1]) {
+    const t = terrainAt(grid, x, y + dy)
+    if (t < 0 || isStreet(t)) return false
+    // A house or a landmark stands on building tiles: only open yard counts.
+    if (t === Terrain.building && !yard?.(x, y + dy)) return false
+  }
+  return true
+}
+
 /** A park tile whose style takes decor (not pitches, playgrounds or farmland). */
 function parkOk(grid: TileGrid, x: number, y: number): boolean {
   return terrainAt(grid, x, y) === Terrain.park && PARK_OK.has(grid.style[y * grid.cols + x] ?? -1)
@@ -170,8 +188,9 @@ function streetCorner(grid: TileGrid, x: number, y: number): boolean {
 
 type Site = { category: Category; web: number }
 
-function classify(grid: TileGrid, x: number, y: number): Site | undefined {
+function classify(grid: TileGrid, x: number, y: number, yard?: YardTest): Site | undefined {
   const t = terrainAt(grid, x, y)
+  if (t === Terrain.building) return yard?.(x, y) ? { category: 'yard', web: -1 } : undefined
   if (t === Terrain.park) {
     if (!parkOk(grid, x, y)) return undefined
     return { category: grid.style[y * grid.cols + x] === CEMETERY ? 'cemetery' : 'park', web: -1 }
@@ -182,7 +201,8 @@ function classify(grid: TileGrid, x: number, y: number): Site | undefined {
   if (web >= 0) return { category: 'web', web }
   if (poiTiles(grid).has(y * grid.cols + x)) return { category: 'poi', web: -1 }
   if (streetCorner(grid, x, y)) return { category: 'corner', web: -1 }
-  return undefined
+  // Any other open ground: a yard, a verge or an empty lot beside the streets.
+  return { category: 'yard', web: -1 }
 }
 
 /** Gravestones in a cluster need the whole 3×3 to be open green or ground (no building, no water). */
@@ -197,7 +217,7 @@ function roomForGraves(grid: TileGrid, x: number, y: number): boolean {
 }
 
 /** Decor of one chunk of `size` tiles, in rank order. Cached per grid; the same list on every call. */
-export function decorInChunk(grid: TileGrid, cx: number, cy: number, size: number): ChunkDecor {
+export function decorInChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?: YardTest): ChunkDecor {
   let sizes = cache.get(grid)
   if (!sizes) cache.set(grid, (sizes = new Map()))
   let byChunk = sizes.get(size)
@@ -205,12 +225,12 @@ export function decorInChunk(grid: TileGrid, cx: number, cy: number, size: numbe
   const key = cy * 32768 + cx
   const found = byChunk.get(key)
   if (found) return found
-  const built = buildChunk(grid, cx, cy, size)
+  const built = buildChunk(grid, cx, cy, size, yard)
   byChunk.set(key, built)
   return built
 }
 
-function buildChunk(grid: TileGrid, cx: number, cy: number, size: number): ChunkDecor {
+function buildChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?: YardTest): ChunkDecor {
   const x0 = cx * size
   const y0 = cy * size
   if (x0 >= grid.cols || y0 >= grid.rows || cx < 0 || cy < 0) return EMPTY
@@ -239,10 +259,12 @@ function buildChunk(grid: TileGrid, cx: number, cy: number, size: number): Chunk
       const tx = Math.floor(t.x)
       const ty = Math.floor(t.y)
       if (tx < x0 || tx >= x1 || ty < y0 || ty >= y1) continue
-      if (!clearOfStreets(grid, tx, ty)) continue
-      const site = classify(grid, tx, ty)
+      if (!tileClear(grid, tx, ty, yard)) continue
+      const site = classify(grid, tx, ty, yard)
       if (!site) continue
       const item = makeItem(grid, i, j, tx, ty, site)
+      // Things that roam, spread, stand in groups or sit on a tile corner need the whole 3×3 free of streets.
+      if (item && (item.animated || item.kind === 'graves' || item.kind === 'web') && !clearOfStreets(grid, tx, ty)) continue
       if (item) items.push(item)
     }
   }
@@ -264,7 +286,7 @@ function makeItem(grid: TileGrid, i: number, j: number, tx: number, ty: number, 
   const kind: DecorKind = site.category === 'web' ? 'web' : pickKind(TABLE[site.category], hash3(i, j, 4))
   if (kind === 'graves' && !roomForGraves(grid, tx, ty)) return undefined
   // Foot of the sprite, kept well inside the tile so the 3×3 clearance covers all of it.
-  const fx = 0.25 + unit(hash3(i, j, 5)) * 0.5
+  const fx = 0.3 + unit(hash3(i, j, 5)) * 0.4
   const fy = 0.55 + unit(hash3(i, j, 6)) * 0.4
   const web = kind === 'web'
   return {

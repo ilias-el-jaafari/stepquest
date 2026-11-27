@@ -11,7 +11,7 @@ StepQuest is a Kiroween entry, so the map gets a light, tasteful Halloween dress
 - **Rank**: a stable number from 0 to 1 per item. An item is shown when its rank is below the budget's density and its place in the chunk's rank order is within the chunk's cap.
 - **Static item**: drawn into the cached scene. **Animated item** (bats, fog, waving skeletons) and the flicker of lit items: drawn in the overlay.
 - **Atlas**: one offscreen canvas holding every decor frame, painted once.
-- **Keep-out**: the tiles within 2 of the route, the start and the finish.
+- **Keep-out**: the tiles within 1 of the route, the start and the finish.
 
 ## Requirements
 
@@ -28,7 +28,7 @@ StepQuest is a Kiroween entry, so the map gets a light, tasteful Halloween dress
 
 1. THE SYSTEM SHALL place decor from a seeded hash of a fixed latitude and longitude lattice, so the same place gets the same decor on every visit and whatever grid, frame or window the map was cut from.
 2. THE SYSTEM SHALL anchor decor to: park and green tiles (not pitches, playgrounds or farmland; gravestones and fog are favoured in cemeteries), plazas, ground tiles within 4 tiles of a landmark, ground tiles at the corner of a lot between two streets, and concave building corners and ground next to them (cobwebs).
-3. THE SYSTEM SHALL NOT place decor on a tile whose 3×3 neighbourhood holds a road, path or crossing, on water or a building tile, or on a tile with no loaded data. Bat orbits (up to 0.9 tile) and fog drift (up to 0.5 tile) stay inside that neighbourhood.
+3. THE SYSTEM SHALL NOT place decor on a road, path or crossing, on water, on a house or landmark, or where there is no loaded data. A small still item (pumpkin, jack-o'-lantern, candle, lantern, crow) needs only its own tile and the one above it free of streets, so it may stand in a yard or verge right beside a road; animated items, gravestone clusters and cobwebs keep a street-free 3×3. Open yards (building terrain with no house, landmark, tree, fence or gate on it or just south of it) count as ground. Bat orbits (up to 0.9 tile) and fog drift (up to 0.5 tile) stay inside the free 3×3.
 4. THE SYSTEM SHALL NOT draw static decor on a keep-out tile, and SHALL NOT draw an animated item within 1.5 tiles of the hero. The overlay, the hero, the ghost, the gems and the UI always come after the decor in draw order.
 5. THE SYSTEM SHALL compute a chunk's items once (32 × 32 tiles, cached with the grid like lamps and fireflies, forgotten when the chunk's tiles change) and keep them in rank order.
 6. EXCEPTION: the witch hat sits on an existing lamp post, which stands on a street kerb; it is part of that street fixture, not an object placed on the street. It appears on one post in five (hash of the post's tile) and only where the post is drawn.
@@ -36,11 +36,11 @@ StepQuest is a Kiroween entry, so the map gets a light, tasteful Halloween dress
 ### Requirement H4: Density and zoom
 
 1. THE SYSTEM SHALL hide decor below the detail zoom (8 CSS px per tile) and draw it at the zoom's scale, so sprites are smaller further out.
-2. THE SYSTEM SHALL cap static items per chunk by zoom: 2 at zoom 8, 3 at 12, 4 at 16, 5 at 24, 6 at 32 and above (linear between). On a 390 × 844 phone screen no zoom shows more than 16 static items.
+2. THE SYSTEM SHALL cap static items per chunk by zoom: 2 at zoom 8, 5 at 12, 10 at 16, 24 at 24, 40 at 32, 70 at 48 (linear between), because a chunk is most of a screen at low zoom and a third of it at quest zoom. In a dense city a phone screen at quest zoom shows about 8 to 12 items (3 to 8 of them clear of the HUD cards); no position in the demo area shows more than 48 at any zoom.
 
 ### Requirement H5: Day and night
 
-1. WHILE the day-cycle darkness is below 0.3, THE SYSTEM SHALL show 55 % of the items (by rank), unlit, with no bats, fog, glows or hats and at most one animated item per chunk (waving skeletons).
+1. WHILE the day-cycle darkness is below 0.3, THE SYSTEM SHALL show 80 % of the items (by rank), unlit, with no bats, fog, glows or hats and at most one animated item per chunk (waving skeletons).
 2. WHILE the darkness is 0.3 or more, THE SYSTEM SHALL show every ranked item, light the jack-o'-lanterns, candles and lanterns, add stepped additive glows, put hats on lamp posts, fly bats, drift fog and flicker the glows (animated items per chunk: 1 below zoom 12, 2 below 24, 3 above).
 3. THE SYSTEM SHALL draw sprites before the sky tint (so night tints them) and glows and hats after it.
 

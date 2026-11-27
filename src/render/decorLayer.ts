@@ -1,8 +1,9 @@
 import { atlasLayout, DECOR_FRAMES, SPRITE_IDS, type AtlasSlot, type SpriteId } from '../decor/art.ts'
 import { batFrame, batX, batY, flickerLevel, fogX, skeletonFrame, tickOf } from '../decor/anim.ts'
 import { ANIM_FRAME_MS, decorBudget, MAX_ANIMATED } from '../decor/budget.ts'
-import { decorInChunk, GRAVE_OFFSETS, hash3, type DecorItem } from '../decor/place.ts'
+import { decorInChunk, GRAVE_OFFSETS, hash3, type DecorItem, type YardTest } from '../decor/place.ts'
 import type { TileGrid } from '../tiles/grid.ts'
+import type { TownLookup } from '../town/lookup.ts'
 import { CHUNK } from './chunkLayer.ts'
 import { chunkKey, type ChunkPlan } from './chunkPlan.ts'
 import type { Lighting } from './daylight.ts'
@@ -64,13 +65,27 @@ export class DecorLayer {
   private painted: ReadonlySet<number> | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
   /** Counts for tests and diagnostics: what the last draw of each pass put on the canvas. */
-  readonly stats = { statics: 0, animated: 0, hats: 0 }
+  readonly stats = { statics: 0, animated: 0, hats: 0, onScreen: 0 }
 
   private readonly grid: TileGrid
   private readonly onTick: () => void
+  /** Open yard on building terrain: gardens between the houses (no house, tree, fence or gate on it or just south). */
+  private readonly yard: YardTest | undefined
 
-  constructor(grid: TileGrid, onTick: () => void, enabled = true) {
+  constructor(grid: TileGrid, onTick: () => void, enabled = true, town?: TownLookup) {
     this.grid = grid
+    this.yard = town
+      ? (x, y) => {
+          if (!grid.inBounds(x, y)) return false
+          for (let d = 0; d <= 1; d++) {
+            if (!grid.inBounds(x, y + d)) return false
+            const i = grid.index(x, y + d)
+            if (town.houseAt(i) || town.landmarkAt(i)) return false
+            if (d === 0 && (town.hasTree(i) || town.hasFence(i) || town.hasGate(i))) return false
+          }
+          return true
+        }
+      : undefined
     this.onTick = onTick
     this.enabled = enabled
   }
@@ -120,19 +135,22 @@ export class DecorLayer {
     this.plan = plan
     this.painted = painted
     this.stats.statics = 0
+    this.stats.onScreen = 0
     const b = decorBudget(v.zoom, light.darkness, this.enabled)
     if (!b.visible || !v.detail) return
     const { originX, originY, scale } = v
     const px = scale / 16
     for (const c of plan.visible) {
       if (!painted.has(chunkKey(c.cx, c.cy))) continue
-      const { statics } = decorInChunk(this.grid, c.cx, c.cy, CHUNK)
+      const { statics } = decorInChunk(this.grid, c.cx, c.cy, CHUNK, this.yard)
       for (let k = 0; k < statics.length && k < b.staticPerChunk; k++) {
         const it = statics[k]!
         if (!this.shown(it, b.staticPerChunk, b.density, b.night)) continue
         const sx = originX + it.x * scale
         const sy = originY + it.y * scale
         this.stats.statics++
+        const m = v.inset ?? 0
+        if (sx >= m && sy >= m && sx < v.w - m && sy < v.h - m) this.stats.onScreen++
         switch (it.kind) {
           case 'pumpkin':
             this.blit(ctx, 'pumpkin', 0, sx, sy, px)
@@ -187,7 +205,7 @@ export class DecorLayer {
     ctx.globalAlpha = 0.6 * strength
     for (const c of plan.visible) {
       if (!painted.has(chunkKey(c.cx, c.cy))) continue
-      const { statics } = decorInChunk(this.grid, c.cx, c.cy, CHUNK)
+      const { statics } = decorInChunk(this.grid, c.cx, c.cy, CHUNK, this.yard)
       for (let k = 0; k < statics.length && k < b.staticPerChunk; k++) {
         const it = statics[k]!
         if (it.kind !== 'jack' && it.kind !== 'candle' && it.kind !== 'lantern') continue
@@ -241,7 +259,7 @@ export class DecorLayer {
     for (const c of plan.visible) {
       if (drawn >= MAX_ANIMATED) break
       if (!painted.has(chunkKey(c.cx, c.cy))) continue
-      const { statics, animated } = decorInChunk(this.grid, c.cx, c.cy, CHUNK)
+      const { statics, animated } = decorInChunk(this.grid, c.cx, c.cy, CHUNK, this.yard)
       let perChunk = 0
       for (let k = 0; k < animated.length && perChunk < b.animPerChunk && drawn < MAX_ANIMATED; k++) {
         const it = animated[k]!

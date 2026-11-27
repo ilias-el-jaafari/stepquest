@@ -15,9 +15,9 @@
 
 ## Placement
 
-Lattice: nodes every 0.00005° of latitude and 0.00006° of longitude (about 5.6 m and 5.1 m at València), each with a jitter in its cell and a hash `hash3(i, j, salt)`. A node is a candidate with probability 0.2. For a chunk, the nodes covering its corners are converted to tile coordinates with `grid.toTileXY`; a node counts for the chunk that contains its tile. The lattice and the hashes are geographic, so a different frame or window gives the same sites.
+Lattice: nodes every 0.00005° of latitude and 0.00006° of longitude (about 5.6 m and 5.1 m at València), each with a jitter in its cell and a hash `hash3(i, j, salt)`. A node is a candidate with probability 0.55. For a chunk, the nodes covering its corners are converted to tile coordinates with `grid.toTileXY`; a node counts for the chunk that contains its tile. The lattice and the hashes are geographic, so a different frame or window gives the same sites.
 
-Classification of the site tile (the 3×3 around it must be loaded and free of road, path, crossing):
+Classification of the site tile (the tile and the one above it must be loaded, free of road, path and crossing, and not under a house; animated items, graves and cobwebs also need the whole 3×3 free of streets):
 
 | Tile | Category | Kinds (weight) |
 | --- | --- | --- |
@@ -27,8 +27,9 @@ Classification of the site tile (the 3×3 around it must be loaded and free of r
 | ground with building on two perpendicular sides only | web | cobweb at that corner |
 | ground within 4 tiles of a landmark | poi | jack 4, pumpkin 3, candle 2, lantern 2 |
 | ground with streets 2 tiles away on both axes | corner | pumpkin 3, lantern 3, candle 1 |
+| any other ground, and open yards on building terrain (no house, landmark, tree, fence or gate on or just south of the tile; `DecorLayer` builds the test from the town lookup) | yard | pumpkin 4, jack 2, candle 1.5, lantern 1.5, crow 1, bat 1.5 |
 
-Gravestone clusters need the whole 3×3 to be green, ground or plaza. The kind is picked by hash, the foot lies at 0.25 to 0.75 across and 0.55 to 0.95 down the tile, and sprites are at most 16 art pixels wide, so they stay inside the clear 3×3.
+Gravestone clusters need the whole 3×3 to be green, ground or plaza. The kind is picked by hash, the foot lies at 0.3 to 0.7 across and 0.55 to 0.95 down the tile, and sprites are at most 16 art pixels wide, so they stay inside the clear 3×3.
 
 A chunk keeps `statics` (cobwebs, pumpkins, jacks, candles, lanterns, crows, graves) and `animated` (bats, fog, skeletons), each in rank order; `order` is the static's index. The renderer shows a static when `order < staticPerChunk`, `rank < density`, it is not night-only by day, and its tile is not in the keep-out.
 
@@ -43,7 +44,7 @@ A chunk keeps `statics` (cobwebs, pumpkins, jacks, candles, lanterns, crows, gra
 
 ## Keep-out
 
-`MapRenderer.setRoute` and `setMarkers` mark every tile within 2 of the route (densified to half-tile steps), the start and the finish. The scene is redrawn only when the set really changes, so setting the same route again, or a start on the route, costs nothing.
+`MapRenderer.setRoute` and `setMarkers` mark every tile within 1 of the route (densified to half-tile steps), the start and the finish. The scene is redrawn only when the set really changes, so setting the same route again, or a start on the route, costs nothing.
 
 ## Performance notes
 

@@ -79,13 +79,17 @@ export function useGhost({ quest, pickup, phase, seed, durationMin, demo }: Args
 
   // Gap status with hysteresis.
   const [status, setStatus] = useState<PacerStatus>('warmup')
+  /** Metres between the hero and the pace point along the route (positive: the hero is ahead of Wisp). */
+  const [gapM, setGapM] = useState(0)
   useEffect(() => {
     if (finished) return
     const id = setInterval(() => {
       const now = nowMs()
       const p = planRef.current
       const q = questRef.current
-      setStatus((prev) => nextPacerStatus(prev, pacerGapM(p, now, q.alongM), pacerElapsedMs(p, now)))
+      const gap = pacerGapM(p, now, q.alongM)
+      setGapM(Math.round(gap))
+      setStatus((prev) => nextPacerStatus(prev, gap, pacerElapsedMs(p, now)))
     }, STATUS_TICK_MS)
     return () => clearInterval(id)
   }, [finished])
@@ -126,5 +130,5 @@ export function useGhost({ quest, pickup, phase, seed, durationMin, demo }: Args
     speak(NIGHT_LINES)
   }, [phase, finished])
 
-  return { plan: finished ? undefined : plan, status: finished ? ('warmup' as const) : status, say, pace: questPace(quest, durationMin) }
+  return { plan: finished ? undefined : plan, status: finished ? ('warmup' as const) : status, gapM, say, pace: questPace(quest, durationMin) }
 }

@@ -324,7 +324,6 @@ export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, er
                 )}
               </div>
             )}
-            {!finished && <GhostHud say={ghost.say} status={ghost.status} low={!!message} />}
             {showResumed && !message && !finished && <div className="hud-msg info">{t('quest.resumed')}</div>}
             {soundPaused && !message && (
               <button type="button" className="hud-msg info sound-resume" onClick={() => engine.unlock()} data-testid="sound-resume">
@@ -333,12 +332,13 @@ export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, er
             )}
 
             {dialogue && (
-              <div className="dialog-wrap">
+              <div className="dialog-wrap" style={{ ['--hud-h' as string]: `${hudHeight}px` }}>
                 <DialogueBox key={dialogue.key} kind={dialogue.kind} lines={dialogue.lines} onDone={dialogue.onDone} autoCloseMs={dialogue.autoCloseMs} autoNextMs={demo ? DEMO_NEXT_LINE_MS : undefined} />
               </div>
             )}
 
             <div ref={hudBottom} className={`hud hud-bottom ${statsOpen ? '' : 'folded'}`} data-testid="hud-bottom">
+              {!finished && <GhostHud say={ghost.say} status={ghost.status} gapM={ghost.gapM} />}
               <dl className="hud-stats">
                 <div>
                   <dt>{t('quest.walked')}</dt>

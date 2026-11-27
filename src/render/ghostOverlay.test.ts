@@ -36,7 +36,7 @@ afterEach(() => {
 
 const base = (extra: Partial<QuestOverlay>): QuestOverlay => ({ player: pts[0], accuracyM: undefined, collected: 0, alongM: 0, ...extra })
 
-function frame(quest: QuestOverlay): string {
+function frame(quest: QuestOverlay, bubble?: string): string {
   const canvas = new SoftCanvas(10, 10)
   canvas.clientWidth = 240
   canvas.clientHeight = 180
@@ -45,6 +45,7 @@ function frame(quest: QuestOverlay): string {
   r.centerOn(pts[0]!, 24)
   r.setRoute(route)
   r.setQuest(quest)
+  if (bubble) r.setBubble(bubble)
   r.render()
   r.dispose()
   return canvas.hash()
@@ -92,5 +93,16 @@ describe('guide ghost on the overlay', () => {
     const a = frame(base({ ghost: { plan, pose: 'float' } }))
     now = 20_000
     expect(frame(base({ ghost: { plan, pose: 'float' } }))).not.toBe(a)
+  })
+  it('is drawn while the hero walks (a moving walker must not skip the ghost)', () => {
+    const plan = startPacer(0, paceFor(0.75), { rate: 1 })
+    now = 3000
+    const walking = { simMps: 1.4, alongM: 4 }
+    expect(frame(base({ ...walking, ghost: { plan, pose: 'float' } }))).not.toBe(frame(base(walking)))
+  })
+  it('stays visible with a speech bubble up (the bubble steps aside, the ghost is drawn over it)', () => {
+    const plan = startPacer(0, paceFor(0.75), { rate: 1 })
+    const text = 'En 30 metros, gira a la izquierda'
+    expect(frame(base({ ghost: { plan, pose: 'float' } }), text)).not.toBe(frame(base({}), text))
   })
 })

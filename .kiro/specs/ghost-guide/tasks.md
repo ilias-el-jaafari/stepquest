@@ -34,3 +34,7 @@
   - _Requirements: G1.3 to G1.5_
 - [x] 90.2 Demo choreography: `gapScript` on `PacerPlan`, `DEMO_GAP_KEYS` and `demoGapScript` in `demo/script.ts`, `useGhost({ demo })`; tests in `demo/script.test.ts`
   - _Requirements: D8.2_
+- [x] 90.3 Pacer status not readable in the quest. Root cause: `.ghost-hud` was absolutely placed at `top: 112px`, the same place as the top card's second row and the sound or GPS banners, so the card covered it. It is now in the flow of the bottom card (`QuestScreen`), with the gap (`useGhost.gapM`, `ghost.gapAhead` / `ghost.gapBehind`); the dialogue box sits above the card by its measured height (`--hud-h`). Tests in `GhostHud.test.tsx`
+  - _Requirements: G6.5_
+- [x] 90.4 Wisp hidden in the demo at about 8 s. Root causes: the speech bubble (anchored at the hero) was drawn after Wisp and covered it; and while the hero was animating, `animating ||= this.drawGhost(...)` short-circuited and never drew Wisp at all. Now the ghost is placed first (`ghostPlace`), the bubble steps aside from its box (`drawBubble(..., avoid)`: other side of the hero, then above or below the ghost), and the ghost is drawn last, always. Tests in `bubble.test.ts`, `ghostOverlay.test.ts`
+  - _Requirements: G1_

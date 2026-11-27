@@ -14,9 +14,9 @@ export const ANIM_FRAME_MS = 1000 / ANIM_HZ
 /** Darkness (0 to 1, from the day cycle) from which the scene counts as night for decor. */
 export const NIGHT_DARKNESS = 0.3
 /** Share of the items (by rank) that is shown by day; at night all of them. */
-export const DAY_DENSITY = 0.55
+export const DAY_DENSITY = 0.8
 /** The most static items a screen of the usual phone size shows at any zoom; a test holds the numbers to it. */
-export const MAX_STATIC_PER_SCREEN = 16
+export const MAX_STATIC_PER_SCREEN = 48
 
 export type DecorBudget = {
   visible: boolean
@@ -29,12 +29,18 @@ export type DecorBudget = {
   density: number
 }
 
+/**
+ * A 32-tile chunk is a big part of a phone screen at low zoom and a small one at high zoom (about 1.3 chunks
+ * at 16 px per tile, 0.3 at 32), so the cap per chunk grows with the zoom to keep a screen at roughly 3 to 8
+ * items by day and at most `MAX_STATIC_PER_SCREEN` at night.
+ */
 const STATIC_BY_ZOOM: readonly (readonly [number, number])[] = [
   [8, 2],
-  [12, 3],
-  [16, 4],
-  [24, 5],
-  [32, 6],
+  [12, 5],
+  [16, 10],
+  [24, 24],
+  [32, 40],
+  [48, 70],
 ]
 
 /** Piecewise-linear table lookup, rounded, clamped at both ends. */

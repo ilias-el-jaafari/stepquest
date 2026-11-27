@@ -63,4 +63,16 @@ describe('GhostHud', () => {
     expect(live().textContent).toBe('Por aquí hay farolas.')
     expect(host.querySelector('.ghost-face')!.className).not.toContain('pop')
   })
+
+  it('shows the gap to the ghost under the status once the warm-up is over', async () => {
+    const gap = () => host.querySelector('[data-testid="ghost-gap"]')?.textContent
+    await show({ say: undefined, status: 'behind', gapM: -25 }, 'es')
+    expect(gap()).toBe('Wisp va 25 m por delante')
+    await show({ say: undefined, status: 'ahead', gapM: 31 }, 'es')
+    expect(gap()).toBe('Vas 31 m por delante de Wisp')
+    await show({ say: undefined, status: 'on', gapM: 3 }, 'es')
+    expect(gap()).toBeUndefined()
+    await show({ say: undefined, status: 'warmup', gapM: -40 }, 'es')
+    expect(gap()).toBeUndefined()
+  })
 })

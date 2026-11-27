@@ -50,6 +50,8 @@ type TilePts = { x: number; y: number }[]
  * start mat, finish flag, the walker with its glow, accuracy halo and speech bubble, and the pickup
  * sparkles. Route and walker keep their full colours at night because they come after the tint.
  */
+type GhostPlace = { sx: number; sy: number; size: number; dx: number; dy: number; left: boolean; reduced: boolean; along: number; totalM: number; pose: GhostPose; box: { x: number; y: number; w: number; h: number } }
+
 export class OverlayLayer {
   private route: RouteShape | undefined
   private readonly trail = new FootprintLayer()
@@ -243,10 +245,13 @@ export class OverlayLayer {
           ctx.fill()
           ctx.stroke()
         }
-        animating ||= this.drawGhost(ctx, v, spriteScale, light, now)
+        // The ghost is drawn last, over the bubble, and the bubble steps aside from it, so Wisp is never hidden.
+        const ghost = this.ghostPlace(v, spriteScale, now)
         const w = this.drawWalker(ctx, v, player, spriteScale, light, now)
         animating ||= w.animating
-        if (this.bubble) drawBubble(ctx, this.bubble, w.at, v.dpr, v.w, v.h)
+        if (this.bubble) drawBubble(ctx, this.bubble, w.at, v.dpr, v.w, v.h, ghost?.box)
+        // Not `||=`: that would skip the draw while the walker is already animating.
+        if (ghost && this.drawGhost(ctx, v, light, now, ghost)) animating = true
       }
     } else {
       if (this.markers.end) drawSprite(FINISH_FLAG, this.markers.end, 0.9)
@@ -305,11 +310,11 @@ export class OverlayLayer {
     return { at: { x: sx, y: sy, size }, animating: moving || (shown !== undefined && (this.routed.isMoving(now) || this.walker.isTweening(now))) }
   }
 
-  /** The guide ghost on the route, a little ahead of the pace point. Only sprite blits and one glow. Returns true while it moves or bobs. */
-  private drawGhost(ctx: CanvasRenderingContext2D, v: View, spriteScale: number, light: Lighting, now: number): boolean {
+  /** Where the guide ghost is this frame (device px) and the box it covers; undefined without a ghost or a route line. */
+  private ghostPlace(v: View, spriteScale: number, now: number): GhostPlace | undefined {
     const g = this.quest?.ghost
     const line = this.line
-    if (!g || !line) return false
+    if (!g || !line) return undefined
     const reduced = prefersReducedMotion()
     const along = ghostAlongM(g.plan, now, line.totalM)
     const at = line.pointAt(along)
@@ -317,17 +322,22 @@ export class OverlayLayer {
     const sy = screenY(v, at.y)
     const size = 16 * spriteScale * GHOST_SCALE
     const bob = ghostBob(now, reduced) * spriteScale
-    // Slightly ahead of the ground, as if floating; mirrored when it heads left so the lantern leads.
+    // Slightly ahead of the ground, as if floating.
     const lift = Math.round(size * 0.12)
-    const left = at.dx < 0
-    const sprite = this.sprite(ghostSprite(g.pose, reduced ? 0 : ghostPhase(now)))
+    const dx = Math.round(sx - size / 2)
+    const dy = Math.round(sy - size - lift - bob)
+    return { sx, sy, size, dx, dy, left: at.dx < 0, reduced, along, totalM: line.totalM, pose: g.pose, box: { x: dx, y: dy, w: size, h: size } }
+  }
+
+  /** The guide ghost on the route, a little ahead of the pace point. Only sprite blits and one glow. Returns true while it moves or bobs. */
+  private drawGhost(ctx: CanvasRenderingContext2D, v: View, light: Lighting, now: number, p: GhostPlace): boolean {
+    const { sx, sy, size, dx, dy, left, reduced } = p
+    const sprite = this.sprite(ghostSprite(p.pose, reduced ? 0 : ghostPhase(now)))
     if (light.lamps > 0.02) {
       ctx.globalCompositeOperation = 'lighter'
       this.lighting.drawGlow(ctx, sx, sy - size * 0.5, 5 * GHOST_SCALE, v.scale, WALKER_RGB, light.lamps * 0.5)
       ctx.globalCompositeOperation = 'source-over'
     }
-    const dx = Math.round(sx - size / 2)
-    const dy = Math.round(sy - size - lift - bob)
     if (left) {
       ctx.save()
       ctx.translate(dx + size, dy)
@@ -336,7 +346,7 @@ export class OverlayLayer {
       ctx.restore()
     } else ctx.drawImage(sprite, dx, dy, size, size)
     // Keep drawing while the pace point moves (it always does until the finish) or the ghost bobs.
-    return !reduced || along < line.totalM
+    return !reduced || p.along < p.totalM
   }
 
   dispose(): void {

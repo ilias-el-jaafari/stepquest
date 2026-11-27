@@ -17,7 +17,7 @@ export const DECOR = {
   faceLit: '#ffd84a',
   bone: '#efe9d6',
   boneShade: '#b9b09a',
-  bat: '#2e2542',
+  bat: '#8a78c0',
   batLight: '#5a4a7a',
   stone: '#a7a3b5',
   stoneShade: '#6f6b82',

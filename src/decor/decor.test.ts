@@ -6,7 +6,7 @@ import { buildTileGrid } from '../tiles/rasterize.ts'
 import { ATLAS_WIDTH, atlasLayout, DECOR_FRAMES, SPRITE_IDS, webCorner } from './art.ts'
 import { batFrame, batX, batY, flickerLevel, fogX, skeletonFrame, tickOf } from './anim.ts'
 import { ANIM_FRAME_MS, decorBudget, MAX_ANIMATED, MAX_STATIC_PER_SCREEN, MIN_DECOR_ZOOM } from './budget.ts'
-import { clearOfStreets, decorInChunk, type DecorItem } from './place.ts'
+import { clearOfStreets, decorInChunk, tileClear, type DecorItem, type YardTest } from './place.ts'
 
 const grid = buildTileGrid(loadDemoOsm())
 const CHUNK = 32
@@ -88,9 +88,11 @@ describe('placement', () => {
     }
   })
 
-  it('never stands on or next to a street, path or crossing, nor on water or a building', () => {
+  it('never stands on a street, path or crossing, nor on water or a building (roaming items and graves keep a street-free 3×3)', () => {
     for (const it of all()) {
-      expect(clearOfStreets(grid, it.tx, it.ty)).toBe(true)
+      // Small still items stand beside streets (their tile and the one above are free); roaming ones and graves need the whole 3×3.
+      expect(tileClear(grid, it.tx, it.ty)).toBe(true)
+      if (it.animated || it.kind === 'graves' || it.kind === 'web') expect(clearOfStreets(grid, it.tx, it.ty)).toBe(true)
       const t = grid.terrain[it.ty * grid.cols + it.tx]
       expect([Terrain.park, Terrain.plaza, Terrain.ground]).toContain(t)
       // Foot and sprite stay within the tile's 3×3 neighbourhood (graves and fog reach about one tile).
@@ -188,6 +190,29 @@ describe('budget', () => {
       }
       expect(worst).toBeLessThanOrEqual(MAX_STATIC_PER_SCREEN)
     }
+  })
+})
+
+describe('yards', () => {
+  // Pretend every other building column is open yard: decor may stand there, still never on a street.
+  const open: YardTest = (x, y) => grid.terrain[y * grid.cols + x] === Terrain.building && x % 2 === 0
+  const statics = (g: typeof grid, yard?: YardTest): DecorItem[] => {
+    const out: DecorItem[] = []
+    for (let cy = 0; cy < chunksY; cy++) for (let cx = 0; cx < chunksX; cx++) out.push(...decorInChunk(g, cx, cy, CHUNK, yard).statics)
+    return out
+  }
+  it('stands on building tiles only where the yard test says open, and finds more decor than without', () => {
+    const without = statics(buildTileGrid(loadDemoOsm())).length
+    const g = buildTileGrid(loadDemoOsm())
+    const items = statics(g, open)
+    const onBuilding = items.filter((i) => g.terrain[i.ty * g.cols + i.tx] === Terrain.building)
+    expect(onBuilding.length).toBeGreaterThan(0)
+    for (const i of onBuilding) expect(open(i.tx, i.ty)).toBe(true)
+    expect(items.length).toBeGreaterThan(without)
+  })
+  it('never puts a yard item on a street', () => {
+    const g = buildTileGrid(loadDemoOsm())
+    for (const i of statics(g, open)) expect(tileClear(g, i.tx, i.ty, open)).toBe(true)
   })
 })
 

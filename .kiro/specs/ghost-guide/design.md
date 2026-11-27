@@ -10,7 +10,7 @@
 | `src/render/routeWalker.ts` | `RouteLine` (route polyline in tile units with metres, `pointAt`, `project`) and `RouteWalker` (hero progress). Used by the overlay for the hero and the ghost. |
 | `src/render/overlayLayer.ts` | Places the hero through `RouteWalker`, draws the ghost (cached sprite canvases, one glow, mirror when heading left). `QuestOverlay` gains `simMps`, `offRoute`, `ghost {plan, pose}`. |
 | `src/ui/useGhost.ts` | Hook: plan state and pauses, 500 ms status tick with hysteresis, line queue (gems, night scare). |
-| `src/ui/GhostHud.tsx` | Bubble in the quest HUD plus the always-present `sr-only` live region. |
+| `src/ui/GhostHud.tsx` | Chip at the top of the bottom stats card (status, gap) plus the always-present `sr-only` live region. |
 | `Onboarding.tsx`, `SummaryScreen.tsx`, `PlannerPanel.tsx` | Host, finish guest, and the "Ghost pace" line. |
 
 ## Pacer maths

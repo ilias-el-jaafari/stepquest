@@ -155,6 +155,8 @@ export const en = {
   'ghost.pace.ahead': 'You are ahead of the ghost!',
   'ghost.pace.on': "Keeping the ghost's pace",
   'ghost.pace.behind': 'Falling behind... the ghost is waiting for you!',
+  'ghost.gapAhead': 'Wisp is {m} m ahead of you',
+  'ghost.gapBehind': 'You are {m} m ahead of Wisp',
   'result.ghostPace': 'Ghost pace',
   'result.ghostPaceValue': '{kmh} km/h · ~{spm} steps/min',
   'summary.ghost': 'Wisp the ghost celebrates',

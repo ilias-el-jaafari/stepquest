@@ -1,8 +1,8 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`golden frames > Halloween decor at night: lit pumpkins, glows, hats on lamp posts 1`] = `"390x400:a377b368"`;
+exports[`golden frames > Halloween decor at night: lit pumpkins, glows, hats on lamp posts 1`] = `"390x400:fd5b7068"`;
 
-exports[`golden frames > Halloween decor by day (subtle) at detail zoom 1`] = `"390x400:0d391129"`;
+exports[`golden frames > Halloween decor by day (subtle) at detail zoom 1`] = `"390x400:a2c15bf2"`;
 
 exports[`golden frames > detail zoom with the avoided street tape and a wide window 1`] = `"400x300:1e5326e3"`;
 

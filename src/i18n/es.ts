@@ -156,6 +156,8 @@ export const es: Record<MessageKey, string> = {
   'ghost.pace.ahead': 'Vas por delante del fantasma',
   'ghost.pace.on': 'Al ritmo del fantasma',
   'ghost.pace.behind': 'Te estás quedando atrás… ¡el fantasma te espera!',
+  'ghost.gapAhead': 'Wisp va {m} m por delante',
+  'ghost.gapBehind': 'Vas {m} m por delante de Wisp',
   'result.ghostPace': 'Ritmo fantasma',
   'result.ghostPaceValue': '{kmh} km/h · ~{spm} pasos/min',
   'summary.ghost': 'Wisp, el fantasma, lo celebra',
