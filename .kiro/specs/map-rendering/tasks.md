@@ -269,4 +269,13 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
     - _Requirements: 26.6_
   - [x] 81.6 Spec, design numbers and steering (`osm-etiquette.md`); `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
     - _Requirements: 26.1 to 26.6_
+- [x] 83 The finish only on a street the graph accepts (requirements 26.7 to 26.9, routing 14.5, 14.6)
+  - [x] 83.1 Spec first: map-rendering 26.7 to 26.9, routing 14.5 and 14.6; tests first (`snap.test.ts`, `layer.test.ts`, `appState.test.ts`, `MapBanners.test.tsx`, `corridor.test.ts`, `AppPlanLive.test.tsx` "A → B finish on a road the walkers may not use", which fails on the code before: the banner names the foot=no primary road)
+    - _Requirements: 26.7 to 26.9_
+  - [x] 83.2 `lod/tile.ts`: `NO_FOOT` from `isWalkable` on `transportationTags` (the rule of `walkNet`), tile `v` 2 (old cached tiles are misses); `lod/snap.ts`: point from walkable `transportation` lines only, name from the name line of the same class within `NAME_MATCH_M`
+    - _Requirements: 26.7_
+  - [x] 83.3 `LodLayer.snapAnswer` (street, none, unknown), `useLod`, `App` tap, reducer `finishNote.none`, `MapBanners` text with distance and `data-finish-m`, EN/ES copy (`map.finishAt`, `map.finishNone`), `formatKmShort`
+    - _Requirements: 26.8, 26.9_
+  - [x] 83.4 `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
+    - _Requirements: 26.7 to 26.9_
 

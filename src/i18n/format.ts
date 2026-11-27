@@ -18,6 +18,11 @@ export function formatKm(metres: number, locale: Locale): string {
   return `${formatDecimal(metres / 1000, locale, 2)} km`
 }
 
+/** Kilometres with one decimal, e.g. "9,2 km" (the finish line over the map). */
+export function formatKmShort(metres: number, locale: Locale): string {
+  return `${formatDecimal(metres / 1000, locale, 1)} km`
+}
+
 /** Metres below one kilometre, kilometres from there on ("480 m", "1,25 km"). */
 export function formatDistance(metres: number, locale: Locale): string {
   const m = Number.isFinite(metres) ? metres : 0

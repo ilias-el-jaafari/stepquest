@@ -45,7 +45,7 @@ function world(radiusM = 9_000) {
   const load = (r = radiusM, only?: (id: TileId) => boolean) => {
     for (const t of tilesWithin(HERO, r)) {
       if (only && !only(t.id)) continue
-      store.put(makeLod(t.id, { lines: [{ cls: 'minor', pts: [[0, 2048], [4096, 2048]] }], names: [{ cls: 'primary', name: `Avenida ${t.id.x}`, pts: [[0, 2048], [4096, 2048]] }] }))
+      store.put(makeLod(t.id, { lines: [{ cls: 'primary', pts: [[0, 2048], [4096, 2048]] }], names: [{ cls: 'primary', name: `Avenida ${t.id.x}`, pts: [[0, 2048], [4096, 2048]] }] }))
     }
   }
   const paintAll = () => {
@@ -249,6 +249,27 @@ describe('LOD layer: tap and coverage', () => {
     }
   })
 
+  it('answers a tap with the street, or "none" when every tile in reach is in and holds no walkable street, or "unknown" while a tile is missing (requirement 26.8)', () => {
+    const w = world()
+    const t = tilesWithin(HERO, 100)[0]!.id
+    const b = tileBBox(t)
+    const tap = { lat: (b.north + b.south) / 2 - 0.0001, lon: b.west + (b.east - b.west) * 0.3 }
+    // Nothing loaded: the layer cannot say there is no street.
+    expect(w.layer.snapAnswer(tap, 4, M_PER_TILE)).toEqual({ state: 'unknown' })
+    w.load()
+    const found = w.layer.snapAnswer(tap, 4, M_PER_TILE)
+    expect(found.state).toBe('street')
+    // A tap far from every street of a loaded tile: no street in reach.
+    const away = { lat: b.north - (b.north - b.south) * 0.1, lon: b.west + (b.east - b.west) * 0.3 }
+    expect(w.layer.snapAnswer(away, 24, M_PER_TILE)).toEqual({ state: 'none' })
+    // A neighbour tile that is not in yet, within the reach: unknown again.
+    const edge = { lat: away.lat, lon: b.west + 1e-6 }
+    const neighbour = { ...t, x: t.x - 1 }
+    const w2 = world()
+    w2.load(undefined, (id) => !(id.x === neighbour.x && id.y === neighbour.y))
+    expect(w2.layer.snapAnswer(edge, 0.5, M_PER_TILE).state).not.toBe('none')
+  })
+
   it('tells the streamer which cells it covers: ready with the tiles in, loading while they are not, no outside the radius or after a failure', () => {
     const w = world()
     const cell = cellOf(HERO)
@@ -261,7 +282,7 @@ describe('LOD layer: tap and coverage', () => {
     expect(w2.layer.coverage(cell, HERO)).toBe('no')
     expect(new LodLayer(new LodStore()).coverage(cell, undefined)).toBe('no')
     expect(distanceToTileM(tilesWithin(HERO, 1)[0]!.id, HERO)).toBe(0)
-    expect(emptyLod({ z: 14, x: 1, y: 1 }).v).toBe(1)
+    expect(emptyLod({ z: 14, x: 1, y: 1 }).v).toBe(2)
   })
 })
 

@@ -76,6 +76,8 @@ export const es: Record<MessageKey, string> = {
   'safety.cancel': 'Cancelar',
   'map.finish': 'Meta: {name}',
   'map.finishStreet': 'Meta: calle',
+  'map.finishAt': '{text} · {km}',
+  'map.finishNone': 'No hay ninguna calle transitable cerca. Toca más cerca de una calle.',
   'safety.noStreet': 'Ahí no hay ninguna calle con nombre. Toca justo encima de una calle.',
   'safety.added': 'Calle añadida: {name}.',
   'safety.remove': 'Dejar de evitar {name}',

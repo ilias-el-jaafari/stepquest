@@ -58,6 +58,24 @@ describe('corridor of a long A → B walk (routing requirement 14)', () => {
     )
   })
 
+  it('contains the finish itself: its cell and every tile within the snap reach of it, from 4 to 10 km, in any direction and for any goal (requirement 14.5)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 359 }), fc.integer({ min: 4_100, max: 10_000 }), fc.integer({ min: 4_000, max: 40_000 }), fc.integer({ min: 0, max: 359 }), (bearing, distance, goal, around) => {
+        const end = destination(START, bearing, distance)
+        const cells = corridorCells(START, end, goal)
+        const here = cellOf(end)
+        expect(cells.some((c) => c.i === here.i && c.j === here.j)).toBe(true)
+        const tiles = new Set(corridorTiles(START, end, goal).map(tileKey))
+        // A snapped finish lies at most 250 m from the tap (map-rendering 26.7): the tile it is in is loaded.
+        const snapped = destination(end, around, 250)
+        const tile = walkTiles([cellOf(snapped)]).map(tileKey)
+        const own = tile.filter((k) => tiles.has(k))
+        expect(own.length).toBeGreaterThan(0)
+      }),
+      { numRuns: 60 },
+    )
+  })
+
   it('works in any direction and keeps the tile count in step with the length', () => {
     fc.assert(
       fc.property(fc.double({ min: 0, max: 360, noNaN: true }), fc.double({ min: 4_100, max: 12_000, noNaN: true }), (bearing, dist) => {

@@ -53,7 +53,7 @@ export type AppState = {
   pickingAvoid: boolean
   pickNote: { ok: boolean; name?: string } | undefined
   /** The street the A → B finish was snapped to (requirement 25.7); valid while `end` is still `at`. */
-  finishNote: { name?: string; at: LatLon } | undefined
+  finishNote: { name?: string; /** No walkable street within reach of the tap (map-rendering 26.8). */ none?: boolean; at: LatLon } | undefined
   isDemo: boolean
   liveBox: BBox | undefined
   askHere: boolean
@@ -75,7 +75,7 @@ export type AppAction =
   | { type: 'mode'; mode: RouteMode }
   | { type: 'avoid'; list: readonly string[] }
   | { type: 'place'; which: 'start' | 'end' }
-  | { type: 'point'; p: LatLon; street?: { name?: string } }
+  | { type: 'point'; p: LatLon; street?: { name?: string; none?: boolean } }
   | { type: 'pickStreet'; name: string | undefined }
   | { type: 'pickMode'; on: boolean }
   | { type: 'pickCancel' }

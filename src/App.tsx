@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { bboxContains, type LatLon } from './geo/geo.ts'
+import { bboxContains, haversine, type LatLon } from './geo/geo.ts'
 import { useI18n } from './i18n/index.ts'
 import { nearestStreet, avoidedPolylines, streetNames } from './routing/safety.ts'
 import { addAvoid, removeAvoid, saveAvoid } from './ui/avoidList.ts'
@@ -109,19 +109,21 @@ export default function App() {
   const streets = useMemo(() => (world ? streetNames(world.data) : []), [world])
   const avoidedLines = useMemo(() => (world ? avoidedPolylines(world.data, state.avoid) : []), [world, state.avoid])
 
-  const snapAt = lod.snapAt
+  const snapAnswer = lod.snapAnswer
   const onTap = useCallback(
     (p: LatLon, zoom: number) => {
       const s = latest.current
       if (s.pickingAvoid) return dispatch({ type: 'pickStreet', name: world ? nearestStreet(world.data, p) : undefined })
       // Placing the A → B finish: it snaps to the street under the tap, at any zoom (requirement 25.7).
       if (s.settings.mode === 'oneway' && s.placing === 'end') {
-        const hit = snapAt(p, zoom, world?.grid.metresPerTile ?? 5)
-        if (hit) return dispatch({ type: 'point', p: hit.point, street: { name: hit.name } })
+        const hit = snapAnswer(p, zoom, world?.grid.metresPerTile ?? 5)
+        if (hit.state === 'street') return dispatch({ type: 'point', p: hit.snap.point, street: { name: hit.snap.name } })
+        // Every tile in reach is loaded and none holds a walkable street: say so now, not after planning (requirement 26.8).
+        if (hit.state === 'none') return dispatch({ type: 'point', p, street: { none: true } })
       }
       dispatch({ type: 'point', p })
     },
-    [latest, dispatch, world, snapAt],
+    [latest, dispatch, world, snapAnswer],
   )
   const onLocate = useCallback(() => void locateMe(), [locateMe])
   const onView = useCallback((centre: LatLon) => dispatch({ type: 'view', centre }), [dispatch])
@@ -135,6 +137,7 @@ export default function App() {
   }, [shown, start, end, settings.mode])
   const focusKey = shown ? `route:${shown.nodes.length}:${shown.distanceM}` : `pts:${settings.mode}:${end ? 'e' : ''}:${world ? 'w' : ''}`
 
+  const finishNote = settings.mode === 'oneway' && state.finishNote && end && state.finishNote.at.lat === end.lat && state.finishNote.at.lon === end.lon ? state.finishNote : undefined
   const outsideView = !!world && !!state.viewCentre && !bboxContains(worldBox(world), state.viewCentre)
   const loading = live.status.state === 'loading' ? { done: live.status.done, total: live.status.total } : undefined
   const locating = state.locate.state === 'locating' || state.locate.state === 'loadingArea'
@@ -252,7 +255,8 @@ export default function App() {
               noStreet={state.pickNote?.ok === false}
               loading={loading}
               outsideView={outsideView}
-              finish={settings.mode === 'oneway' && state.finishNote && end && state.finishNote.at.lat === end.lat && state.finishNote.at.lon === end.lon ? state.finishNote : undefined}
+              finish={finishNote}
+              finishM={finishNote && end ? haversine(start, end) : undefined}
               askHere={state.askHere}
               errorCode={live.status.state === 'error' ? live.status.code : undefined}
               onCancelPick={() => dispatch({ type: 'pickCancel' })}

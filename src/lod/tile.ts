@@ -1,6 +1,8 @@
 import { VectorTile, classifyRings } from '@mapbox/vector-tile'
 import { PbfReader } from 'pbf'
 import { tileBBox, tileSizeM, type TileId } from '../vector/tileMath.ts'
+import { isWalkable } from '../osm/classify.ts'
+import { transportationTags } from '../vector/omt.ts'
 import { Area, NO_FOOT, Street, streetClassOf, type StreetClass } from './classes.ts'
 
 /** Tile units of a LOD tile: every coordinate is scaled to this extent whatever the source tile used. */
@@ -20,7 +22,7 @@ export type LodNames = LodGeom & { text: string[] }
 
 /** One z14 tile reduced to what the far zooms draw (requirement 25). Plain typed arrays: they are cloned into IndexedDB and moved from the worker. */
 export type LodTile = {
-  v: 1
+  v: 2
   id: TileId
   /** Lines of `transportation` (class and `NO_FOOT` flag in `kind`). */
   streets: LodGeom
@@ -192,15 +194,17 @@ export function tileToLod(bytes: Uint8Array, id: TileId): LodTile {
       }
     }
   }
-  return { v: 1, id, streets: streets.done(), names: { ...names.done(), text: names.text }, areas: areas.done(), waterways: waterways.done() }
+  return { v: 2, id, streets: streets.done(), names: { ...names.done(), text: names.text }, areas: areas.done(), waterways: waterways.done() }
 }
 
-/** A street a pedestrian may not use: motorway, trunk, busway, `foot=no`, private or closed access without `foot=yes`. */
+/**
+ * A street a pedestrian may not use: the rule of the walking graph (`isWalkable` on the tags `transportationTags` makes, the same
+ * path `walkNet` takes), so a tap never snaps to a line the planner cannot use. Rail, busway and what the graph does not know are no-foot.
+ */
 function noFoot(cls: StreetClass, p: Record<string, unknown>): boolean {
-  if (cls === Street.motorway || cls === Street.trunk || cls === Street.busway || cls === Street.rail) return true
-  if (p.foot === 'no') return true
-  if (p.foot === 'yes' || p.foot === 'designated') return false
-  return p.access === 'no' || p.access === 'private'
+  if (cls === Street.rail) return true
+  const tags = transportationTags(p, false)
+  return !tags || !isWalkable(tags)
 }
 
 /** How many shapes a geometry holds. */
@@ -220,7 +224,7 @@ const isGeom = (g: unknown): g is LodGeom => !!g && typeof g === 'object' && (g 
 /** Whether a value read back from storage is a LOD tile of this version (a damaged one counts as a miss). */
 export function isLodTile(x: unknown): x is LodTile {
   const t = x as LodTile | undefined
-  return !!t && t.v === 1 && !!t.id && isGeom(t.streets) && isGeom(t.names) && Array.isArray(t.names.text) && t.names.text.length === t.names.kind.length && isGeom(t.areas) && isGeom(t.waterways)
+  return !!t && t.v === 2 && !!t.id && isGeom(t.streets) && isGeom(t.names) && Array.isArray(t.names.text) && t.names.text.length === t.names.kind.length && isGeom(t.areas) && isGeom(t.waterways)
 }
 
 /** An empty tile (open sea, no data). */

@@ -32,6 +32,9 @@ export const LABEL_SAME_NAME_CSS = 160
  * zooms, draws street names, answers "which street is here" for a tap, and says which cells it covers. It holds no data of its
  * own: tiles and bitmaps live in the `LodStore`.
  */
+/** The answer to a tap on the finish: a street, none in reach, or not known yet (tiles missing). */
+export type SnapAnswer = { state: 'street'; snap: Snap } | { state: 'none' } | { state: 'unknown' }
+
 export class LodLayer {
   private hero: LatLon | undefined
   private focus: LatLon[] = []
@@ -200,6 +203,20 @@ export class LodLayer {
     const near: ReturnType<LodStore['resident']>[number][] = []
     for (const t of this.store.resident()) if (distanceToTileM(t.id, at) <= maxM) near.push(t)
     return snapStreet(near, at, maxM)
+  }
+
+  /**
+   * What a tap on the finish learns (requirement 26.7, 26.8): the walkable street it snapped to, `none` when every tile within
+   * reach is loaded and none holds a walkable street there, `unknown` while a tile within reach is not loaded (the layer cannot say).
+   */
+  snapAnswer(at: LatLon, zoom: number, metresPerTile: number): SnapAnswer {
+    const maxM = snapRadiusM(zoom, metresPerTile)
+    const pad = maxM / 111_320
+    const padLon = pad / Math.max(0.01, Math.cos((at.lat * Math.PI) / 180))
+    const ids = tilesInBBox({ south: at.lat - pad, north: at.lat + pad, west: at.lon - padLon, east: at.lon + padLon }, LOD_Z).filter((id) => distanceToTileM(id, at) <= maxM)
+    const hit = this.snapAt(at, zoom, metresPerTile)
+    if (hit) return { state: 'street', snap: hit }
+    return ids.every((id) => this.store.has(id)) ? { state: 'none' } : { state: 'unknown' }
   }
 
   /**

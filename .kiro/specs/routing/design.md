@@ -213,6 +213,10 @@ València 39.4697, -0.3774 to a finish 9 km to the north-west (39.527, -0.451; s
 
 Tile cache: 25 tiles is under half of `MAX_TILE_ENTRIES` (60), so a corridor does not push out the tiles the map draws from.
 
+### The finish is on a street the graph accepts (task 83)
+
+A far tap used to snap on the LOD lines of `transportation_name`, which carry no `foot` or `access`, so a foot=no primary road could be chosen and named while the walking graph (`walkNet`, `isWalkable`) had no node within 150 m of it: "no walkable street near that point" after planning. Now `NO_FOOT` of a LOD street is `!isWalkable(transportationTags(props))`, the snapped point comes from walkable `transportation` lines only, and the name is taken from the name line of the same class within 4 m of that point. The corridor already holds the finish cell (every cell within 1 km of the line); `corridor.test.ts` checks it for any bearing and goal. Known limit: a street with no vertex for more than 300 m can leave the nearest node beyond `MAX_SNAP_M`.
+
 ### Testing
 
 `world/corridor.test.ts` (the tile set of a 9 km walk, every point near the line is in a cell, any bearing, a synthetic city of 25 tiles planned within ±5 % across a world whose frame holds only the start, and no route when the middle is missing); `AppPlanLive.test.tsx` "A → B to a street 8.5 km away" (tiles asked for along the whole line and none twice, "Too short" with the nearest feasible number, then a route within 5 %; it times out on the code before this task).

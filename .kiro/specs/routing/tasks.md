@@ -84,4 +84,7 @@ Each bug task starts with a failing regression test (fixture-based, Benicalap, n
     - _Requirements: 14.1, 14.2, 14.3_
   - [x] 82.2 `ensureWalk` loads the corridor for finishes more than 4 km away; app-level test with a finish 8.5 km away; real-tile measurement in `design.md`
     - _Requirements: 14.1 to 14.4_
+- [x] 83 A snapped finish always plans (requirement 14.5, 14.6; with map-rendering task 83)
+  - [x] 83.1 Property test: the finish cell and the tile of a point 250 m from it are in the corridor, 4 to 10 km, any bearing and goal; app-level test with a finish beside a foot=no primary road (plans after the fix, fails before)
+    - _Requirements: 14.5, 14.6_
 

@@ -75,6 +75,8 @@ export const en = {
   'safety.cancel': 'Cancel',
   'map.finish': 'Finish: {name}',
   'map.finishStreet': 'Finish: street',
+  'map.finishAt': '{text} · {km}',
+  'map.finishNone': 'No walkable street near there. Tap closer to a street.',
   'safety.noStreet': 'No named street there. Tap right on a street.',
   'safety.added': 'Added {name}.',
   'safety.remove': 'Stop avoiding {name}',

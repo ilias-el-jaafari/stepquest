@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { BBox, LatLon } from '../geo/geo.ts'
 import { lodRadiusFrom } from '../lod/config.ts'
 import { LodFocus } from '../lod/focus.ts'
-import { LodLayer } from '../lod/layer.ts'
-import { LodPrefetcher, SETTLE_MS } from '../lod/prefetch.ts'
+import { LodLayer, type SnapAnswer } from '../lod/layer.ts'
 import type { Snap } from '../lod/snap.ts'
+import { LodPrefetcher, SETTLE_MS } from '../lod/prefetch.ts'
 import { LodStore } from '../lod/store.ts'
 import type { LodSource } from '../vector/client.ts'
 
@@ -24,7 +24,7 @@ type Args = {
 /**
  * The level of detail around the hero (requirement 25): the store and layer the map draws from, and the prefetcher that fills
  * them (cached tiles at once, then the view, then rings outward from the hero). `onView` is the map's view callback;
- * `snapAt` answers a tap with the street under it.
+ * `snapAt` answers a tap with the street under it, `snapAnswer` also says when none is in reach.
  */
 export function useLod({ tiles, hero, finish, online, enabled = LOD_ENABLED }: Args) {
   const store = useMemo(() => new LodStore(), [])
@@ -86,5 +86,6 @@ export function useLod({ tiles, hero, finish, online, enabled = LOD_ENABLED }: A
   )
   useEffect(() => () => clearTimeout(rest.current), [])
   const snapAt = useCallback((p: LatLon, zoom: number, metresPerTile: number): Snap | undefined => layer.snapAt(p, zoom, metresPerTile), [layer])
-  return { layer: enabled ? layer : undefined, onView, snapAt }
+  const snapAnswer = useCallback((p: LatLon, zoom: number, metresPerTile: number): SnapAnswer => layer.snapAnswer(p, zoom, metresPerTile), [layer])
+  return { layer: enabled ? layer : undefined, onView, snapAt, snapAnswer }
 }

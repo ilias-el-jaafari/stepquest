@@ -80,7 +80,7 @@ describe('MVT to LOD tile (requirement 25.2)', () => {
     const t = makeLod(T, { lines: [{ cls: 'minor', pts: [[0, 0], [10, 10]] }], names: [{ cls: 'minor', name: 'X', pts: [[0, 0], [10, 10]] }] })
     expect(isLodTile(t)).toBe(true)
     expect(isLodTile(structuredClone(t))).toBe(true)
-    expect(isLodTile({ ...t, v: 2 })).toBe(false)
+    expect(isLodTile({ ...t, v: 1 })).toBe(false)
     expect(isLodTile({ ...t, streets: { ...t.streets, xy: new Int16Array(3) } })).toBe(false)
     expect(isLodTile(null)).toBe(false)
     const e = emptyLod(T)

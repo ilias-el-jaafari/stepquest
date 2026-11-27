@@ -207,6 +207,12 @@ describe('A → B finish snapped to a street (requirement 25.7)', () => {
     expect(s2.finishNote).toBeUndefined()
   })
 
+  it('a tap with no walkable street in reach keeps the point and notes that at once (requirement 26.8)', () => {
+    const s = appReducer(oneway(), { type: 'point', p, street: { none: true } })
+    expect(s.end).toEqual(p)
+    expect(s.finishNote).toEqual({ none: true, at: p })
+  })
+
   it('setting the start (a loop, or the start in A → B) leaves no street note', () => {
     const s = appReducer(oneway(), { type: 'point', p, street: { name: 'X' } })
     const loop = appReducer(appReducer(s, { type: 'mode', mode: 'loop' }), { type: 'point', p, street: { name: 'Y' } })
