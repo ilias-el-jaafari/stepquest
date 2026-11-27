@@ -18,35 +18,36 @@ StepQuest is a Kiroween entry, so the map gets a light, tasteful Halloween dress
 ### Requirement H1: Original art, painted once
 
 1. THE SYSTEM SHALL draw every decor sprite as a character grid in `src/decor/art.ts` (our own designs and colours, documented in `visual-style.md`), with no image, audio or font file added and nothing taken from another game, character or brand. The hook `assets-guard` applies to any file that is added.
-2. THE SYSTEM SHALL paint all frames once into a single offscreen atlas (128 px wide, row-packed with a 1 px gutter, 22 frames, 27 px high) and only blit from it afterwards.
+2. THE SYSTEM SHALL paint all frames once into a single offscreen atlas (128 px wide, row-packed with a 1 px gutter, 29 frames, 52 px high) and only blit from it afterwards.
 
 ### Requirement H2: Kinds
 
-1. THE SYSTEM SHALL offer: pumpkin, jack-o'-lantern (lit face and glow at night), bat (two wing frames, animated, night only), cobweb (four corner orientations), sitting skeleton (two frames, waving), gravestone clusters of one to three (three shapes), fog wisp (night only), crow, candle (lit at night), small lantern (lit at night), and a witch hat on some lamp posts (night only, with the post).
+1. THE SYSTEM SHALL offer: pumpkin, jack-o'-lantern (lit face and glow at night), bat (two wing frames, animated, night only), cobweb (four corner orientations), sitting skeleton (two frames, waving), gravestone clusters of one to three (three shapes), fog wisp (night only), crow, candle (lit at night), small lantern (lit at night), and a witch hat on some lamp posts (night only, with the post). A second set adds a scarecrow, a cauldron (green brew by day, a fire and an orange glow at night), a haunted signpost, a picket fence with a small pumpkin in front, and a spider that hangs from some garden trees. A pumpkin may have a small one beside it.
 
 ### Requirement H3: Placement is deterministic and sensible
 
 1. THE SYSTEM SHALL place decor from a seeded hash of a fixed latitude and longitude lattice, so the same place gets the same decor on every visit and whatever grid, frame or window the map was cut from.
 2. THE SYSTEM SHALL anchor decor to: park and green tiles (not pitches, playgrounds or farmland; gravestones and fog are favoured in cemeteries), plazas, ground tiles within 4 tiles of a landmark, ground tiles at the corner of a lot between two streets, and concave building corners and ground next to them (cobwebs).
-3. THE SYSTEM SHALL NOT place decor on a road, path or crossing, on water, on a house or landmark, or where there is no loaded data. A small still item (pumpkin, jack-o'-lantern, candle, lantern, crow) needs only its own tile and the one above it free of streets, so it may stand in a yard or verge right beside a road; animated items, gravestone clusters and cobwebs keep a street-free 3×3. Open yards (building terrain with no house, landmark, tree, fence or gate on it or just south of it) count as ground. Bat orbits (up to 0.9 tile) and fog drift (up to 0.5 tile) stay inside the free 3×3.
+3. THE SYSTEM SHALL NOT place decor on a road, path or crossing, on water, on a house or landmark, or where there is no loaded data. A small still item (pumpkin, jack-o'-lantern, candle, lantern, crow) needs only its own tile and the one above it free of streets, so it may stand in a yard or verge right beside a road; animated items, gravestone clusters and cobwebs keep a street-free 3×3. A low item (pumpkin, jack-o'-lantern, candle, lantern, crow, fence, cauldron: 12 art pixels or less) may have a house wall in the tile above it, like a pumpkin on a doorstep; taller ones (scarecrow, signpost, 16 and 20 px) also need the second tile above free of streets. The sprite's own width counts: when its half width (art pixels / 32 tiles) would reach a street or a tile without data it moves inward by at most 0.15 tile, otherwise the site is dropped; a pumpkin's small companion needs open green, ground or plaza on its side. The foot is the site's own position inside its tile (animated items at least 0.25 tile down), so what is drawn keeps the spacing of the sites. Open yards (building terrain with no house, landmark, tree, fence or gate on it or just south of it) count as ground. Bat orbits (up to 0.55 tile sideways, 0.2 vertically) and fog drift (up to 0.3 tile) stay inside the free 3×3, counting the whole sprite (bat 13 × 7, fog 20 × 9 art pixels).
 4. THE SYSTEM SHALL NOT draw static decor on a keep-out tile, and SHALL NOT draw an animated item within 1.5 tiles of the hero. The overlay, the hero, the ghost, the gems and the UI always come after the decor in draw order.
-5. THE SYSTEM SHALL compute a chunk's items once (32 × 32 tiles, cached with the grid like lamps and fireflies, forgotten when the chunk's tiles change) and keep them in rank order.
-6. EXCEPTION: the witch hat sits on an existing lamp post, which stands on a street kerb; it is part of that street fixture, not an object placed on the street. It appears on one post in five (hash of the post's tile) and only where the post is drawn.
+5. THE SYSTEM SHALL keep sites apart: a site gives way to a candidate of lower rank closer than 3.8 m, decided from the hashes alone (so every frame agrees), and one cobweb stays at each tile corner. Garden trees (from the town lookup) get a spider on about a third of the sites.
+6. THE SYSTEM SHALL compute a chunk's items once (32 × 32 tiles, cached with the grid like lamps and fireflies, forgotten when the chunk's tiles change) and keep them in rank order.
+7. EXCEPTION: the witch hat sits on an existing lamp post, which stands on a street kerb; it is part of that street fixture, not an object placed on the street. It appears on one post in five (hash of the post's tile) and only where the post is drawn.
 
 ### Requirement H4: Density and zoom
 
 1. THE SYSTEM SHALL hide decor below the detail zoom (8 CSS px per tile) and draw it at the zoom's scale, so sprites are smaller further out.
-2. THE SYSTEM SHALL cap static items per chunk by zoom: 2 at zoom 8, 5 at 12, 10 at 16, 24 at 24, 40 at 32, 70 at 48 (linear between), because a chunk is most of a screen at low zoom and a third of it at quest zoom. In a dense city a phone screen at quest zoom shows about 8 to 12 items (3 to 8 of them clear of the HUD cards); no position in the demo area shows more than 48 at any zoom.
+2. THE SYSTEM SHALL cap static items per chunk by zoom: 3 at zoom 8, 10 at 12, 26 at 16, 90 at 24, 120 at 32, 150 at 48 (linear between), because a chunk is most of a screen at low zoom and about half of it at quest zoom (24). In a city a phone screen at quest zoom shows 25 to 35 static items, 10 to 20 of them in the map area the HUD cards leave free (Valencia start, measured: 41 on the screen); no position in the demo area shows more than 130 at any zoom (the worst case is the middle of a large park at zoom 48).
 
 ### Requirement H5: Day and night
 
 1. WHILE the day-cycle darkness is below 0.3, THE SYSTEM SHALL show 80 % of the items (by rank), unlit, with no bats, fog, glows or hats and at most one animated item per chunk (waving skeletons).
-2. WHILE the darkness is 0.3 or more, THE SYSTEM SHALL show every ranked item, light the jack-o'-lanterns, candles and lanterns, add stepped additive glows, put hats on lamp posts, fly bats, drift fog and flicker the glows (animated items per chunk: 1 below zoom 12, 2 below 24, 3 above).
+2. WHILE the darkness is 0.3 or more, THE SYSTEM SHALL show every ranked item, light the jack-o'-lanterns, candles and lanterns, add stepped additive glows, put hats on lamp posts, fly bats, drift fog and flicker the glows (animated items per chunk: 1 below zoom 12, 3 below 24, 5 above).
 3. THE SYSTEM SHALL draw sprites before the sky tint (so night tints them) and glows and hats after it.
 
 ### Requirement H6: Animation is capped and slow
 
-1. THE SYSTEM SHALL draw at most 12 animated items (including flickers) per frame, nearest the screen centre first, and SHALL step their motion at no more than 12 Hz (`tickOf`). Bats loop slowly (14 to 22 s per orbit; under 1 tile per second) and flap at 6 Hz; fog drifts over 30 s; skeletons wave at 3 Hz.
+1. THE SYSTEM SHALL draw at most 16 animated items (including flickers) per frame, nearest the screen centre first, and SHALL step their motion at no more than 12 Hz (`tickOf`). Bats loop slowly (14 to 22 s per orbit; under 1 tile per second, 0.55 tile wide) and flap at 6 Hz; fog drifts over 30 s; skeletons wave at 3 Hz.
 2. THE SYSTEM SHALL run one timer, aligned to the next 12 Hz step, only while an animated item is drawn, and none otherwise.
 
 ### Requirement H7: Reduced motion
@@ -56,7 +57,7 @@ StepQuest is a Kiroween entry, so the map gets a light, tasteful Halloween dress
 ### Requirement H8: Performance
 
 1. THE SYSTEM SHALL NOT allocate per frame in the decor passes (atlas slots in a precomputed table, items in cached arrays, no strings built in the loop), SHALL NOT redraw the scene for a walker move, a pan inside the margin or the animation timer, and SHALL redraw it only for a change of light, setting, zoom, chunk data or keep-out.
-2. THE SYSTEM SHALL keep the 4×-throttled phone profile at about 55 to 60 fps while walking and panning and add no long task. (Measure with the existing frame profile before release; the passes are at most one `drawImage` per item.)
+2. THE SYSTEM SHALL keep the 4×-throttled phone profile at about 55 fps while walking and panning at quest zoom (measured 55 to 57 walking, 53 to 56 panning, five runs), and SHALL do no decor work at far zoom: below zoom 8 no chunk is placed, no list is walked and no timer runs. An arriving map cell only drops the decor of the chunks within 6 tiles of its rectangle (`forgetDecor(grid, rect)`), never the whole world's.
 
 ### Requirement H9: Setting
 
@@ -64,4 +65,14 @@ StepQuest is a Kiroween entry, so the map gets a light, tasteful Halloween dress
 
 ### Requirement H10: Tests
 
-1. THE SYSTEM SHALL test: seeded determinism (property test, also across a grid built again), no overlap with street geometry, rank order, density caps per screen at each zoom, zoom scaling, day/night differences, reduced motion, the animated cap and timer, keep-out, the setting, the atlas layout (golden: 128 × 27, 22 frames) and two golden frames (day and night) in `golden.test.ts`. The older golden frames are drawn with the decor off, so their hashes are unchanged.
+1. THE SYSTEM SHALL test: seeded determinism (property test, also across a grid built again), no overlap with street geometry, rank order, density caps per screen at each zoom, zoom scaling, day/night differences, reduced motion, the animated cap and timer, keep-out, the setting, the atlas layout (golden: 128 × 52, 29 frames), spacing, sprite widths against streets, the quest-zoom budget and `forgetDecor` with a rectangle and two golden frames (day and night) in `golden.test.ts`. The older golden frames are drawn with the decor off, so their hashes are unchanged.
+
+### Requirement H11: Readable in a video at quest zoom, day and night
+
+**User Story:** As a viewer of the demo video, I want to see the Halloween dressing at once at the normal quest zoom, so that the theme reads without pausing the video.
+
+#### Acceptance Criteria
+
+1. THE SYSTEM SHALL draw the pumpkins and jack-o'-lanterns 13 × 12 art pixels (about the size of a garden tree), gravestones 10 × 12, the sitting skeleton 12 × 15, bats 13 × 7 with red eyes, fog wisps 20 × 9, crows 11 × 9, candles 6 × 11, lanterns 9 × 10, scarecrow 13 × 20, cauldron 14 × 12, signpost 12 × 17, fence 16 × 11 and spider 9 × 12. These are drawn at the view's scale, 1.5 to 2 times the first set (8 × 7 pumpkins), as new art, not as enlarged pixels.
+2. THE SYSTEM SHALL show, at quest zoom (24 CSS px per tile) in a city, 10 to 20 items in the map area that the HUD cards leave free, day and night, and more in parks and cemeteries. By day the items are unlit and still (day density 0.85, waving skeletons only); at night they are lit with glows 2 to 3.2 tiles wide at 0.8 strength, up to five bats per chunk flap at 6 Hz, and fog wisps drift at 38 % opacity.
+3. THE SYSTEM SHALL keep every rule of H3: nothing on the route, the start or finish, the hero, Wisp, the UI or any street surface (the witch hat on a lamp post stays the one exception), and the same decor in the same place on every visit. Reduced motion (H7) and the Settings toggle (H9) apply to the new pieces as to the old.

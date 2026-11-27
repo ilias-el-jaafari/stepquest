@@ -15,7 +15,7 @@ export type WorkerMessage =
   | { type: 'mirror'; endpoint: string }
   | { type: 'done'; data: CompactOsm }
   | { type: 'error'; code: DownloadError['code']; message: string }
-  | { type: 'tile'; id: number; data: CompactOsm; bytes: number }
+  | { type: 'tile'; id: number; data: string; bytes: number }
   | { type: 'lod'; id: number; data: LodTile; bytes: number }
   | { type: 'tileError'; id: number; code: TileError['code']; message: string }
 
@@ -39,7 +39,8 @@ scope.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   if (req.type === 'tile') {
     try {
       const bytes = await fetchTileBytes(req.url, (input, init) => fetch(input, init))
-      const data = encodeOsm(tileToOsm(bytes, req.tile, { coarse: req.coarse }))
+      // JSON text: one flat copy to the page and into IndexedDB, not a nested array to clone there.
+      const data = JSON.stringify(encodeOsm(tileToOsm(bytes, req.tile, { coarse: req.coarse })))
       scope.postMessage({ type: 'tile', id: req.id, data, bytes: bytes.length } satisfies WorkerMessage)
     } catch (error) {
       const code = error instanceof TileError ? error.code : 'badResponse'

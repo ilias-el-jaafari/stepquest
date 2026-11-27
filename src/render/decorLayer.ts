@@ -56,7 +56,7 @@ function getAtlas(): HTMLCanvasElement {
 }
 
 /** Glow diameter in tiles per kind. */
-const GLOW_TILES = { jack: 2.2, candle: 1.4, lantern: 1.8 } as const
+const GLOW_TILES = { jack: 2.8, candle: 2, lantern: 2.4, cauldron: 3.2 } as const
 
 export class DecorLayer {
   private enabled: boolean
@@ -69,8 +69,10 @@ export class DecorLayer {
 
   private readonly grid: TileGrid
   private readonly onTick: () => void
-  /** Open yard on building terrain: gardens between the houses (no house, tree, fence or gate on it or just south). */
+  /** Open yard on building terrain: gardens between the houses (no house, tree or gate on it, no house just south; a front fence is fine). */
   private readonly yard: YardTest | undefined
+  /** A garden tree stands on this tile (a spider may hang from it). */
+  private readonly tree: YardTest | undefined
 
   constructor(grid: TileGrid, onTick: () => void, enabled = true, town?: TownLookup) {
     this.grid = grid
@@ -81,11 +83,12 @@ export class DecorLayer {
             if (!grid.inBounds(x, y + d)) return false
             const i = grid.index(x, y + d)
             if (town.houseAt(i) || town.landmarkAt(i)) return false
-            if (d === 0 && (town.hasTree(i) || town.hasFence(i) || town.hasGate(i))) return false
+            if (d === 0 && (town.hasTree(i) || town.hasGate(i))) return false
           }
           return true
         }
       : undefined
+    this.tree = town ? (x, y) => grid.inBounds(x, y) && town.hasTree(grid.index(x, y)) : undefined
     this.onTick = onTick
     this.enabled = enabled
   }
@@ -142,7 +145,7 @@ export class DecorLayer {
     const px = scale / 16
     for (const c of plan.visible) {
       if (!painted.has(chunkKey(c.cx, c.cy))) continue
-      const { statics } = decorInChunk(this.grid, c.cx, c.cy, CHUNK, this.yard)
+      const { statics } = decorInChunk(this.grid, c.cx, c.cy, CHUNK, this.yard, this.tree)
       for (let k = 0; k < statics.length && k < b.staticPerChunk; k++) {
         const it = statics[k]!
         if (!this.shown(it, b.staticPerChunk, b.density, b.night)) continue
@@ -154,6 +157,24 @@ export class DecorLayer {
         switch (it.kind) {
           case 'pumpkin':
             this.blit(ctx, 'pumpkin', 0, sx, sy, px)
+            // Variant 1 and 2: a small one beside it (right, left).
+            if (it.variant === 1) this.blit(ctx, 'pumpkinS', 0, sx + 0.55 * scale, sy + 0.04 * scale, px)
+            else if (it.variant === 2) this.blit(ctx, 'pumpkinS', 0, sx - 0.55 * scale, sy + 0.04 * scale, px)
+            break
+          case 'scarecrow':
+            this.blit(ctx, 'scarecrow', 0, sx, sy, px)
+            break
+          case 'cauldron':
+            this.blit(ctx, b.night ? 'cauldronLit' : 'cauldron', 0, sx, sy, px)
+            break
+          case 'sign':
+            this.blit(ctx, 'sign', 0, sx, sy, px)
+            break
+          case 'fence':
+            this.blit(ctx, 'fence', 0, sx, sy, px)
+            break
+          case 'spider':
+            this.blit(ctx, 'spider', 0, sx, sy, px)
             break
           case 'jack':
             this.blit(ctx, b.night ? 'jackLit' : 'jack', 0, sx, sy, px)
@@ -202,15 +223,15 @@ export class DecorLayer {
     const glow = SLOTS.glow[0]!
     const atlasCanvas = getAtlas()
     ctx.globalCompositeOperation = 'lighter'
-    ctx.globalAlpha = 0.6 * strength
+    ctx.globalAlpha = 0.8 * strength
     for (const c of plan.visible) {
       if (!painted.has(chunkKey(c.cx, c.cy))) continue
-      const { statics } = decorInChunk(this.grid, c.cx, c.cy, CHUNK, this.yard)
+      const { statics } = decorInChunk(this.grid, c.cx, c.cy, CHUNK, this.yard, this.tree)
       for (let k = 0; k < statics.length && k < b.staticPerChunk; k++) {
         const it = statics[k]!
-        if (it.kind !== 'jack' && it.kind !== 'candle' && it.kind !== 'lantern') continue
+        if (!(it.kind in GLOW_TILES)) continue
         if (!this.shown(it, b.staticPerChunk, b.density, true)) continue
-        const d = Math.round(GLOW_TILES[it.kind] * scale)
+        const d = Math.round(GLOW_TILES[it.kind as keyof typeof GLOW_TILES] * scale)
         if (d < 2) continue
         ctx.drawImage(atlasCanvas, glow.x, glow.y, glow.w, glow.h, Math.round(originX + it.x * scale - d / 2), Math.round(originY + (it.y - 0.2) * scale - d / 2), d, d)
       }
@@ -259,7 +280,7 @@ export class DecorLayer {
     for (const c of plan.visible) {
       if (drawn >= MAX_ANIMATED) break
       if (!painted.has(chunkKey(c.cx, c.cy))) continue
-      const { statics, animated } = decorInChunk(this.grid, c.cx, c.cy, CHUNK, this.yard)
+      const { statics, animated } = decorInChunk(this.grid, c.cx, c.cy, CHUNK, this.yard, this.tree)
       let perChunk = 0
       for (let k = 0; k < animated.length && perChunk < b.animPerChunk && drawn < MAX_ANIMATED; k++) {
         const it = animated[k]!
@@ -279,7 +300,7 @@ export class DecorLayer {
           ctx.globalAlpha = fade
           this.blit(ctx, 'bat', batFrame(tick, it), sx, sy, px)
         } else if (it.kind === 'fog') {
-          ctx.globalAlpha = 0.28 * fade
+          ctx.globalAlpha = 0.38 * fade
           this.blit(ctx, 'fog', 0, sx, sy, px)
         } else {
           ctx.globalAlpha = 1
@@ -292,10 +313,10 @@ export class DecorLayer {
       ctx.globalCompositeOperation = 'lighter'
       for (let k = 0; k < statics.length && k < b.staticPerChunk && drawn < MAX_ANIMATED; k++) {
         const it = statics[k]!
-        if (it.kind !== 'jack' && it.kind !== 'candle' && it.kind !== 'lantern') continue
+        if (!(it.kind in GLOW_TILES)) continue
         if (!this.shown(it, b.staticPerChunk, b.density, true)) continue
         if (!onScreen(it.x, it.y, originX, originY, scale, w, h, pad)) continue
-        const d = Math.round(GLOW_TILES[it.kind] * 0.8 * scale)
+        const d = Math.round(GLOW_TILES[it.kind as keyof typeof GLOW_TILES] * 0.8 * scale)
         if (d < 2) continue
         drawn++
         ctx.globalAlpha = 0.35 * fade * flickerLevel(it, tick)

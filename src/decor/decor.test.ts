@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { loadDemoOsm } from '../osm/demo.ts'
 import { Terrain } from '../tiles/grid.ts'
 import { buildTileGrid } from '../tiles/rasterize.ts'
-import { ATLAS_WIDTH, atlasLayout, DECOR_FRAMES, SPRITE_IDS, webCorner } from './art.ts'
+import { ATLAS_WIDTH, atlasLayout, DECOR_FRAMES, graveRows, pumpkinRows, spriteSize, SPRITE_IDS, webCorner } from './art.ts'
 import { batFrame, batX, batY, flickerLevel, fogX, skeletonFrame, tickOf } from './anim.ts'
 import { ANIM_FRAME_MS, decorBudget, MAX_ANIMATED, MAX_STATIC_PER_SCREEN, MIN_DECOR_ZOOM } from './budget.ts'
-import { clearOfStreets, decorInChunk, tileClear, type DecorItem, type YardTest } from './place.ts'
+import { clearOfStreets, decorInChunk, forgetDecor, HALF_WIDTH, LOW_KINDS, tileClear, type DecorItem, type YardTest } from './place.ts'
 
 const grid = buildTileGrid(loadDemoOsm())
 const CHUNK = 32
@@ -22,7 +22,7 @@ const key = (i: DecorItem) => `${i.kind}:${i.x.toFixed(4)}:${i.y.toFixed(4)}:${i
 describe('atlas', () => {
   it('has a fixed size (golden: change it on purpose, with the art)', () => {
     const l = atlasLayout()
-    expect({ width: l.width, height: l.height, frames: l.frames }).toEqual({ width: 128, height: 27, frames: 22 })
+    expect({ width: l.width, height: l.height, frames: l.frames }).toEqual({ width: 128, height: 52, frames: 29 })
   })
   it('fits every frame inside the page without overlap', () => {
     const l = atlasLayout()
@@ -53,6 +53,87 @@ describe('atlas', () => {
   })
   it('mirrors the web into four different corners', () => {
     expect(new Set([0, 1, 2, 3].map((c) => webCorner(c).join('/'))).size).toBe(4)
+  })
+})
+
+describe('sizes at quest zoom', () => {
+  // A garden tree is about 14 art pixels wide; the main pieces must read at that size (1.5 to 2 times the first set: 8 × 7).
+  it('draws the pumpkins and jack-o\'-lanterns about as big as a tree', () => {
+    for (const id of ['pumpkin', 'jack', 'jackLit'] as const) {
+      const { w, h } = spriteSize(id)
+      expect(w).toBeGreaterThanOrEqual(12)
+      expect(h).toBeGreaterThanOrEqual(11)
+    }
+  })
+  it('makes gravestones, skeletons, bats and fog larger than before', () => {
+    expect(spriteSize('grave').h).toBeGreaterThanOrEqual(12)
+    expect(spriteSize('skeleton').h).toBeGreaterThanOrEqual(15)
+    expect(spriteSize('bat').w).toBeGreaterThanOrEqual(13)
+    expect(spriteSize('fog').w).toBeGreaterThanOrEqual(20)
+  })
+  it('has the new pieces: scarecrow, cauldron (lit at night), haunted signpost, picket fence with a pumpkin, hanging spider', () => {
+    for (const id of ['scarecrow', 'cauldron', 'cauldronLit', 'sign', 'fence', 'spider'] as const) expect(SPRITE_IDS).toContain(id)
+    expect(spriteSize('scarecrow').h).toBeGreaterThanOrEqual(18)
+    expect(spriteSize('fence').w).toBe(16)
+  })
+  it('draws the generated shapes on a rectangular grid of one character per pixel', () => {
+    for (const rows of [pumpkinRows(13, 12), pumpkinRows(8, 7), graveRows(0), graveRows(1), graveRows(2)]) {
+      for (const r of rows) expect(r.length).toBe(rows[0]!.length)
+    }
+    expect(DECOR_FRAMES.bat).toHaveLength(2)
+    expect(DECOR_FRAMES.bat[0]!.rows).not.toEqual(DECOR_FRAMES.bat[1]!.rows)
+  })
+  it('lights the jack-o\'-lantern face at night and not by day', () => {
+    expect(DECOR_FRAMES.jack[0]!.colors.f).not.toBe(DECOR_FRAMES.jackLit[0]!.colors.f)
+  })
+  it('shows 10 to 20 items on the visible map of a quest-zoom screen: caps give the room, and day shows most of them', () => {
+    const night = decorBudget(24, 0.8)
+    const day = decorBudget(24, 0)
+    // A phone screen is about 0.55 chunk at zoom 24, and about 40 % of it is under the HUD cards.
+    expect(night.staticPerChunk * 0.55 * 0.6).toBeGreaterThanOrEqual(20)
+    expect(day.density).toBeGreaterThanOrEqual(0.8)
+    expect(night.animPerChunk).toBeGreaterThanOrEqual(4)
+  })
+})
+
+describe('forgetting', () => {
+  it('drops only the chunks a changed rectangle reaches (with the reach of a site), all without one', () => {
+    const g = buildTileGrid(loadDemoOsm())
+    const far = decorInChunk(g, 0, 0, CHUNK)
+    const hit = decorInChunk(g, 8, 8, CHUNK)
+    const edge = decorInChunk(g, 7, 8, CHUNK)
+    forgetDecor(g, { x: 8 * CHUNK + 1, y: 8 * CHUNK + 1, w: 4, h: 4 })
+    expect(decorInChunk(g, 0, 0, CHUNK)).toBe(far)
+    expect(decorInChunk(g, 8, 8, CHUNK)).not.toBe(hit)
+    // Chunk (7, 8) lies within 6 tiles of the rectangle's west edge.
+    expect(decorInChunk(g, 7, 8, CHUNK)).not.toBe(edge)
+    forgetDecor(g)
+    expect(decorInChunk(g, 0, 0, CHUNK)).not.toBe(far)
+  })
+})
+
+describe('spacing', () => {
+  it('keeps items apart: no two candidates closer than a pumpkin is wide', () => {
+    const items = all().filter((i) => i.kind !== 'web')
+    const buckets = new Map<number, DecorItem[]>()
+    for (const it of items) {
+      const k = Math.floor(it.y) * 100_000 + Math.floor(it.x)
+      const list = buckets.get(k)
+      if (list) list.push(it)
+      else buckets.set(k, [it])
+    }
+    let worst = Infinity
+    for (const it of items) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          for (const o of buckets.get((Math.floor(it.y) + dy) * 100_000 + Math.floor(it.x) + dx) ?? []) {
+            if (o !== it) worst = Math.min(worst, Math.hypot(it.x - o.x, it.y - o.y))
+          }
+        }
+      }
+    }
+    // MIN_GAP_M is 3.8 m (0.76 tile); jitter inside a tile and the grid's own scale allow a little less.
+    expect(worst).toBeGreaterThan(0.45)
   })
 })
 
@@ -91,7 +172,7 @@ describe('placement', () => {
   it('never stands on a street, path or crossing, nor on water or a building (roaming items and graves keep a street-free 3×3)', () => {
     for (const it of all()) {
       // Small still items stand beside streets (their tile and the one above are free); roaming ones and graves need the whole 3×3.
-      expect(tileClear(grid, it.tx, it.ty)).toBe(true)
+      expect(tileClear(grid, it.tx, it.ty, undefined, LOW_KINDS.has(it.kind))).toBe(true)
       if (it.animated || it.kind === 'graves' || it.kind === 'web') expect(clearOfStreets(grid, it.tx, it.ty)).toBe(true)
       const t = grid.terrain[it.ty * grid.cols + it.tx]
       expect([Terrain.park, Terrain.plaza, Terrain.ground]).toContain(t)
@@ -109,8 +190,11 @@ describe('placement', () => {
     }
     for (const it of all()) {
       if (it.kind === 'bat') continue // flies; its orbit is checked below
-      const reach = it.kind === 'graves' ? 0.6 : it.kind === 'fog' ? 1.0 : 0.3
-      for (const [dx, dy] of [[-reach, 0], [reach, 0], [0, -reach], [0, 0.0]] as const) expect(isStreet(Math.floor(it.x + dx), Math.floor(it.y + dy))).toBe(false)
+      const reach = it.kind === 'graves' ? 0.6 : it.kind === 'fog' ? 1.0 : (HALF_WIDTH[it.kind] ?? 0.4) - 1e-6
+      // A pumpkin's small companion reaches 0.8 tile to one side.
+      const left = it.kind === 'pumpkin' && it.variant === 2 ? 0.8 : reach
+      const right = it.kind === 'pumpkin' && it.variant === 1 ? 0.8 : reach
+      for (const [dx, dy] of [[-left, 0], [right, 0], [0, -reach], [0, 0.0]] as const) expect(isStreet(Math.floor(it.x + dx), Math.floor(it.y + dy)), `${it.kind} ${it.variant} ${it.x} ${it.y} ${dx} ${dy}`).toBe(false)
     }
   })
 
@@ -126,7 +210,10 @@ describe('placement', () => {
       for (let tick = 0; tick < 12 * 60; tick += 37) {
         const x = it.kind === 'bat' ? batX(it, tick) : fogX(it, tick)
         const y = it.kind === 'bat' ? batY(it, tick) : it.y
-        expect(isStreet(Math.floor(x), Math.floor(y))).toBe(false)
+        // The whole sprite counts, not just its foot: half width (bat 13 art px, fog 20) and height (7 and 9 px).
+        const hw = it.kind === 'bat' ? 0.41 : 0.63
+        const h = it.kind === 'bat' ? 0.44 : 0.57
+        for (const [dx, dy] of [[0, 0], [-hw, 0], [hw, 0], [-hw, -h], [hw, -h], [0, -h]] as const) expect(isStreet(Math.floor(x + dx), Math.floor(y + dy))).toBe(false)
       }
     }
   })
@@ -212,7 +299,7 @@ describe('yards', () => {
   })
   it('never puts a yard item on a street', () => {
     const g = buildTileGrid(loadDemoOsm())
-    for (const i of statics(g, open)) expect(tileClear(g, i.tx, i.ty, open)).toBe(true)
+    for (const i of statics(g, open)) expect(tileClear(g, i.tx, i.ty, open, LOW_KINDS.has(i.kind))).toBe(true)
   })
 })
 
@@ -238,6 +325,6 @@ describe('animation', () => {
     }
   })
   it('caps the animated items per frame', () => {
-    expect(MAX_ANIMATED).toBeLessThanOrEqual(12)
+    expect(MAX_ANIMATED).toBeLessThanOrEqual(16)
   })
 })

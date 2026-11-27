@@ -92,7 +92,7 @@ export class ChunkLayer {
     }
     this.overview.update(rect)
     this.far.update(rect)
-    forgetLamps(this.grid)
+    forgetLamps(this.grid, rect)
   }
 
   get chunkCount(): number {

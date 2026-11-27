@@ -17,17 +17,17 @@ export const batFrame = (tick: number, item: DecorItem): number => (tick === 0 ?
 /** Orbit period of a bat in ticks (14 to 22 s: slow). */
 const batPeriod = (item: DecorItem): number => (14 + item.phase * 8) * 12
 
-/** Where a bat is, in tiles: a slow loop around its anchor, about 0.8 tile above the ground, within 1 tile sideways. */
+/** Where a bat is, in tiles: a slow loop around its anchor, about 0.45 tile above its anchor, within 0.55 tile sideways (the 13-pixel bat then stays inside the street-free 3×3). */
 export function batX(item: DecorItem, tick: number): number {
-  return item.x + 0.9 * Math.cos(TAU * (tick / batPeriod(item) + item.phase))
+  return item.x + 0.55 * Math.cos(TAU * (tick / batPeriod(item) + item.phase))
 }
 export function batY(item: DecorItem, tick: number): number {
-  return item.y - 0.8 + 0.35 * Math.sin(2 * TAU * (tick / batPeriod(item) + item.phase))
+  return item.y - 0.45 + 0.2 * Math.sin(2 * TAU * (tick / batPeriod(item) + item.phase))
 }
 
-/** Fog drifts sideways by up to half a tile and back (30 s), anchored at the item. */
+/** Fog drifts sideways by up to 0.3 tile and back (30 s), anchored at the item. */
 export function fogX(item: DecorItem, tick: number): number {
-  return item.x + 0.5 * Math.sin(TAU * (tick / (30 * 12) + item.phase))
+  return item.x + 0.3 * Math.sin(TAU * (tick / (30 * 12) + item.phase))
 }
 
 /** A skeleton waves at 3 Hz (frame changes every four ticks). */

@@ -421,3 +421,17 @@ Terms: the **hero** is as in requirement 25. **R_far** is `R_FAR_M`, 10 km. The 
 1. THE SYSTEM SHALL place the hero, while it is on the route, on the route polyline at the progress `RouteWalker` gives (requirement 6g of [quest](../quest/requirements.md)); the camera in follow mode and the sprite SHALL read the same place for the same frame time.
 2. THE SYSTEM SHALL draw Wisp in the overlay (after the route and gems, before the hero) as a blit of a pre-rendered 16×16 canvas at the point `pace × elapsed + 6 m` along the route, mirrored when heading left, with the lantern glow at night. The scene cache, chunk plan and dirty rendering SHALL NOT change; golden frames without a ghost SHALL keep their hashes.
 3. THE SYSTEM SHALL keep requesting frames while the ghost moves (it moves until the finish, also with reduced motion) and only then.
+
+### Requirement 28 (task 86): Night far-pan stays smooth while cells stream in
+
+**User Story:** As a walker who pans a zoomed-out night map on a phone, I want the map to keep moving, so that a new area arriving does not freeze it.
+
+Measured on the harness of "Frame performance" (390 × 844 at 3×, 4× CPU throttle, simulated walk ×20, `?time=22:30`, zoomed fully out, then panning): far-pan 35.1 to 46.4 fps, long tasks 1.7 to 3.8 s, worst 295 ms.
+
+#### Acceptance Criteria
+
+1. WHEN a streamed cell arrives, THE SYSTEM SHALL drop the per-chunk lists of lamps, fireflies and Halloween decor only for the chunks within reach of the changed rectangle (4 tiles for lamps, 6 for decor, none beyond the chunk for fireflies), and SHALL NOT scan the whole streamed world again. Lamps are found chunk by chunk on first use; the lamps of a chunk are exactly those the whole-grid scan finds in it, in the same order.
+2. THE SYSTEM SHALL send downloaded vector tiles from the worker as JSON text and keep them in IndexedDB as text, so that neither the message nor the cache write clones nested arrays on the main thread; a stored extract is read as text or, from older caches, as an object (`decodeOsm(CompactOsm | string)`).
+3. THE SYSTEM SHALL keep far-pan on that harness at 43 fps or more (median of five runs 49.2, lowest 43.6) with the golden frames unchanged.
+    - _Requirements: 21, 24, 26.6_
+

@@ -10,7 +10,7 @@ import { PARK_STYLES, Terrain, type TileGrid } from '../tiles/grid.ts'
  * whatever frame or window the grid was cut from. Placement runs once per chunk and is cached with the grid.
  */
 
-export type DecorKind = 'pumpkin' | 'jack' | 'bat' | 'web' | 'skeleton' | 'graves' | 'crow' | 'candle' | 'lantern' | 'fog'
+export type DecorKind = 'pumpkin' | 'jack' | 'bat' | 'web' | 'skeleton' | 'graves' | 'crow' | 'candle' | 'lantern' | 'fog' | 'scarecrow' | 'cauldron' | 'sign' | 'fence' | 'spider'
 
 export type DecorItem = {
   kind: DecorKind
@@ -20,7 +20,7 @@ export type DecorItem = {
   /** The tile the item belongs to. */
   tx: number
   ty: number
-  /** Which variant: web corner 0 to 3, grave shape. */
+  /** Which variant: web corner 0 to 3, grave shape, pumpkin with a small one on the right (1) or left (2). */
   variant: number
   /** Gravestones in the cluster (1 to 3); 1 for everything else. */
   n: number
@@ -45,10 +45,13 @@ export type ChunkDecor = {
 
 const EMPTY: ChunkDecor = { statics: [], animated: [] }
 
-export const LAT_STEP = 0.00005
-export const LON_STEP = 0.00006
-/** About one site in this many is a candidate; most fail the terrain test. */
-const ACCEPT = 0.55
+export const LAT_STEP = 0.000036
+export const LON_STEP = 0.000044
+/** About this share of the sites is a candidate; most fail the terrain test. */
+const ACCEPT = 0.8
+/** Two sites closer than this (metres) never both stand: the lower rank wins, decided from the hashes alone so it holds in every frame. */
+const MIN_GAP_M = 3.8
+const M_PER_DEG = 111_320
 const SEED = 0x48414c4c
 
 export function hash3(a: number, b: number, salt: number): number {
@@ -61,18 +64,20 @@ const unit = (h: number): number => h / 4294967296
 
 const PARK_OK = new Set<number>(['park', 'garden', 'grass', 'wood', 'orchard', 'cemetery'].map((n) => PARK_STYLES.indexOf(n as (typeof PARK_STYLES)[number])))
 const CEMETERY = PARK_STYLES.indexOf('cemetery')
+const WOOD = PARK_STYLES.indexOf('wood')
 
-type Category = 'park' | 'cemetery' | 'plaza' | 'poi' | 'corner' | 'yard' | 'web'
+type Category = 'park' | 'wood' | 'cemetery' | 'plaza' | 'poi' | 'corner' | 'yard' | 'web'
 type Pick = readonly (readonly [DecorKind, number])[]
 
 /** Weights per category (the pick is by hash, so it is stable). */
 const TABLE: Record<Exclude<Category, 'web'>, Pick> = {
-  park: [['pumpkin', 4], ['jack', 2], ['crow', 1.5], ['candle', 1], ['graves', 1], ['bat', 2], ['fog', 2], ['skeleton', 0.3]],
-  cemetery: [['graves', 6], ['candle', 2], ['crow', 2], ['skeleton', 1], ['fog', 3], ['bat', 2], ['jack', 1]],
-  plaza: [['lantern', 3], ['pumpkin', 3], ['candle', 2], ['skeleton', 1.5], ['crow', 1], ['jack', 2]],
-  poi: [['jack', 4], ['pumpkin', 3], ['candle', 2], ['lantern', 2]],
-  corner: [['pumpkin', 3], ['lantern', 3], ['candle', 1]],
-  yard: [['pumpkin', 4], ['jack', 2], ['candle', 1.5], ['lantern', 1.5], ['crow', 1], ['bat', 1.5]],
+  park: [['pumpkin', 4], ['jack', 3], ['crow', 1.5], ['candle', 1], ['graves', 1.2], ['bat', 2.5], ['fog', 2.5], ['skeleton', 0.6], ['scarecrow', 1], ['cauldron', 0.5], ['sign', 0.8], ['fence', 0.6]],
+  wood: [['spider', 4], ['jack', 3], ['pumpkin', 2.5], ['bat', 3], ['fog', 3], ['crow', 1.5], ['sign', 0.8], ['candle', 1]],
+  cemetery: [['graves', 6], ['candle', 2], ['crow', 2], ['skeleton', 1.2], ['fog', 3], ['bat', 3], ['jack', 1], ['sign', 1]],
+  plaza: [['lantern', 3], ['pumpkin', 3], ['candle', 2], ['skeleton', 1.5], ['crow', 1], ['jack', 2.5], ['cauldron', 1], ['bat', 1.5], ['fog', 1.5], ['sign', 1]],
+  poi: [['jack', 4], ['pumpkin', 3], ['candle', 2], ['lantern', 2], ['cauldron', 1], ['sign', 1], ['bat', 1.2], ['fog', 1.2]],
+  corner: [['pumpkin', 3], ['lantern', 3], ['candle', 1], ['fence', 2], ['sign', 1.5], ['jack', 2]],
+  yard: [['pumpkin', 4], ['jack', 2.5], ['candle', 1.5], ['lantern', 1.5], ['crow', 1], ['bat', 1.8], ['fence', 2], ['scarecrow', 0.8], ['cauldron', 0.7], ['fog', 1], ['sign', 0.5]],
 }
 
 function pickKind(pick: Pick, h: number): DecorKind {
@@ -95,13 +100,28 @@ export type YardTest = (x: number, y: number) => boolean
 const poiCache = new WeakMap<TileGrid, Set<number>>()
 const cache = new WeakMap<TileGrid, Map<number, Map<number, ChunkDecor>>>()
 
+const POI_RADIUS = 4
+
 /** Forget the placement of a grid whose tiles changed (a streamed cell arrived or left). */
-export function forgetDecor(grid: TileGrid): void {
-  cache.delete(grid)
+export function forgetDecor(grid: TileGrid, rect?: { x: number; y: number; w: number; h: number }): void {
   poiCache.delete(grid)
+  const sizes = cache.get(grid)
+  if (!sizes) return
+  if (!rect) {
+    cache.delete(grid)
+    return
+  }
+  // A site reads its 3×3, the tile row above, the corners two tiles away and landmarks up to POI_RADIUS away.
+  const reach = POI_RADIUS + 2
+  for (const [size, byChunk] of sizes) {
+    const cx0 = Math.floor((rect.x - reach) / size)
+    const cx1 = Math.floor((rect.x + rect.w - 1 + reach) / size)
+    const cy0 = Math.floor((rect.y - reach) / size)
+    const cy1 = Math.floor((rect.y + rect.h - 1 + reach) / size)
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) byChunk.delete(cy * 32768 + cx)
+  }
 }
 
-const POI_RADIUS = 4
 
 /** Tiles within `POI_RADIUS` of a landmark, as row-major indices. */
 function poiTiles(grid: TileGrid): Set<number> {
@@ -147,15 +167,25 @@ export function clearOfStreets(grid: TileGrid, x: number, y: number): boolean {
  * The tile and the one above it (where a sprite's head reaches) are loaded and not a street. Small still
  * items only need this, so they can stand in yards and verges right beside a road, never on it.
  */
-export function tileClear(grid: TileGrid, x: number, y: number, yard?: YardTest): boolean {
+export function tileClear(grid: TileGrid, x: number, y: number, yard?: YardTest, low = false): boolean {
   for (const dy of [0, -1]) {
     const t = terrainAt(grid, x, y + dy)
     if (t < 0 || isStreet(t)) return false
-    // A house or a landmark stands on building tiles: only open yard counts.
-    if (t === Terrain.building && !yard?.(x, y + dy)) return false
+    // A house or a landmark stands on building tiles: only open yard counts. A low item (under 13 art px)
+    // may have the house wall behind it, like a pumpkin on a doorstep: only its own tile must be open.
+    if (t === Terrain.building && !yard?.(x, y + dy) && !(low && dy === -1)) return false
   }
   return true
 }
+
+/** Kinds low enough (12 art px or less) to stand against a house wall. */
+export const LOW_KINDS = new Set<DecorKind>(['pumpkin', 'jack', 'candle', 'lantern', 'crow', 'fence', 'cauldron'])
+
+/** Half the sprite's width in tiles (art pixels / 32), for kinds that stand in a tile. Animated kinds, graves and webs keep a street-free 3×3 instead. */
+export const HALF_WIDTH: Partial<Record<DecorKind, number>> = { pumpkin: 0.41, jack: 0.41, candle: 0.19, lantern: 0.28, crow: 0.35, scarecrow: 0.41, cauldron: 0.44, sign: 0.38, fence: 0.5, spider: 0.29 }
+const TALL_KINDS = new Set<DecorKind>(['scarecrow', 'sign'])
+/** A pumpkin's small companion reaches this far (tiles) to its side. */
+const COMPANION_REACH = 0.8
 
 /** A park tile whose style takes decor (not pitches, playgrounds or farmland). */
 function parkOk(grid: TileGrid, x: number, y: number): boolean {
@@ -193,7 +223,8 @@ function classify(grid: TileGrid, x: number, y: number, yard?: YardTest): Site |
   if (t === Terrain.building) return yard?.(x, y) ? { category: 'yard', web: -1 } : undefined
   if (t === Terrain.park) {
     if (!parkOk(grid, x, y)) return undefined
-    return { category: grid.style[y * grid.cols + x] === CEMETERY ? 'cemetery' : 'park', web: -1 }
+    const style = grid.style[y * grid.cols + x]
+    return { category: style === CEMETERY ? 'cemetery' : style === WOOD ? 'wood' : 'park', web: -1 }
   }
   if (t === Terrain.plaza) return { category: 'plaza', web: -1 }
   if (t !== Terrain.ground) return undefined
@@ -217,7 +248,7 @@ function roomForGraves(grid: TileGrid, x: number, y: number): boolean {
 }
 
 /** Decor of one chunk of `size` tiles, in rank order. Cached per grid; the same list on every call. */
-export function decorInChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?: YardTest): ChunkDecor {
+export function decorInChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?: YardTest, tree?: YardTest): ChunkDecor {
   let sizes = cache.get(grid)
   if (!sizes) cache.set(grid, (sizes = new Map()))
   let byChunk = sizes.get(size)
@@ -225,12 +256,12 @@ export function decorInChunk(grid: TileGrid, cx: number, cy: number, size: numbe
   const key = cy * 32768 + cx
   const found = byChunk.get(key)
   if (found) return found
-  const built = buildChunk(grid, cx, cy, size, yard)
+  const built = buildChunk(grid, cx, cy, size, yard, tree)
   byChunk.set(key, built)
   return built
 }
 
-function buildChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?: YardTest): ChunkDecor {
+function buildChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?: YardTest, tree?: YardTest): ChunkDecor {
   const x0 = cx * size
   const y0 = cy * size
   if (x0 >= grid.cols || y0 >= grid.rows || cx < 0 || cy < 0) return EMPTY
@@ -248,6 +279,7 @@ function buildChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?:
   const j0 = Math.floor(Math.min(...lons) / LON_STEP) - 1
   const j1 = Math.ceil(Math.max(...lons) / LON_STEP) + 1
   const items: DecorItem[] = []
+  const webs = new Set<string>()
   for (let i = i0; i <= i1; i++) {
     for (let j = j0; j <= j1; j++) {
       const h = hash3(i, j, 1)
@@ -259,13 +291,30 @@ function buildChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?:
       const tx = Math.floor(t.x)
       const ty = Math.floor(t.y)
       if (tx < x0 || tx >= x1 || ty < y0 || ty >= y1) continue
-      if (!tileClear(grid, tx, ty, yard)) continue
+      if (tree?.(tx, ty)) {
+        // A garden tree: a spider now and then hangs from its crown.
+        const spider = treeSpider(grid, i, j, tx, ty)
+        if (spider && !crowded(i, j)) items.push(spider)
+        continue
+      }
+      if (!tileClear(grid, tx, ty, yard, true)) continue
       const site = classify(grid, tx, ty, yard)
       if (!site) continue
-      const item = makeItem(grid, i, j, tx, ty, site)
+      const item = makeItem(grid, i, j, tx, ty, site, t.x, t.y)
+      // The spacing rule is checked last: it is the dearest test, and most sites fail on terrain first.
+      if (item && crowded(i, j)) continue
+      if (item && !LOW_KINDS.has(item.kind) && !tileClear(grid, tx, ty, yard)) continue
       // Things that roam, spread, stand in groups or sit on a tile corner need the whole 3×3 free of streets.
       if (item && (item.animated || item.kind === 'graves' || item.kind === 'web') && !clearOfStreets(grid, tx, ty)) continue
-      if (item) items.push(item)
+      if (item) {
+        // Two sites can share a tile corner: one web there is enough.
+        if (item.kind === 'web') {
+          const wk = `${item.x},${item.y}`
+          if (webs.has(wk)) continue
+          webs.add(wk)
+        }
+        items.push(item)
+      }
     }
   }
   if (items.length === 0) return EMPTY
@@ -282,20 +331,86 @@ function buildChunk(grid: TileGrid, cx: number, cy: number, size: number, yard?:
   return { statics, animated }
 }
 
-function makeItem(grid: TileGrid, i: number, j: number, tx: number, ty: number, site: Site): DecorItem | undefined {
+/** Where a lattice site stands: latitude and longitude in degrees, from the hashes alone. */
+function sitePoint(i: number, j: number): { lat: number; lon: number } {
+  return { lat: (i + unit(hash3(i, j, 2))) * LAT_STEP, lon: (j + unit(hash3(i, j, 3))) * LON_STEP }
+}
+
+/** A neighbouring site of lower rank is a candidate closer than `MIN_GAP_M`: this one gives way. Independent of the grid, so every frame agrees. */
+function crowded(i: number, j: number): boolean {
+  const me = unit(hash3(i, j, 9))
+  const p = sitePoint(i, j)
+  const cos = Math.cos((p.lat * Math.PI) / 180)
+  for (let di = -1; di <= 1; di++) {
+    for (let dj = -1; dj <= 1; dj++) {
+      if (di === 0 && dj === 0) continue
+      if (unit(hash3(i + di, j + dj, 1)) >= ACCEPT) continue
+      const other = unit(hash3(i + di, j + dj, 9))
+      if (other > me || (other === me && (di < 0 || (di === 0 && dj < 0)))) continue
+      const q = sitePoint(i + di, j + dj)
+      if (Math.hypot((q.lat - p.lat) * M_PER_DEG, (q.lon - p.lon) * M_PER_DEG * cos) < MIN_GAP_M) return true
+    }
+  }
+  return false
+}
+
+function treeSpider(grid: TileGrid, i: number, j: number, tx: number, ty: number): DecorItem | undefined {
+  if (unit(hash3(i, j, 12)) >= 0.35) return undefined
+  if (isStreet(terrainAt(grid, tx, ty)) || terrainAt(grid, tx, ty) < 0) return undefined
+  return {
+    kind: 'spider',
+    x: tx + 0.5,
+    y: ty + 0.6,
+    tx,
+    ty,
+    variant: 0,
+    n: 1,
+    rank: unit(hash3(i, j, 9)),
+    nightOnly: false,
+    animated: false,
+    order: -1,
+    phase: unit(hash3(i, j, 10)),
+  }
+}
+
+function makeItem(grid: TileGrid, i: number, j: number, tx: number, ty: number, site: Site, sx: number, sy: number): DecorItem | undefined {
   const kind: DecorKind = site.category === 'web' ? 'web' : pickKind(TABLE[site.category], hash3(i, j, 4))
   if (kind === 'graves' && !roomForGraves(grid, tx, ty)) return undefined
-  // Foot of the sprite, kept well inside the tile so the 3×3 clearance covers all of it.
-  const fx = 0.3 + unit(hash3(i, j, 5)) * 0.4
-  const fy = 0.55 + unit(hash3(i, j, 6)) * 0.4
   const web = kind === 'web'
+  // Foot of the sprite: the site's own position inside its tile (so the spacing rule holds for what is drawn).
+  let fx = Math.min(0.999, Math.max(0, sx - tx))
+  // Moving items start 0.25 tile down so their sprite stays inside the street-free 3×3 above.
+  const fy = Math.min(0.999, Math.max(ANIMATED.has(kind) ? 0.25 : 0, sy - ty))
+  // Sprites over 16 art pixels tall (scarecrow, signpost) also reach the second tile above: it must not be a street.
+  if (TALL_KINDS.has(kind) && (terrainAt(grid, tx, ty - 2) < 0 || isStreet(terrainAt(grid, tx, ty - 2)))) return undefined
+  // The sprite's sides must not reach a street (or a tile without data): shift it inward, (a little; further and the site is dropped).
+  const hw = HALF_WIDTH[kind] ?? 0
+  const blocked = (dx: number) => {
+    const t = terrainAt(grid, tx + dx, ty)
+    return t < 0 || isStreet(t)
+  }
+  if (hw > 0) {
+    const from = fx
+    if (fx - hw < 0 && blocked(-1)) fx = hw
+    if (fx + hw > 1 && blocked(1)) fx = 1 - hw
+    // A big shift would crowd the neighbouring sites that the spacing rule keeps apart: the site gives way instead.
+    if (Math.abs(fx - from) > 0.15) return undefined
+  }
+  // The small pumpkin beside a pumpkin needs open ground on that side.
+  let variant = web ? site.web : Math.floor(unit(hash3(i, j, 7)) * 3)
+  if (kind === 'pumpkin' && variant > 0) {
+    const side = variant === 1 ? 1 : -1
+    const t = terrainAt(grid, tx + side, ty)
+    const room = side > 0 ? fx + COMPANION_REACH <= 1 : fx - COMPANION_REACH >= 0
+    if (!room && !(t === Terrain.park || t === Terrain.ground || t === Terrain.plaza)) variant = 0
+  }
   return {
     kind,
     x: web ? tx + (site.web & 1 ? 1 : 0) : tx + fx,
     y: web ? ty + (site.web & 2 ? 1 : 0) : ty + fy,
     tx,
     ty,
-    variant: web ? site.web : Math.floor(unit(hash3(i, j, 7)) * 3),
+    variant,
     n: kind === 'graves' ? 1 + Math.floor(unit(hash3(i, j, 8)) * 3) : 1,
     rank: unit(hash3(i, j, 9)),
     nightOnly: NIGHT_ONLY.has(kind),

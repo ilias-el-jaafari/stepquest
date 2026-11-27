@@ -980,3 +980,47 @@ Voice: a phrase of about 120,000 samples was one task of 31 ms here (60 to 90 ms
 
 `camera.test.ts` (limit), `render/farPick.test.ts` (camera 10 km and 12 km from the hero in planner and quest, old clamp without reach, frame follows and the view is drawn in full, 10 km in six directions), `lod/focus.test.ts`, `lod/layer.test.ts` (focus coverage and drawing), `lod/prefetch.test.ts` (plan order, lane limits, own cap, save-data, offline), `lod/farPick.property.test.ts` (any tap within 10 km snaps when tiles are loaded), `lod/store.test.ts` (idle slices, redraw coalescing), `render/rails.test.ts`, `audio/voiceSlices.test.ts`. Goldens unchanged.
 
+## Far-pan at night (requirement 28, task 86)
+
+The report: far-pan went from 43.3 fps (long tasks 1.8 s) before the ghost and decor phases to 37.6 fps (3.1 s, worst about 300 ms).
+
+### Profile first
+
+The V8 sampling profiler (0.5 ms) over the far-pan phase of `perf.mjs`, built unminified, with the 4× throttle (app and harness unchanged, three builds: before the ghost phase `15850e1`, the last commit, and this task):
+
+| Main-thread cost in the phase | `15850e1` | last commit | now |
+| --- | --- | --- | --- |
+| `lampsInChunk` (all callers, `drawNightDots`) | 924 ms of 10.5 s | 220 ms of 8.6 s | 0 |
+| structured clone of tile entries into IndexedDB (`CacheStore.set`) | 607 ms | 126 ms | 66 ms |
+| `decodeOsm` including `JSON.parse` of the text | 238 ms | not split | 412 ms of 8.8 s, of which `parseCompact` 145 |
+| scene blit `drawImage` (GPU raster of 1170 × 2532 px) | 1.0 s | 0.8 s | 0.65 s |
+
+Findings:
+
+1. **The old commit is as slow as the new one.** Two runs of `15850e1` gave far-pan 36.0 and 35.6 fps (long tasks 4.3 s and 3.8 s, worst 324 ms); two of the last commit gave 35.1 and 46.4. The harness varies by up to 11 fps between identical builds because tile arrivals fall at different moments of the pan. The ghost and decor phases add nothing at far zoom: `DecorLayer` returns before any chunk work below zoom 8, the ghost is drawn in the overlay with the scene cache untouched, and `s.light === light` changes only every 30 s. The measured drop is mostly that variance; the two things that did cost time at far zoom were older and are fixed here.
+2. **`forgetLamps(grid)` threw away the lamps of the whole world, and the next `drawNightDots` scanned every tile of the 9 × 9 cell frame again** (`streetLamps`, about 3.8 million tiles, up to eight `road` lookups per tile) on the main thread. Each arriving cell during a pan paid it, in the middle of the scene redraw. `forgetLamps` also dropped fireflies and decor for every chunk.
+3. **Tile entries were cloned by IndexedDB on the main thread**: a z14 tile is 0.4 to 0.9 MB as nested number arrays (`CompactOsm`), and `put` serializes it synchronously.
+
+### Changes
+
+- `render/lamps.ts`: `lampsInChunk` scans only the chunk's tiles (`lampsInRect`, reading its neighbours for the 3-tile run), caches per chunk and size, and `forgetLamps(grid, rect?)` drops the chunks within 4 tiles of the rectangle. The "any lit street" flag is kept per grid and only a lit road arriving in a world without any resets everything. `streetLamps(grid)` stays as the whole-grid scan for tests.
+- `render/fireflies.ts`, `decor/place.ts`: the same rectangle rule (`forgetFireflies`, `forgetDecor`, reach 6 for decor: 3×3, corners 2 away, landmarks 4 away). `ChunkLayer.invalidate` passes the rectangle on.
+- `osm/download.worker.ts` posts `JSON.stringify(encodeOsm(tile))`; `osm/codec.ts` has `StoredOsm = CompactOsm | string`, `parseCompact` and a `decodeOsm` that takes either; `AreaCache` entries may hold text. The Overpass area cache and the LOD tiles are unchanged (the LOD tiles are typed arrays, which clone fast).
+
+### Measured after (same harness, `SIMSPEED=20`, 22:30, five runs of the final build)
+
+| Phase | before (two runs) | after (five runs) |
+| --- | --- | --- |
+| walk | 56.6, 57.4 fps | 55.4 to 57.4 |
+| pan | 55.7, 55.7 | 50.4 to 55.6 (median 54.2) |
+| zoom out and in | 42.6, 42.3 | 38.5 to 46.3 |
+| far-pan | 35.1, 46.4 | 43.6 to 51.0 (median 49.2); long tasks 0.9 to 2.4 s |
+
+The pan phase now also draws about 2.5 times the decor of before (task 89.12), so it keeps a small margin below 56.
+
+### Not done, and why
+
+- Moving `decodeOsm` into the worker: its result is `ways` objects, whose structured clone costs what the decode saves. A typed-array form of `OsmData` would be the way; it touches the whole assembly code.
+- Time-slicing cell assembly (`paint`, `cellFromTiles`): about 0.5 s per 15 s of the profile, already one cell per task with a yield. It is the largest remaining main-thread item after the scene blit.
+- A lower backing resolution at far zoom (the blit is the largest single cost, 0.65 s): would change every far-zoom golden and the crispness rule.
+

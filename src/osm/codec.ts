@@ -69,6 +69,23 @@ function undeltaRing(deltas: readonly number[]): number[] {
   return deltas.map((d) => (prev += d))
 }
 
+/**
+ * A compact extract as the JSON text the download worker sends and the caches keep. A string moves between
+ * threads and into IndexedDB as one flat copy, where the same extract as nested arrays costs tens of ms
+ * of structured cloning on the main thread. Entries written as objects (older caches) still decode.
+ */
+export type StoredOsm = CompactOsm | string
+
+/** The object form of a stored extract; text that is not JSON is {@link CorruptDataError}. */
+export function parseCompact(stored: StoredOsm): CompactOsm {
+  if (typeof stored !== 'string') return stored
+  try {
+    return JSON.parse(stored) as CompactOsm
+  } catch {
+    throw new CorruptDataError('Stored map data is not valid JSON')
+  }
+}
+
 export function encodeOsm(data: OsmData): CompactOsm {
   const dlat: number[] = []
   const dlon: number[] = []
@@ -183,7 +200,8 @@ function validate(c: CompactOsm): void {
   for (const ring of c.ind ?? []) if (!ring.every((i) => inRange(i))) bad('industrial ring')
 }
 
-export function decodeOsm(compact: CompactOsm): OsmData {
+export function decodeOsm(stored: CompactOsm | string): OsmData {
+  const compact = parseCompact(stored)
   validate(compact)
   const n = compact.dlat.length
   const lat = new Float64Array(n)

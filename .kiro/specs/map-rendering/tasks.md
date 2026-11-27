@@ -282,3 +282,14 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
 
 - [x] 84.2, 85.2 Hero placed on the route by `RouteWalker`; Wisp drawn by `OverlayLayer.drawGhost`
   - _Requirements: 27.1 to 27.3_
+
+- [x] 86 Night far-pan stays smooth while cells stream in (requirement 28)
+  - [x] 86.1 Spec first: requirement 28, design "Far-pan at night" with the profile
+    - _Requirements: 28.1 to 28.3_
+  - [x] 86.2 Lamps by chunk with rectangle invalidation (`lamps.ts`, `fireflies.ts`, `decor/place.ts`, `ChunkLayer.invalidate`); tests `lampsChunk.test.ts` (same lamps as the whole scan, far chunks keep their lists, reach of 3 tiles, a new lit road), `decor.test.ts` "forgetting"
+    - _Requirements: 28.1_
+  - [x] 86.3 Tile text from the worker and in IndexedDB (`download.worker.ts`, `codec.ts` `parseCompact`, `vector/client.ts`); test in `osm.test.ts`
+    - _Requirements: 28.2_
+  - [x] 86.4 Browser harness: far-pan 43.6 to 51.0 fps over five runs (median 49.2); `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
+    - _Requirements: 28.3_
+

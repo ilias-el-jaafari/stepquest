@@ -1,4 +1,4 @@
-import { CODEC_VERSION, CorruptDataError, decodeOsm, encodeOsm, type CompactOsm } from '../osm/codec.ts'
+import { CODEC_VERSION, CorruptDataError, decodeOsm, encodeOsm, type StoredOsm } from '../osm/codec.ts'
 import { CACHE_READ_TIMEOUT_MS, CACHE_WRITE_TIMEOUT_MS, isFresh, pruneEntries, readEntryIndex, within, type AreaCache, type IndexEntry } from '../osm/cache.ts'
 import type { WorkerMessage, WorkerRequest } from '../osm/download.worker.ts'
 import type { FetchLike } from '../osm/download.ts'
@@ -226,7 +226,7 @@ export class VectorTileClient {
     const savedAt = this.now()
     const p = this.tail
       .then(async () => {
-        const ok = await within(this.cache.set(key, { savedAt, data: tile as unknown as CompactOsm }).then(() => true), CACHE_WRITE_TIMEOUT_MS, false)
+        const ok = await within(this.cache.set(key, { savedAt, data: tile as unknown as StoredOsm }).then(() => true), CACHE_WRITE_TIMEOUT_MS, false)
         if (!ok) return
         const index: IndexEntry[] = [...readEntryIndex(LOD_INDEX_KEY).filter((e) => e.key !== key), { key, savedAt }]
         await pruneEntries(this.cache, LOD_INDEX_KEY, MAX_LOD_ENTRIES, index, this.now(), lodPrefix)
@@ -237,7 +237,7 @@ export class VectorTileClient {
     void p.finally(() => this.writes.delete(p))
   }
 
-  private download(url: string, t: TileId): Promise<CompactOsm> {
+  private download(url: string, t: TileId): Promise<StoredOsm> {
     const coarse = isCoarseTile(t)
     if (this.fetchFn || typeof Worker === 'undefined') {
       const fetchFn = this.fetchFn ?? ((input: string, init?: RequestInit) => fetch(input, init))
@@ -274,7 +274,7 @@ export class VectorTileClient {
   }
 
   /** Save a tile after it was handed over (arrival never waits for IndexedDB), one job at a time. */
-  private later(t: TileId, compact: CompactOsm): void {
+  private later(t: TileId, compact: StoredOsm): void {
     const key = tileCacheKey(t)
     const savedAt = this.now()
     const p = this.tail

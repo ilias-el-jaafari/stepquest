@@ -1,7 +1,7 @@
 import { CACHE_DB_NAME } from '../config/brand.ts'
-import { CODEC_VERSION, type CompactOsm } from './codec.ts'
+import { CODEC_VERSION, type StoredOsm } from './codec.ts'
 
-export type CacheEntry = { savedAt: number; data: CompactOsm }
+export type CacheEntry = { savedAt: number; data: StoredOsm }
 
 export interface AreaCache {
   get(key: string): Promise<CacheEntry | undefined>

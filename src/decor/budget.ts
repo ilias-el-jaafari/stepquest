@@ -8,15 +8,19 @@ import { DETAIL_ZOOM } from '../render/camera.ts'
 /** Decor is hidden below this zoom (CSS px per tile): the map is the 1-px-per-tile overview there. */
 export const MIN_DECOR_ZOOM = DETAIL_ZOOM
 /** Most animated items drawn in one frame, and the rate their motion steps at. */
-export const MAX_ANIMATED = 12
+export const MAX_ANIMATED = 16
 export const ANIM_HZ = 12
 export const ANIM_FRAME_MS = 1000 / ANIM_HZ
 /** Darkness (0 to 1, from the day cycle) from which the scene counts as night for decor. */
 export const NIGHT_DARKNESS = 0.3
 /** Share of the items (by rank) that is shown by day; at night all of them. */
-export const DAY_DENSITY = 0.8
-/** The most static items a screen of the usual phone size shows at any zoom; a test holds the numbers to it. */
-export const MAX_STATIC_PER_SCREEN = 48
+export const DAY_DENSITY = 0.85
+/**
+ * The most static items a screen of the usual phone size shows at any zoom; a test holds the numbers to it.
+ * A city screen at quest zoom shows 25 to 35 (10 to 20 clear of the HUD cards); the worst case is the middle of a
+ * large park at the highest zoom, where one chunk's items all fall on a screen of 8 × 17 tiles.
+ */
+export const MAX_STATIC_PER_SCREEN = 130
 
 export type DecorBudget = {
   visible: boolean
@@ -31,16 +35,16 @@ export type DecorBudget = {
 
 /**
  * A 32-tile chunk is a big part of a phone screen at low zoom and a small one at high zoom (about 1.3 chunks
- * at 16 px per tile, 0.3 at 32), so the cap per chunk grows with the zoom to keep a screen at roughly 3 to 8
- * items by day and at most `MAX_STATIC_PER_SCREEN` at night.
+ * at 16 px per tile, 0.3 at 32), so the cap per chunk grows with the zoom to keep a city screen at quest zoom (24) at about 10 to 20
+ * visible items, and at most `MAX_STATIC_PER_SCREEN` at any zoom.
  */
 const STATIC_BY_ZOOM: readonly (readonly [number, number])[] = [
-  [8, 2],
-  [12, 5],
-  [16, 10],
-  [24, 24],
-  [32, 40],
-  [48, 70],
+  [8, 3],
+  [12, 10],
+  [16, 26],
+  [24, 90],
+  [32, 120],
+  [48, 150],
 ]
 
 /** Piecewise-linear table lookup, rounded, clamped at both ends. */
@@ -68,7 +72,7 @@ export function decorBudget(zoom: number, darkness: number, enabled = true): Dec
     visible: true,
     night,
     staticPerChunk: lookup(STATIC_BY_ZOOM, zoom),
-    animPerChunk: night ? (zoom < 12 ? 1 : zoom < 24 ? 2 : 3) : 1,
+    animPerChunk: night ? (zoom < 12 ? 1 : zoom < 24 ? 3 : 5) : 1,
     density: night ? 1 : DAY_DENSITY,
   }
 }

@@ -3,7 +3,7 @@ import { bboxAround, bboxContains } from '../geo/geo.ts'
 import { MemoryCache } from './cache.ts'
 import { classifyWay, isArea, isCrossing, isIndustrialLand, isLively, isTunnel, isWalkable, safetyFlags } from './classify.ts'
 import { SAFETY_ALLEY, SAFETY_COVERED, SAFETY_LIT, SAFETY_SIDEWALK, SAFETY_UNLIT } from './types.ts'
-import { decodeOsm, encodeOsm } from './codec.ts'
+import { CorruptDataError, decodeOsm, encodeOsm, parseCompact } from './codec.ts'
 import { DEMO_AREA, overpassQuery } from './demoArea.ts'
 import { loadDemoOsm } from './demo.ts'
 import { normalizeOverpass, type OverpassResponse } from './normalize.ts'
@@ -238,5 +238,15 @@ describe('safety tags', () => {
     expect(walk.filter((w) => (w.safety ?? 0) & SAFETY_LIT).length).toBeGreaterThan(300)
     expect((demo.activity ?? []).length / 2).toBeGreaterThan(300)
     expect((demo.industrial ?? []).length).toBeGreaterThan(10)
+  })
+})
+
+describe('stored extracts as text', () => {
+  it('decodes the JSON text of a compact extract the same as the object, and rejects text that is not JSON', () => {
+    const compact = encodeOsm(loadDemoOsm())
+    const text = JSON.stringify(compact)
+    expect(parseCompact(text)).toEqual(compact)
+    expect(decodeOsm(text).ways.length).toBe(decodeOsm(compact).ways.length)
+    expect(() => decodeOsm('{not json')).toThrow(CorruptDataError)
   })
 })

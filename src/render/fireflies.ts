@@ -19,8 +19,19 @@ const LEAFY = new Set<number>(['park', 'garden', 'grass', 'wood', 'orchard'].map
 const cache = new WeakMap<TileGrid, Map<number, Map<number, Firefly[]>>>()
 const NONE: Firefly[] = []
 
-export function forgetFireflies(grid: TileGrid): void {
-  cache.delete(grid)
+/** Forget the fireflies of a grid whose tiles changed: those of the chunks touching `rect`, or all without one. */
+export function forgetFireflies(grid: TileGrid, rect?: { x: number; y: number; w: number; h: number }): void {
+  const sizes = cache.get(grid)
+  if (!sizes) return
+  if (!rect) {
+    cache.delete(grid)
+    return
+  }
+  for (const [size, byChunk] of sizes) {
+    for (let cy = Math.floor(rect.y / size); cy <= Math.floor((rect.y + rect.h - 1) / size); cy++) {
+      for (let cx = Math.floor(rect.x / size); cx <= Math.floor((rect.x + rect.w - 1) / size); cx++) byChunk.delete(chunkKey(cx, cy))
+    }
+  }
 }
 
 function hash(x: number, y: number, salt: number): number {

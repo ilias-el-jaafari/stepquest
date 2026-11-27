@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { isValidBBox } from '../geo/geo.ts'
 import { MemoryCache, isFresh, CACHE_TTL_MS, type AreaCache, type CacheEntry } from './cache.ts'
 import { classifyWay, isBridge, isTunnel } from './classify.ts'
-import { CODEC_VERSION, CorruptDataError, decodeOsm, encodeOsm, type CompactOsm } from './codec.ts'
+import { CODEC_VERSION, CorruptDataError, decodeOsm, encodeOsm, parseCompact, type CompactOsm } from './codec.ts'
 import { overpassQuery } from './demoArea.ts'
 import { fetchMirrors, isOverpassResponse } from './download.ts'
 import { normalizeOverpass, type OverpassResponse } from './normalize.ts'
@@ -218,7 +218,7 @@ describe('area cache and client (66.6)', () => {
     expect(download).toHaveBeenCalledTimes(1)
     expect(out.data.ways).toHaveLength(1)
     // The download replaced the damaged entry with a good one.
-    expect((await cache.get(cacheKey(bbox)))?.data.v).toBe(CODEC_VERSION)
+    expect(parseCompact((await cache.get(cacheKey(bbox)))!.data).v).toBe(CODEC_VERSION)
   })
 
   it('ignores foreign or damaged entries of the area index', async () => {

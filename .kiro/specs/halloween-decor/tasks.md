@@ -15,7 +15,7 @@
 - [x] 89.7 Tests: determinism property, street clearance, caps per screen, zoom, day/night, reduced motion, timer, keep-out, atlas golden, two golden frames (older goldens drawn with decor off)
   - _Requirements: H10_
 - [x] 89.8 `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
-- [ ] 89.9 Measure the 4×-throttled phone profile walking and panning (about 55 to 60 fps, no new long task) in a browser before release
+- [x] 89.9 Measure the 4×-throttled phone profile walking and panning (about 55 to 60 fps, no new long task) in a browser before release: walking 55 to 57 fps, panning 50 to 56 (five runs, `SIMSPEED=20`, 22:30), the pan runs have 6 to 27 long tasks of at most 285 ms against 3 to 7 before the second review; see 89.15
   - _Requirements: H8.2_
 
 ## Polish from browser review (València start, 390 × 844 at 2×, default quest zoom)
@@ -24,3 +24,14 @@
   - _Requirements: H3, H4, H5_
 - [x] 89.11 Tests: yard placement, tile and 3×3 clearance by kind, new caps, golden frames updated
   - _Requirements: H10_
+
+## Quest-zoom visibility (second browser review, requirement H11)
+
+- [x] 89.12 Spec first: requirements H3 (spacing, widths, low items, spiders), H4 (caps), H5, H6, H8, new H11; design "Quest-zoom visibility"; `visual-style.md` decor section
+  - _Requirements: H1 to H11_
+- [x] 89.13 Art: pumpkin and jack-o'-lantern 13 × 12 by rule, larger bat, skeleton, gravestones (rule), crow, candle, lantern, fog; new scarecrow, cauldron (day and lit), signpost, picket fence with pumpkin, spider, small pumpkin; atlas 128 × 52, 29 frames
+  - _Requirements: H1, H2, H11.1_
+- [x] 89.14 Placement and budget: denser lattice with hash spacing, new categories (wood, tree), sprite half widths, low and tall kinds, one web per corner, caps 3, 10, 26, 90, 120, 150, animated 1, 3, 5 per chunk and 16 per frame, bigger glows, slimmer bat orbit and fog drift
+  - _Requirements: H3, H4, H5, H6_
+- [x] 89.15 Tests: sizes, new sprites, spacing, widths against streets, quest-zoom budget, `forgetDecor` with a rectangle, goldens (the two decor frames changed on purpose; every other golden is unchanged). Browser check, València start 390 × 844: 41 static and 16 moving items on the screen at 22:30, 41 and 0 at 12:00 (HUD cards cover about 40 %)
+  - _Requirements: H10, H11_
