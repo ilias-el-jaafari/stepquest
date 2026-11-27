@@ -117,6 +117,8 @@ export function layoutLabels(lines: readonly LabelLine[], o: LayoutOptions): Pla
   const sorted = lines
     .filter((l) => l.pts.length >= 4 && l.text.length > 0)
     .map((l) => ({ l, len: polylineLength(l.pts) }))
+    // A street shorter than its name cannot carry it: leave it out before the sort.
+    .filter((e) => e.len >= labelWidth(e.l.text, o.fontPx))
     .sort((a, b) => b.l.rank - a.l.rank || b.len - a.len || (a.l.text < b.l.text ? -1 : a.l.text > b.l.text ? 1 : 0) || a.l.pts[0]! - b.l.pts[0]! || a.l.pts[1]! - b.l.pts[1]!)
   const tilt = Math.tan((MAX_TILT_DEG * Math.PI) / 180)
   for (const { l, len } of sorted) {

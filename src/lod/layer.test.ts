@@ -264,3 +264,42 @@ describe('LOD layer: tap and coverage', () => {
     expect(emptyLod({ z: 14, x: 1, y: 1 }).v).toBe(1)
   })
 })
+
+describe('focus points (requirement 26.3)', () => {
+  const FAR = { lat: HERO.lat + 0.15, lon: HERO.lon } // about 17 km north: beyond the hero's rings
+
+  it('a cell near a focus point is covered; without one it is not', () => {
+    const { layer, store } = world(9_000)
+    expect(layer.coverage(cellOf(FAR), HERO)).toBe('no')
+    layer.setFocus([FAR])
+    expect(layer.coverage(cellOf(FAR), HERO)).toBe('loading')
+    for (const t of tilesWithin(FAR, 2_500)) store.put(makeLod(t.id, { lines: [{ cls: 'minor', pts: [[0, 2048], [4096, 2048]] }] }))
+    expect(layer.coverage(cellOf(FAR), HERO)).toBe('ready')
+    layer.setFocus([])
+    expect(layer.coverage(cellOf(FAR), HERO)).toBe('no')
+  })
+
+  it('draws the tiles around a focus point as LOD blocks, and the others beyond the rings are left to the coarse layer', () => {
+    const { layer, store, f } = world(9_000)
+    layer.setFocus([FAR])
+    for (const t of tilesWithin(FAR, 2_500)) store.put(makeLod(t.id, { lines: [{ cls: 'minor', pts: [[0, 2048], [4096, 2048]] }] }))
+    const p = projector(HERO)
+    const rec = recordingCtx()
+    const out = layer.drawBlocks(rec as unknown as CanvasRenderingContext2D, view(p, FAR, FAR_ZOOM), p, FAR)
+    expect(out.tiles).toBeGreaterThan(0)
+    expect(out.bitmaps + out.standIns + out.placeholders).toBe(out.tiles)
+    void f
+    const none = new LodLayer(new LodStore({ canvas: () => undefined }), 9_000)
+    none.setHero(HERO)
+    expect(none.drawBlocks(recordingCtx() as unknown as CanvasRenderingContext2D, view(p, FAR, FAR_ZOOM), p, FAR).tiles).toBe(0)
+  })
+
+  it('tells the renderer to draw again when the focus changes, and not when it does not', () => {
+    const { layer } = world(9_000)
+    let n = 0
+    layer.subscribe(() => n++)
+    layer.setFocus([FAR])
+    layer.setFocus([{ ...FAR }])
+    expect(n).toBe(1)
+  })
+})

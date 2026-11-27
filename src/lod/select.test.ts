@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FAR_ZOOM, ZOOM_LEVELS } from '../render/camera.ts'
 import { tileBBox } from '../vector/tileMath.ts'
-import { clampRadius, DEFAULT_LOD_RADIUS_M, lodRadiusFrom, MAX_LOD_RADIUS_M, MIN_LOD_RADIUS_M } from './config.ts'
+import { clampRadius, DEFAULT_LOD_RADIUS_M, lodRadiusFrom, MAX_LOD_RADIUS_M, MIN_LOD_RADIUS_M, R_FAR_M } from './config.ts'
 import { bitmapLevel, distanceToTileM, labelMinZoom, LOD_LEVELS, lodLook, tilesInView, tilesWithin } from './select.ts'
 import { Street } from './classes.ts'
 
@@ -93,14 +93,15 @@ describe('label zoom by class (requirement 25.6)', () => {
 })
 
 describe('the radius setting', () => {
-  it('defaults to 9 km, reads ?lod=<km> and clamps', () => {
-    expect(DEFAULT_LOD_RADIUS_M).toBe(9_000)
-    expect(lodRadiusFrom('')).toBe(9_000)
-    expect(lodRadiusFrom(undefined)).toBe(9_000)
+  it('defaults to 10 km (the far-pick distance), reads ?lod=<km> and clamps', () => {
+    expect(DEFAULT_LOD_RADIUS_M).toBe(10_000)
+    expect(lodRadiusFrom('')).toBe(10_000)
+    expect(lodRadiusFrom(undefined)).toBe(10_000)
+    expect(DEFAULT_LOD_RADIUS_M).toBeGreaterThanOrEqual(R_FAR_M)
     expect(lodRadiusFrom('?lod=12')).toBe(12_000)
     expect(lodRadiusFrom('?lod=100')).toBe(MAX_LOD_RADIUS_M)
     expect(lodRadiusFrom('?lod=0.1')).toBe(MIN_LOD_RADIUS_M)
-    expect(lodRadiusFrom('?lod=abc')).toBe(9_000)
-    expect(clampRadius(Number.NaN)).toBe(9_000)
+    expect(lodRadiusFrom('?lod=abc')).toBe(10_000)
+    expect(clampRadius(Number.NaN)).toBe(10_000)
   })
 })

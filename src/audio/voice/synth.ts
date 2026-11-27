@@ -442,7 +442,14 @@ export type RenderStats = { peakBeforeGain: number; limited: number }
 let lastStats: RenderStats = { peakBeforeGain: 0, limited: 0 }
 export const renderStats = (): RenderStats => lastStats
 
-export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {}): Float32Array {
+/** Samples made between two pauses of a sliced render: about 5 ms of work, short enough that a frame never waits for it. */
+export const RENDER_CHUNK = 4096
+
+/**
+ * The synthesis as a generator: it pauses (yields) every `chunk` samples, and between the passes after them, so a caller can spread
+ * the work of one phrase (60 to 90 ms at once) over several tasks. Runs to the same samples whatever the chunk.
+ */
+export function* renderPhonesSliced(phones: readonly Phone[], options: VoiceOptions = {}, chunk: number = RENDER_CHUNK): Generator<void, Float32Array, void> {
   const o = sanitizeOptions(options)
   const sr = o.sampleRate
   const { frames, frameLen, total } = buildTracks(phones, o)
@@ -490,6 +497,7 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
   const bankG = [0, 0, 0, 0, 0, 0]
 
   for (let n = 0; n < total; n++) {
+    if (n > 0 && n % chunk === 0) yield
     if (n % UPDATE === 0) {
       for (let i = 0; i < 7; i++) F[i] = value(FORMANT_KEYS[i]!, n)
       for (let i = 0; i < 3; i++) casc[i]!.set(F[i]!, F[3 + i]!)
@@ -539,6 +547,7 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
     out[n] = v
   }
 
+  yield
   // DC blocker (20 Hz), then a gentle low-pass.
   let x1 = 0
   let y1 = 0
@@ -550,6 +559,7 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
     out[i] = y
   }
   if (o.lowpassHz > 0) lowpass(out, o.lowpassHz, sr)
+  yield
 
   // Level: peak-normalise, with a soft limiter so the rare spike cannot clip.
   let peak = 0
@@ -578,7 +588,21 @@ export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {
   return out
 }
 
+/** The whole synthesis at once. */
+export function renderPhones(phones: readonly Phone[], options: VoiceOptions = {}): Float32Array {
+  const run = renderPhonesSliced(phones, options)
+  for (;;) {
+    const step = run.next()
+    if (step.done) return step.value
+  }
+}
+
 /** Speak a phrase: limit its length, numbers to words, words to phonemes, phonemes to samples. */
 export function renderText(text: string, locale: Locale, options: VoiceOptions = {}): Float32Array {
   return renderPhones(textToPhones(normalizeSpeech(limitSpokenText(text), locale), locale), options)
+}
+
+/** `renderText` as a generator (see `renderPhonesSliced`). */
+export function* renderTextSliced(text: string, locale: Locale, options: VoiceOptions = {}, chunk: number = RENDER_CHUNK): Generator<void, Float32Array, void> {
+  return yield* renderPhonesSliced(textToPhones(normalizeSpeech(limitSpokenText(text), locale), locale), options, chunk)
 }

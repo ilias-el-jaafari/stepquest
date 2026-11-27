@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { LodStore } from './store.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { IDLE_TIMEOUT_MS, LodStore, REDRAW_GAP_MS } from './store.ts'
 import { fakeCanvasFactory, makeLod, square } from './testing.ts'
 
 const id = (x: number, y = 6232) => ({ z: 14, x, y })
@@ -127,5 +127,68 @@ describe('LOD store (requirements 25.4 and 25.5)', () => {
     for (let x = 1; x <= 5; x++) store.put(tileAt(x))
     expect(store.resident().map((t) => t.id.x)).toEqual([3, 4, 5])
     expect(store.state(id(1))).toBe('unknown')
+  })
+})
+
+describe('painting between frames (requirement 25.5, far-pan budget)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('a backlog of bitmaps redraws the scene at most once per REDRAW_GAP_MS, and once more when the backlog is done', () => {
+    let t = 0
+    const { store, drain } = setup({ sliceMs: 0, now: () => t })
+    for (let x = 1; x <= 12; x++) store.put(tileAt(x))
+    let notices = 0
+    store.subscribe(() => notices++)
+    store.beginFrame()
+    for (let x = 1; x <= 12; x++) store.want(id(x), 256)
+    store.endFrame()
+    // Each task takes 2 ms of the clock: the 12 bitmaps (about 22 slices each) span about half a second.
+    const jobsRun = (() => {
+      let n = 0
+      const orig = store.slice.bind(store)
+      store.slice = () => {
+        t += 2
+        n++
+        orig()
+      }
+      return () => n
+    })()
+    drain()
+    expect(store.stats.bitmapsDone).toBe(12)
+    expect(jobsRun()).toBeGreaterThan(12)
+    const spanMs = t
+    expect(notices).toBeLessThanOrEqual(Math.ceil(spanMs / REDRAW_GAP_MS) + 1)
+    expect(notices).toBeLessThan(12)
+    expect(notices).toBeGreaterThan(0)
+    for (let x = 1; x <= 12; x++) expect(store.bitmap(id(x), 256)?.level).toBe(256)
+  })
+
+  it('by default a slice waits for an idle moment (at most IDLE_TIMEOUT_MS), and without idle callbacks it leaves a pause between slices', () => {
+    const idle: { fn: () => void; timeout: number | undefined }[] = []
+    vi.stubGlobal('requestIdleCallback', (fn: () => void, o?: { timeout: number }) => idle.push({ fn, timeout: o?.timeout }))
+    const f = fakeCanvasFactory()
+    const a = new LodStore({ canvas: f.make })
+    a.put(tileAt(1))
+    a.beginFrame()
+    a.want(id(1), 256)
+    a.endFrame()
+    expect(idle).toHaveLength(1)
+    expect(idle[0]!.timeout).toBe(IDLE_TIMEOUT_MS)
+    expect(a.stats.slices).toBe(0)
+    idle[0]!.fn()
+    expect(a.stats.slices).toBe(1)
+
+    vi.stubGlobal('requestIdleCallback', undefined)
+    vi.useFakeTimers()
+    const b = new LodStore({ canvas: f.make })
+    b.put(tileAt(2))
+    b.beginFrame()
+    b.want(id(2), 256)
+    b.endFrame()
+    vi.advanceTimersByTime(1)
+    expect(b.stats.slices).toBe(0)
+    vi.advanceTimersByTime(20)
+    expect(b.stats.slices).toBeGreaterThan(0)
+    vi.useRealTimers()
   })
 })

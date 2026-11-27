@@ -156,6 +156,35 @@ describe('planning outside the bundled map (field test, iPhone)', () => {
     expect(Math.abs(steps - 5000)).toBeLessThanOrEqual(250)
   })
 
+  it('A → B to a street 8.5 km away: the streets along the way load (not just around the start) and the plan crosses them', async () => {
+    tapAt.b = { lat: HERE.lat + 8_500 / 111_195, lon: HERE.lon }
+    await useMyLocation()
+    await click(button('A → B'))
+    await click(button('12k'))
+    await click(host.querySelector('[data-testid="tap-b"]') ?? undefined)
+    expect(host.textContent).toContain('Finish: 39.54')
+    await click(button('Plan quest'))
+    // The streets between the two points are in the network, so the planner knows the way across and names the nearest goal.
+    await waitFor(() => !!button(/^Use [\d,]+ steps$/), 30_000)
+    expect(host.textContent).toContain('Too short')
+    const use = button(/^Use [\d,]+ steps$/)!
+    const goal = Number(/[\d,]+/.exec(use.textContent!)![0].replace(/,/g, ''))
+    expect(goal).toBeGreaterThan(12_000)
+    expect(goal).toBeLessThan(15_000)
+    await click(use)
+    await click(button('Plan quest'))
+    await waitFor(() => /Route ready/.test(host.querySelector('[data-testid="feasibility"]')?.textContent ?? ''), 30_000)
+    const steps = Number(host.querySelector('[data-testid="steps"]')!.textContent!.split(' ')[0]!.replace(/[^\d]/g, ''))
+    expect(Math.abs(steps - goal)).toBeLessThanOrEqual(goal * 0.05)
+    // Tiles were asked for along the line: some more than 4 km and some more than 7 km north of the start, none twice.
+    const norths = net.tileRequests.map((u) => tileBBox({ z: 14, x: Number(/14\/(\d+)\/(\d+)/.exec(u)![1]), y: Number(/14\/(\d+)\/(\d+)/.exec(u)![2]) }).south - HERE.lat)
+    expect(norths.some((d) => d > 0.04)).toBe(true)
+    expect(norths.some((d) => d > 0.065)).toBe(true)
+    expect(new Set(net.tileRequests).size).toBe(net.tileRequests.length)
+    expect(net.tileRequests.length).toBeLessThanOrEqual(36)
+    expect(net.overpass.filter((u) => /nothing/.test(u))).toHaveLength(0)
+  }, 60_000)
+
   it('the first press shows "Planning…" in the same render, then names the step', async () => {
     await useMyLocation()
     await click(button('5k'))

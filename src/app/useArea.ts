@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { bboxContains, type BBox, type LatLon } from '../geo/geo.ts'
+import { corridorCells, isCorridor } from '../world/corridor.ts'
 import { formatCoordPair } from '../geo/coords.ts'
 import { stepsToMetres } from '../geo/steps.ts'
 import { defaultCache } from '../osm/cache.ts'
@@ -10,7 +11,7 @@ import type { QuestState } from '../quest/quest.ts'
 import { clearQuest, loadQuest } from '../quest/storage.ts'
 import { AUTO_LOAD_SETTLE_MS, shouldAutoLoad } from '../ui/autoLoad.ts'
 import { loadDemoWorld, useLiveLoader, type World } from '../ui/useMapData.ts'
-import { cellKey, cellOf, cellsInBBox } from '../world/cells.ts'
+import { cellKey, cellOf, cellsBBox, cellsInBBox } from '../world/cells.ts'
 import { enrichFromOverpass, type WalkProgress } from '../world/walkArea.ts'
 import type { CellRecord } from '../world/slice.ts'
 import type { AppAction, AppState } from './appState.ts'
@@ -98,8 +99,11 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
   const [load, setLoad] = useState<MapLoad>(IDLE_LOAD)
   // With a route planned or a quest running the frame follows the view; otherwise a view that rests
   // outside it gets the "load this area" behaviour below (requirement 20.17).
-  const reanchor = !!state.result?.ok || questActive
-  const lod = useLod({ tiles, hero, online, enabled: demo ? false : undefined })
+  // A streamed map always follows the view (the camera is not tied to the frame; map-rendering requirement 26.2).
+  const follows = STREAMING_ENABLED && !demo
+  const reanchor = follows || !!state.result?.ok || questActive
+  const finish = state.settings.mode === 'oneway' ? state.end : undefined
+  const lod = useLod({ tiles, hero, finish, online, enabled: demo ? false : undefined })
   const streamView = useStreaming({ world, tiles, graph: client, onWorld: onStreamed, keep, online, onLoad: setLoad, reanchor, enabled: demo ? false : undefined, lod: lod.layer })
   const lodView = lod.onView
   const onViewBox = useCallback(
@@ -132,8 +136,20 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
       const lv = w?.live
       if (!w || !lv) return w
       const covered = (p: LatLon) => lv.hasGraph(cellOf(p))
+      const targetM = stepsToMetres(need.targetSteps, need.strideM)
+      // A walk across the city loads the cells along the line between start and finish, wherever the frame is (routing requirement 14).
+      if (isCorridor(need.start, need.end)) {
+        const along = corridorCells(need.start, need.end, targetM)
+        const missing = along.filter((c) => !lv.hasGraph(c))
+        if (!missing.length) return w
+        const next = await liveGrow(lv, missing, onProgress)
+        if (worldRef.current?.live === lv) setWorld(next)
+        dispatch({ type: 'areaGrown', box: cellsBBox(along) })
+        enrichAround(next, cellsBBox(missing))
+        return next
+      }
       if (covered(need.start) && (!need.end || covered(need.end))) return w
-      const box = areaForWalk(need.start, stepsToMetres(need.targetSteps, need.strideM), need.end)
+      const box = areaForWalk(need.start, targetM, need.end)
       const cells = cellsInBBox(box)
       let next: World
       if (cells.every((c) => lv.inFrame(c))) {
@@ -277,14 +293,15 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
   const busy = live.status.state === 'loading' || state.locate.state === 'locating' || state.locate.state === 'loadingArea'
   useEffect(() => {
     if (demo || !bbox || !viewCentre) return
-    if (!shouldAutoLoad({ bbox, centre: viewCentre, busy, hasPlan, failedAt: failedAt.current })) return
+    // A streamed map follows the view by itself; the replacement below is for maps that do not.
+    if (follows || !shouldAutoLoad({ bbox, centre: viewCentre, busy, hasPlan, failedAt: failedAt.current })) return
     const timer = setTimeout(() => {
       void loadLiveAround(viewCentre).then((ok) => {
         if (!ok) failedAt.current = viewCentre
       })
     }, AUTO_LOAD_SETTLE_MS)
     return () => clearTimeout(timer)
-  }, [bbox, viewCentre, busy, hasPlan, loadLiveAround, demo])
+  }, [bbox, viewCentre, busy, hasPlan, loadLiveAround, demo, follows])
 
   // Prefetch (requirement 6e.2): as soon as the start is known, load the streets the plan will need, so the plan button
   // usually finds them. A start that failed to load is not tried again until it, the finish or the goal changes.
@@ -304,5 +321,5 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
     return () => clearTimeout(timer)
   }, [demo, ready, online, start, end, mode, targetSteps, strideM, ensureWalk, needNow])
 
-  return { world, live, ensureWalk, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot, onViewBox, load, lod }
+  return { world, live, ensureWalk, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot, onViewBox, load, lod, roam: follows }
 }

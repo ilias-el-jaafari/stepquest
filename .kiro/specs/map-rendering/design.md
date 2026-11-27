@@ -943,4 +943,40 @@ Bitmap painting on a real canvas (headless Chrome, CPU throttled 4×, real tiles
 
 Cold run of the built app (390 × 844 at ratio 2, Benicalap as hero, 9 km): 92 tile requests for the whole radius (60 in the first minute, the rest after, because of the ring cap of 60 starts a minute), at most 2 at once while the rings ran (view tiles first, up to 4), 8 MB on the wire, 6.3 MB in browser storage afterwards. The circle of 9 km meets about 100 tiles at València, so the rings are quick to fill but the bytes depend on the city: the centre tiles are 400 to 570 KB each. Night frame at the furthest zoom: no flat or dark area, streets by class, blocks, parks, water, names, lamp dots on top. One long task of about 50 ms during the whole run (a scene redraw), none from painting. The performance numbers of "Frame performance" are unchanged in code paths without a LOD layer (every golden and `sceneCache` test is unchanged); the layer draws inside the cached scene, so a frame that only moves the walker is still one blit.
 
-Known limits: a street label needs a stretch of street as long as its text (8 CSS px per character), so at 0.5 to 1.5 mainly long streets are named and more names appear as the player zooms in; the radius is measured from the hero, and the camera still cannot leave the streamed frame (about 5 km from its centre); the full-tile z14 art (houses, gardens) is still drawn only above `FAR_ZOOM`.
+Known limits: a street label needs a stretch of street as long as its text (8 CSS px per character), so at 0.5 to 1.5 mainly long streets are named and more names appear as the player zooms in; the radius is measured from the hero (and, since task 81, from focus points); the full-tile z14 art (houses, gardens) is still drawn only above `FAR_ZOOM`.
+
+## The far pick (requirement 26, task 81)
+
+### Why the player could not pick a far street
+
+Three limits stacked. (1) `Camera.clamp` kept the centre within half a screen of the streamed frame (9 × 9 cells, about 10 × 7.7 km, so about 4 km from its centre east-west). (2) The frame followed the view only with a route or a quest (`reanchor`); in the planner a view that rested outside it triggered "load this area", which replaced the world and moved the start. (3) The LOD rings stopped at 9 km from the hero, and the walking graph (`ensureWalk`) covered `areaForWalk`, a box capped at a 2.85 km radius, so a finish 9 km away was neither drawn in detail, nor snapped, nor reachable by the planner.
+
+### Changes
+
+- **Camera.** `Camera.limit` (a box in tile units) replaces the frame clamp when set. `MapRenderer.setReach(hero, PAN_REACH_M)` sets it to 12 km around the hero (the walker in a quest, else the start); `MapView` passes `roam` (true when the map follows the view) and rebuilds it with the renderer on every frame move, before the first draw. Outside the frame the scene is the ground colour; the LOD layer draws in lat/lon, so it does not care where the frame is. No new zoom level: at 0.5 CSS px per tile a phone shows 4 km across, the camera goes anywhere within the reach.
+- **Frame.** `useArea` gives the streamer `reanchor` whenever streaming is on. After 0.4 s of rest the streamer moves the frame (`recentre`) and `MapView` rebuilds the renderer at the same place and zoom, as it already did for quests (requirement 20.17). The auto "load this area" replacement is skipped when the map follows the view, so panning never moves the start.
+- **Detail.** `DEFAULT_LOD_RADIUS_M` is 10 km. `lod/focus.ts` keeps up to three focus points (the A → B finish; the two newest places the view rested at beyond the hero's rings). `LodLayer.setFocus` makes the tiles within 2.5 km of them draw as blocks (`reaches`, also used by `coverage`, so the streamer stops asking for z13 there); `LodPrefetcher.setFocus` adds a `focus` lane between the view and the rings (same 2-slot lane limit and 60 starts a minute, own cap of 120 tiles, no ring cap). `MAX_RESIDENT_LOD` goes from 160 to 220 for the larger set (10 km rings about 125 tiles, plus up to three focus discs of 9 to 13 tiles).
+- **Walking graph.** See routing design, "A → B across the city". `LiveWorld.addWalkNet` no longer drops cells outside the frame.
+
+### Alternatives rejected
+
+- A bigger frame (more cells): the 9 × 9 frame is a raster of 2000 × 1900 tiles; a 25 × 25 frame would be 8 times the memory and paint time for ground the player mostly does not look at.
+- Making the LOD layer cover everything the view shows, loaded or not: fills the store with tiles nobody asked for and defeats the caps of requirement 25.8; the focus points load exactly what a pick needs.
+- A zoom level below 0.5: every golden, the overview and the label thresholds depend on the ladder; panning solves the pick without it.
+
+### Performance changes (requirement 26.6)
+
+The LOD layer's far-pan regression (night ×20: 52.4 to 45.1 fps, long tasks 0.46 to 1.21 s, worst 179 ms, measured on the harness of "Frame performance") has three causes visible in the code, each addressed; I could not run the browser harness in this task (no server may be started), so the numbers below are what the sandbox measures, not the fps:
+
+1. Painting slices ran back to back on `setTimeout(0)`, so a backlog of bitmaps after a pan kept the main thread about 85 % busy for hundreds of milliseconds. Now `requestIdleCallback` (timeout 150 ms) or, without it, a pause of 8 ms between slices.
+2. Every finished bitmap redrew the whole scene (ground, blocks of the window, labels): 20 bitmaps, 20 redraws. Now at most one per 120 ms while a backlog is painted, and one when it is done.
+3. Label layout built and sorted every street of every window tile, also those far outside the window. Streets that cannot hold a label inside the window (with two font heights of room) and streets shorter than their name are left out before the sort (same result, fewer lines; on a synthetic window of 40 tiles with 700 names each the layout takes 1 ms before and after, so the sandbox shows no gain and this one is not claimed).
+
+`drawRails` (0.37 s over a zoom sequence) stamped every segment of every rail line at each scene redraw and filtered afterwards. Now `railStamps(points, unit, gap, wanted)` walks along segments that are off screen without stamping them and puts the sleeper counter where the walk along the line would have it. Property test: the stamps on screen are the same positions in the same order as from the whole line, and at most one sleeper differs where a threshold falls within rounding. Synthetic 40 lines × 250 points, 390 × 844 at ratio 3, per scene: zoom 1.5: 8.1 to 2.8 ms; zoom 4: 9.0 to 1.5 ms; zoom 8: 23 to 1.5 ms.
+
+Voice: a phrase of about 120,000 samples was one task of 31 ms here (60 to 90 ms on a phone). `renderPhonesSliced` is the same synthesis as a generator that pauses every 4096 samples (the one-piece `renderPhones` runs it to the end, so the samples are identical, tested for any chunk); the pre-rendering of `VoicePlayer.prewarm` works at most 6 ms (`RENDER_SLICE_MS`) per timer slot. Worst slice here: 2.1 ms. A phrase that is due and not cached is still rendered at once (the walker is waiting for it); making that asynchronous would change when `speaking` becomes true and is left for the owner to decide.
+
+### Testing
+
+`camera.test.ts` (limit), `render/farPick.test.ts` (camera 10 km and 12 km from the hero in planner and quest, old clamp without reach, frame follows and the view is drawn in full, 10 km in six directions), `lod/focus.test.ts`, `lod/layer.test.ts` (focus coverage and drawing), `lod/prefetch.test.ts` (plan order, lane limits, own cap, save-data, offline), `lod/farPick.property.test.ts` (any tap within 10 km snaps when tiles are loaded), `lod/store.test.ts` (idle slices, redraw coalescing), `render/rails.test.ts`, `audio/voiceSlices.test.ts`. Goldens unchanged.
+

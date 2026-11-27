@@ -256,3 +256,17 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
     - _Requirements: 25.8, 25.10_
   - [x] 80.8 Benchmarks and numbers in `design.md`; `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
     - _Requirements: 25.5, 25.11_
+- [x] 81 The far pick (requirement 26)
+  - [x] 81.1 `Camera.limit`, `MapRenderer.setReach`, `MapView`/`QuestScreen` `roam`; tests (camera property, renderer at 10 and 12 km, old clamp without reach)
+    - _Requirements: 26.1_
+  - [x] 81.2 The frame follows the view whenever streaming is on (`useArea` `reanchor`, no auto-replacement); test that the frame moves and the view is drawn in full
+    - _Requirements: 26.2_
+  - [x] 81.3 `lod/focus.ts`, `LodLayer.setFocus`, `LodPrefetcher` focus lane, `useLod` finish and rested view, R 10 km, `MAX_RESIDENT_LOD` 220; tests
+    - _Requirements: 26.3, 26.4_
+  - [x] 81.4 Property test: any tap within 10 km snaps when tiles are loaded
+    - _Requirements: 26.5_
+  - [x] 81.5 Far-pan costs: idle painting slices and coalesced redraws (`lod/store.ts`), label culling, `railStamps` with segments left out, sliced voice pre-rendering; tests; goldens unchanged
+    - _Requirements: 26.6_
+  - [x] 81.6 Spec, design numbers and steering (`osm-etiquette.md`); `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
+    - _Requirements: 26.1 to 26.6_
+

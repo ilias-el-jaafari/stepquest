@@ -2,7 +2,7 @@ import type { BBox, LatLon } from '../geo/geo.ts'
 import { TileError, type TileErrorCode } from '../vector/fetchTile.ts'
 import type { LodSource } from '../vector/client.ts'
 import { tileKey, type TileId } from '../vector/tileMath.ts'
-import { clampRadius } from './config.ts'
+import { clampRadius, FOCUS_MAX_TILES, FOCUS_RADIUS_M } from './config.ts'
 import { tilesInView, tilesWithin } from './select.ts'
 import type { LodStore } from './store.ts'
 
@@ -40,16 +40,30 @@ export function connectionPolicy(c: ConnectionInfo | undefined, radiusM: number)
   return { rings: true, parallel: RING_MAX_PARALLEL, radiusM }
 }
 
-export type Planned = { id: TileId; distM: number; lane: 'view' | 'ring' }
+export type Lane = 'view' | 'focus' | 'ring'
+export type Planned = { id: TileId; distM: number; lane: Lane }
 
-/** The tiles to have, in order: those the view shows (nearest the view centre first), then the rings around the hero (nearest first). */
-export function planPrefetch(view: { box: BBox; centre: LatLon } | undefined, hero: LatLon | undefined, radiusM: number): Planned[] {
+/**
+ * The tiles to have, in order: those the view shows (nearest the view centre first), then those within `FOCUS_RADIUS_M` of each
+ * focus point (the finish first; requirement 26.3), then the rings around the hero (nearest first).
+ */
+export function planPrefetch(view: { box: BBox; centre: LatLon } | undefined, hero: LatLon | undefined, radiusM: number, focus: readonly LatLon[] = []): Planned[] {
   const out: Planned[] = []
   const seen = new Set<string>()
   if (view) {
     for (const t of tilesInView(view.box, view.centre).slice(0, MAX_VIEW_TILES)) {
       seen.add(tileKey(t.id))
       out.push({ ...t, lane: 'view' })
+    }
+  }
+  if (radiusM > 0) {
+    for (const f of focus) {
+      for (const t of tilesWithin(f, FOCUS_RADIUS_M)) {
+        const k = tileKey(t.id)
+        if (seen.has(k)) continue
+        seen.add(k)
+        out.push({ ...t, lane: 'focus' })
+      }
     }
   }
   if (hero && radiusM > 0) {
@@ -83,6 +97,7 @@ export class LodPrefetcher {
   private readonly o: Required<Omit<PrefetchOptions, 'onError' | 'onProgress'>> & Pick<PrefetchOptions, 'onError' | 'onProgress'>
   private view: { box: BBox; centre: LatLon } | undefined
   private hero: LatLon | undefined
+  private focus: LatLon[] = []
   private viewKey = ''
   /** Nothing is requested before the first view has rested (the app sends it within a frame of the map's first draw). */
   private settledAt: number
@@ -92,7 +107,7 @@ export class LodPrefetcher {
   private again = false
   private disposed = false
   private pausedUntil = 0
-  private readonly inFlight = new Map<string, 'view' | 'ring'>()
+  private readonly inFlight = new Map<string, Lane>()
   private readonly failures = new Map<string, { n: number; until: number }>()
   private readonly missed = new Set<string>()
   private readonly ringStarts: number[] = []
@@ -132,6 +147,13 @@ export class LodPrefetcher {
     this.schedule(0)
   }
 
+  /** The places away from the hero that get the full detail too (the tapped finish, places the view rested at). */
+  setFocus(points: readonly LatLon[]): void {
+    if (this.disposed) return
+    this.focus = [...points]
+    this.schedule(0)
+  }
+
   /** The view moved; downloads wait until it has rested. */
   setView(box: BBox, centre: LatLon): void {
     if (this.disposed) return
@@ -162,8 +184,9 @@ export class LodPrefetcher {
     return this.inFlight.size
   }
 
-  /** Ring tiles loaded this session. */
+  /** Ring tiles and focus tiles loaded this session. */
   ringDone = 0
+  focusDone = 0
 
   private schedule(ms: number): void {
     if (this.disposed) return
@@ -180,7 +203,7 @@ export class LodPrefetcher {
 
   private planned(): Planned[] {
     const policy = connectionPolicy(this.o.connection(), this.o.radiusM)
-    return planPrefetch(this.view, this.hero, policy.rings ? policy.radiusM : 0)
+    return planPrefetch(this.view, this.hero, policy.rings ? policy.radiusM : 0, this.focus)
   }
 
   private async pump(): Promise<void> {
@@ -219,12 +242,16 @@ export class LodPrefetcher {
     if (changed) this.o.onProgress?.()
   }
 
-  private ringsAllowed(now: number): boolean {
+  /** Focus tiles obey the link policy and their own session cap, not the ring cap (the player asked for that place). */
+  private focusAllowed(): boolean {
+    const policy = connectionPolicy(this.o.connection(), this.o.radiusM)
+    return policy.rings && !this.o.hidden() && this.focusDone < FOCUS_MAX_TILES
+  }
+
+  private ringsAllowed(): boolean {
     const policy = connectionPolicy(this.o.connection(), this.o.radiusM)
     if (!policy.rings || this.o.hidden()) return false
-    if (this.ringDone >= PREFETCH_MAX_TILES || this.o.source.lodWireBytes >= PREFETCH_MAX_BYTES) return false
-    while (this.ringStarts.length && this.ringStarts[0]! <= now - MINUTE_MS) this.ringStarts.shift()
-    return true
+    return this.ringDone < PREFETCH_MAX_TILES && this.o.source.lodWireBytes < PREFETCH_MAX_BYTES
   }
 
   private launch(): void {
@@ -233,6 +260,7 @@ export class LodPrefetcher {
     if (now < this.settledAt) return this.schedule(this.settledAt - now)
     if (now < this.pausedUntil) return this.schedule(this.pausedUntil - now)
     const policy = connectionPolicy(this.o.connection(), this.o.radiusM)
+    while (this.ringStarts.length && this.ringStarts[0]! <= now - MINUTE_MS) this.ringStarts.shift()
     let wake = Infinity
     let viewMissing = false
     for (const p of this.planned()) {
@@ -249,17 +277,17 @@ export class LodPrefetcher {
         wake = Math.min(wake, cool.until - now)
         continue
       }
-      if (p.lane === 'ring') {
-        // The rings wait for the view, and obey their own lane limits.
-        if (viewMissing || !this.ringsAllowed(now)) break
-        const rings = [...this.inFlight.values()].filter((l) => l === 'ring').length
+      if (p.lane !== 'view') {
+        // The rings and the focus tiles wait for the view, and share the lane limits (at most 2 downloads, 60 starts a minute).
+        if (viewMissing || !(p.lane === 'focus' ? this.focusAllowed() : this.ringsAllowed())) break
+        const rings = [...this.inFlight.values()].filter((l) => l !== 'view').length
         if (rings >= policy.parallel) break
         if (this.ringStarts.length >= RING_STARTS_PER_MINUTE) {
           wake = Math.min(wake, this.ringStarts[0]! + MINUTE_MS - now)
           break
         }
         this.ringStarts.push(now)
-        this.ringRequests++
+        if (p.lane === 'ring') this.ringRequests++
       }
       this.start(p)
     }
@@ -271,7 +299,7 @@ export class LodPrefetcher {
     this.inFlight.set(key, p.lane)
     this.requests++
     this.peak = Math.max(this.peak, this.inFlight.size)
-    this.peakRing = Math.max(this.peakRing, [...this.inFlight.values()].filter((l) => l === 'ring').length)
+    this.peakRing = Math.max(this.peakRing, [...this.inFlight.values()].filter((l) => l !== 'view').length)
     this.o.store.markPending(p.id)
     void this.run(p, key)
   }
@@ -285,6 +313,7 @@ export class LodPrefetcher {
       const tile = await Promise.race([this.o.source.loadLod(p.id), stuck])
       this.failures.delete(key)
       if (p.lane === 'ring') this.ringDone++
+      else if (p.lane === 'focus') this.focusDone++
       if (!this.disposed) {
         this.o.store.put(tile)
         this.o.onProgress?.()

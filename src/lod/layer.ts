@@ -6,11 +6,11 @@ import { latOf, lonOf, tilesInBBox, type TileId } from '../vector/tileMath.ts'
 import { cellBBox, type CellId } from '../world/cells.ts'
 import { labelRank } from './classes.ts'
 import { layoutLabels, MAX_LABELS, type LabelLine } from './labels.ts'
-import { bitmapLevel, distanceToTileM, LABEL_MAX_ZOOM, labelMinZoom, lodLook, LOD_Z } from './select.ts'
+import { bitmapLevel, distanceToTileM, LABEL_MAX_ZOOM, labelMinZoom, LOD_Z } from './select.ts'
 import { snapRadiusM, snapStreet, type Snap } from './snap.ts'
 import type { LodStore } from './store.ts'
 import { LOD_EXTENT } from './tile.ts'
-import { DEFAULT_LOD_RADIUS_M } from './config.ts'
+import { DEFAULT_LOD_RADIUS_M, FOCUS_RADIUS_M } from './config.ts'
 
 /** The map's own projection: the renderer's tile grid (tile units from lat/lon and back). */
 export type Projector = {
@@ -34,6 +34,7 @@ export const LABEL_SAME_NAME_CSS = 160
  */
 export class LodLayer {
   private hero: LatLon | undefined
+  private focus: LatLon[] = []
   private radiusM: number
   private readonly store: LodStore
   /** Labels drawn by the last `drawLabels` (tests). */
@@ -54,6 +55,21 @@ export class LodLayer {
 
   setHero(hero: LatLon | undefined): void {
     this.hero = hero
+  }
+
+  /** Places away from the hero that get the full detail too (requirement 26.3). Redraws when they change. */
+  setFocus(points: readonly LatLon[]): void {
+    const same = points.length === this.focus.length && points.every((p, k) => p.lat === this.focus[k]!.lat && p.lon === this.focus[k]!.lon)
+    if (same) return
+    this.focus = [...points]
+    this.store.changed()
+  }
+
+  /** Whether something at `distanceFrom(p)` metres from a point `p` is within the detail of the hero or of a focus point. */
+  private reaches(distanceFrom: (p: LatLon) => number, centre: LatLon): boolean {
+    if (distanceFrom(this.origin(centre)) <= this.radiusM) return true
+    for (const f of this.focus) if (distanceFrom(f) <= FOCUS_RADIUS_M) return true
+    return false
   }
 
   subscribe(fn: () => void): () => void {
@@ -93,10 +109,9 @@ export class LodLayer {
   drawBlocks(ctx: CanvasRenderingContext2D, v: View, p: Projector, centre: LatLon): BlocksDraw {
     const out: BlocksDraw = { bitmaps: 0, standIns: 0, placeholders: 0, skipped: 0, tiles: 0 }
     if (v.zoom > FAR_ZOOM) return out
-    const origin = this.origin(centre)
     this.store.beginFrame()
     for (const t of this.windowTiles(v, p)) {
-      if (lodLook(distanceToTileM(t.id, origin), v.zoom, this.radiusM) !== 'blocks') {
+      if (!this.reaches((o) => distanceToTileM(t.id, o), centre)) {
         out.skipped++
         continue
       }
@@ -127,6 +142,7 @@ export class LodLayer {
     this.lastLabels = 0
     if (v.zoom < 0.5 || v.zoom >= LABEL_MAX_ZOOM) return 0
     const lines: LabelLine[] = []
+    const reach = LABEL_FONT_CSS * v.dpr * 2
     for (const t of this.windowTiles(v, p)) {
       const tile = this.store.tile(t.id)
       if (!tile) continue
@@ -137,7 +153,21 @@ export class LodLayer {
         const from = g.start[i]! * 2
         const to = g.start[i + 1]! * 2
         const pts: number[] = []
-        for (let j = from; j < to; j += 2) pts.push(t.x0 + (g.xy[j]! / LOD_EXTENT) * t.w, t.y0 + (g.xy[j + 1]! / LOD_EXTENT) * t.h)
+        let x0 = Infinity
+        let y0 = Infinity
+        let x1 = -Infinity
+        let y1 = -Infinity
+        for (let j = from; j < to; j += 2) {
+          const x = t.x0 + (g.xy[j]! / LOD_EXTENT) * t.w
+          const y = t.y0 + (g.xy[j + 1]! / LOD_EXTENT) * t.h
+          pts.push(x, y)
+          if (x < x0) x0 = x
+          if (x > x1) x1 = x
+          if (y < y0) y0 = y
+          if (y > y1) y1 = y
+        }
+        // A street wholly outside the window (a label lies inside it) cannot give a label: it is not laid out at all (budget of requirement 24).
+        if (x1 < -reach || y1 < -reach || x0 > v.w + reach || y0 > v.h + reach) continue
         lines.push({ text: g.text[i]!, rank: labelRank(cls), pts })
       }
     }
@@ -177,10 +207,9 @@ export class LodLayer {
    * tile of it failed, so the coarse layer must draw it), `loading` when it is covered but a tile is not in, else `ready`.
    */
   coverage(cell: CellId, centre?: LatLon): 'no' | 'loading' | 'ready' {
-    const origin = this.hero ?? centre
-    if (!origin) return 'no'
+    if (!(this.hero ?? centre)) return 'no'
     const b = cellBBox(cell)
-    if (distToBox(b, origin) > this.radiusM) return 'no'
+    if (!this.reaches((o) => distToBox(b, o), centre!)) return 'no'
     let loading = false
     for (const id of tilesInBBox(b, LOD_Z)) {
       const s = this.store.state(id)

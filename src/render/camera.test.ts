@@ -65,6 +65,22 @@ describe('camera (P-C1 to P-C4)', () => {
     )
   })
 
+  it('P-C3b a pan limit replaces the clamp to the map: the centre goes anywhere inside it and nowhere outside (requirement 26.1)', () => {
+    fc.assert(
+      fc.property(size, size, zoom, fc.double({ min: -1e5, max: 1e5, noNaN: true }), fc.double({ min: -1e5, max: 1e5, noNaN: true }), (w, h, z, x, y) => {
+        const c = camera(600, 640, w, h, z, x, y)
+        c.limit = { x0: -2400, y0: -2400, x1: 3000, y1: 3000 }
+        c.clamp()
+        expect(c.x).toBeGreaterThanOrEqual(-2400)
+        expect(c.x).toBeLessThanOrEqual(3000)
+        expect(c.y).toBeGreaterThanOrEqual(-2400)
+        expect(c.y).toBeLessThanOrEqual(3000)
+        if (Math.abs(x - 300) < 2000 && Math.abs(y - 300) < 2000) expect([c.x, c.y]).toEqual([x, y])
+      }),
+      { seed },
+    )
+  })
+
   it('P-C4 a pan followed by the opposite pan returns to the start (away from the clamp)', () => {
     fc.assert(
       fc.property(zoom, fc.integer({ min: -500, max: 500 }), fc.integer({ min: -500, max: 500 }), (z, dx, dy) => {

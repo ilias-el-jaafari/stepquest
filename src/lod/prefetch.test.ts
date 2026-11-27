@@ -3,6 +3,7 @@ import type { LodSource } from '../vector/client.ts'
 import { TileError } from '../vector/fetchTile.ts'
 import { tileKey, type TileId } from '../vector/tileMath.ts'
 import { connectionPolicy, LOD_MAX_PARALLEL, LodPrefetcher, planPrefetch, PREFETCH_MAX_BYTES, PREFETCH_MAX_TILES, RATE_LIMIT_PAUSE_MS, RING_MAX_PARALLEL, RING_STARTS_PER_MINUTE, SETTLE_MS, SLOW_RADIUS_M, type ConnectionInfo } from './prefetch.ts'
+import { FOCUS_RADIUS_M } from './config.ts'
 import { distanceToTileM, tilesWithin } from './select.ts'
 import { LodStore } from './store.ts'
 import { emptyLod } from './tile.ts'
@@ -266,5 +267,69 @@ describe('what stops it', () => {
     p.dispose()
     await settle(5_000)
     expect(srv.started).toHaveLength(0)
+  })
+})
+
+describe('focus tiles around a far finish or a far view (requirement 26.3)', () => {
+  // About 9 km north-east of the hero: outside the 9 km test ring, inside 10 km of the real default.
+  const FAR = { lat: HERO.lat + 0.07, lon: HERO.lon + 0.07 }
+
+  it('plans view tiles, then the tiles within the focus radius of each focus point (the finish first), then the rings, no tile twice', () => {
+    const second = { lat: HERO.lat - 0.1, lon: HERO.lon }
+    const plan = planPrefetch(VIEW, HERO, 9_000, [FAR, second])
+    const lanes = plan.map((p) => p.lane)
+    expect(lanes.indexOf('view')).toBe(0)
+    expect(lanes.lastIndexOf('view')).toBeLessThan(lanes.indexOf('focus'))
+    expect(lanes.lastIndexOf('focus')).toBeLessThan(lanes.indexOf('ring'))
+    const focus = plan.filter((p) => p.lane === 'focus')
+    expect(focus.length).toBeGreaterThan(4)
+    expect(distanceToTileM(focus[0]!.id, FAR)).toBe(0)
+    expect(focus.some((f) => distanceToTileM(f.id, second) === 0)).toBe(true)
+    expect(focus.every((f) => Math.min(distanceToTileM(f.id, FAR), distanceToTileM(f.id, second)) <= FOCUS_RADIUS_M)).toBe(true)
+    expect(new Set(plan.map((p) => tileKey(p.id))).size).toBe(plan.length)
+  })
+
+  it('loads a far focus before the rings, inside the same limits (4 downloads, 2 for rings and focus together)', async () => {
+    const { srv, p } = setup()
+    p.setHero(HERO)
+    p.setFocus([FAR])
+    p.setView(VIEW.box, VIEW.centre)
+    await settle()
+    await vi.advanceTimersByTimeAsync(120_000)
+    const keys = srv.started.map(tileKey)
+    const view = planPrefetch(VIEW, undefined, 0).length
+    const focus = planPrefetch(undefined, undefined, 9_000, [FAR]).map((f) => tileKey(f.id))
+    const afterView = keys.slice(view)
+    expect(afterView.slice(0, focus.length).sort()).toEqual([...focus].sort())
+    expect(srv.peak()).toBeLessThanOrEqual(LOD_MAX_PARALLEL)
+    expect(p.peakRing).toBeLessThanOrEqual(RING_MAX_PARALLEL)
+    expect(p.focusDone).toBe(focus.length)
+  })
+
+  it('a far focus still loads after the ring cap is spent, up to its own cap; save-data stops it like the rings', async () => {
+    const { srv, p } = setup({ connection: () => undefined }, 5)
+    p.ringDone = PREFETCH_MAX_TILES
+    p.setFocus([FAR])
+    p.setView(VIEW.box, VIEW.centre)
+    await settle()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(p.focusDone).toBeGreaterThan(4)
+    expect(srv.started.length).toBeGreaterThan(p.focusDone)
+    const saver = setup({ connection: () => ({ saveData: true }) }, 5)
+    saver.p.setFocus([FAR])
+    await settle()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(saver.srv.started.length).toBe(0)
+  })
+
+  it('stays quiet while offline or hidden, and sends nothing before the view has rested', async () => {
+    const { srv, p } = setup({ online: () => false })
+    p.setFocus([FAR])
+    await settle()
+    expect(srv.started).toHaveLength(0)
+    const early = setup()
+    early.p.setFocus([FAR])
+    await vi.advanceTimersByTimeAsync(SETTLE_MS / 2)
+    expect(early.srv.started).toHaveLength(0)
   })
 })

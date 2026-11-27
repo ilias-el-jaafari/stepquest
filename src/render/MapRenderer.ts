@@ -141,6 +141,20 @@ export class MapRenderer {
 
   private questFloor = false
 
+  /**
+   * Let the camera roam `radiusM` around `centre` (the hero) instead of staying near the loaded frame (requirement 26.1); undefined
+   * goes back to the frame. Does not move the camera; the next pan or zoom keeps it inside.
+   */
+  setReach(centre: LatLon | undefined, radiusM: number): void {
+    if (!centre) {
+      this.camera.limit = undefined
+      return
+    }
+    const c = this.grid.toTileXY(centre)
+    const r = radiusM / this.grid.metresPerTile
+    this.camera.limit = { x0: c.x - r, x1: c.x + r, y0: c.y - r, y1: c.y + r }
+  }
+
   /** Lowest zoom the view may have now (requirement 20.13): in a quest, the view must stay coverable. */
   get minZoom(): number {
     return this.camera.minZoom

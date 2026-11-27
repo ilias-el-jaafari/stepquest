@@ -7,7 +7,7 @@ import { type LodTile } from './tile.ts'
 /** Bytes of painted bitmaps kept (requirement 25.4): 12 tiles at 1024 px, 48 at 512 px. */
 export const LOD_BITMAP_BUDGET_BYTES = 48 * 1024 * 1024
 /** LOD tiles kept in memory (street lines, names and footprints, about 100 KB each; the rest is read again from IndexedDB). */
-export const MAX_RESIDENT_LOD = 160
+export const MAX_RESIDENT_LOD = 220
 
 export type TileState = 'unknown' | 'pending' | 'ready' | 'failed'
 
@@ -21,6 +21,20 @@ export type StoreOptions = {
   bitmapBudgetBytes?: number
   maxResident?: number
   sliceMs?: number
+}
+
+/** A finished bitmap redraws the scene; while many are queued (a pan over new ground) that happens at most this often. */
+export const REDRAW_GAP_MS = 120
+/** The painting slices wait for an idle moment of the page, but at most this long (requirement 25.5). */
+export const IDLE_TIMEOUT_MS = 150
+/** Where there is no idle callback (Safari), a slice waits this long, so painting takes about half of the time. */
+const SLICE_PAUSE_MS = 8
+
+/** Run `fn` when the page has nothing better to do: new tiles are painted between frames, not in front of them. */
+function whenIdle(fn: () => void): void {
+  const ric = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback
+  if (typeof ric === 'function') ric.call(globalThis, fn, { timeout: IDLE_TIMEOUT_MS })
+  else setTimeout(fn, SLICE_PAUSE_MS)
 }
 
 const defaultCanvas = (size: number) => {
@@ -47,6 +61,7 @@ export class LodStore {
   private scheduled = false
   private frame = 0
   private bitmapBytes = 0
+  private lastRedraw = -Infinity
   private readonly listeners = new Set<() => void>()
   /** Bumped when a tile arrives (labels and snapping depend on it). */
   version = 0
@@ -54,7 +69,7 @@ export class LodStore {
   stats = { bitmapsDone: 0, slices: 0, maxSliceMs: 0 }
 
   constructor(options: StoreOptions = {}) {
-    this.o = { now: nowMs, canvas: defaultCanvas, later: (fn) => void setTimeout(fn, 0), bitmapBudgetBytes: LOD_BITMAP_BUDGET_BYTES, maxResident: MAX_RESIDENT_LOD, sliceMs: LOD_SLICE_MS, ...options }
+    this.o = { now: nowMs, canvas: defaultCanvas, later: whenIdle, bitmapBudgetBytes: LOD_BITMAP_BUDGET_BYTES, maxResident: MAX_RESIDENT_LOD, sliceMs: LOD_SLICE_MS, ...options }
   }
 
   subscribe(fn: () => void): () => void {
@@ -64,6 +79,11 @@ export class LodStore {
 
   private emit(): void {
     for (const fn of this.listeners) fn()
+  }
+
+  /** Something the layer draws from changed that is not a tile (the focus points): listeners redraw. */
+  changed(): void {
+    this.emit()
   }
 
   state(id: TileId): TileState {
@@ -240,7 +260,12 @@ export class LodStore {
       this.queue.shift()
       this.stats.bitmapsDone++
       this.evict()
-      this.emit()
+      // The scene is drawn again for the last bitmap of a backlog and otherwise at most every `REDRAW_GAP_MS`, not once per bitmap.
+      const now = this.o.now()
+      if (!this.queue.length || now - this.lastRedraw >= REDRAW_GAP_MS) {
+        this.lastRedraw = now
+        this.emit()
+      }
     }
     this.schedule()
   }

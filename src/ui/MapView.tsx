@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { BBox, LatLon } from '../geo/geo.ts'
 import { useI18n } from '../i18n/index.ts'
 import { DEMO_CLOSE_ZOOM } from '../demo/script.ts'
@@ -7,6 +7,7 @@ import { parseTimeParam } from '../render/daylight.ts'
 import { MapRenderer, type Markers, type QuestOverlay, type RouteShape } from '../render/MapRenderer.ts'
 import { isMapSource, type MapSource } from '../render/mapSource.ts'
 import type { MapLoad } from '../world/streamer.ts'
+import { PAN_REACH_M } from '../lod/config.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 import { walkerFor } from '../hero/look.ts'
 import { useLook } from '../hero/useLook.ts'
@@ -26,6 +27,8 @@ type Props = {
   onTap: (p: LatLon, zoom: number) => void
   /** The level-of-detail layer around the hero; absent when it is off. */
   lod?: LodLayer
+  /** The map follows the view, so the camera may roam `PAN_REACH_M` around the hero (the walker, else `home`) instead of staying near the frame. */
+  roam?: boolean
   /** Where the walker stands (start point), for the "go to start" button. */
   home: LatLon | undefined
   /** Active quest overlay (walker position, progress). */
@@ -61,7 +64,7 @@ type Props = {
  * Memoised on purpose: the screen around it re-renders on every keystroke and every clock tick,
  * and the map only needs to follow its own props (callers pass stable callbacks and objects).
  */
-export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, lod, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve, onViewBox, load, clockAt, shot }: Props) {
+export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, lod, roam, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve, onViewBox, load, clockAt, shot }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<HTMLDivElement>(null)
@@ -73,6 +76,12 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
   const onUserPanRef = useRef(onUserPan)
   const onViewRef = useRef(onView)
   const onViewBoxRef = useRef(onViewBox)
+  // Where the camera may roam around: the walker in a quest, else the start (requirement 26.1).
+  const reachSource = roam ? (quest?.player ?? home) : undefined
+  const reachLat = reachSource?.lat
+  const reachLon = reachSource?.lon
+  const reachAt = useMemo(() => (reachLat === undefined || reachLon === undefined ? undefined : { lat: reachLat, lon: reachLon }), [reachLat, reachLon])
+  const roamRef = useRef(reachAt)
   // A streamed world can move its frame (a new grid) when the view leaves it: rebuild the renderer then,
   // at the same place and zoom (requirement 20.17).
   const [frame, setFrame] = useState(0)
@@ -96,6 +105,7 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
     if (!canvas) return
     const renderer = new MapRenderer(canvas, map)
     rendererRef.current = renderer
+    renderer.setReach(roamRef.current, PAN_REACH_M)
     const kept = carry.current
     if (kept && kept.map === map) renderer.centerOn(kept.at, kept.zoom)
     carry.current = undefined
@@ -119,6 +129,11 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
       rendererRef.current = undefined
     }
   }, [map, frame])
+
+  useEffect(() => {
+    roamRef.current = reachAt
+    rendererRef.current?.setReach(reachAt, PAN_REACH_M)
+  }, [reachAt, map, frame])
 
   useEffect(() => {
     rendererRef.current?.setLod(lod)

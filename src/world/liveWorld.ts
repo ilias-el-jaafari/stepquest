@@ -252,7 +252,8 @@ export class LiveWorld implements MapSource {
    * Add walking records (requirement 23.1): the streets of cells that have no graph record yet, built
    * from vector tiles. They enter the merged data and the graph like any graph record, with way ids
    * made unique per call so two loads never join their ways by accident, and are never painted.
-   * Out-of-frame cells and cells that already have a graph record are skipped. Returns the cells added.
+   * Cells that already have a graph record are skipped; a cell outside the frame is kept (the walk of a corridor reaches beyond
+   * the frame, which follows the view: routing requirement 14). Returns the cells added.
    */
   addWalkNet(records: readonly CellRecord[]): CellId[] {
     const added: CellId[] = []
@@ -260,7 +261,7 @@ export class LiveWorld implements MapSource {
     const seq = ++this.walkSeq
     for (const rec of records) {
       const key = cellKey(rec.cell)
-      if (!this.inFrame(rec.cell) || this.records.has(key) || this.walk.has(key)) continue
+      if (this.records.has(key) || this.walk.has(key)) continue
       const own: CellRecord = { ...rec, data: { ...rec.data, ways: rec.data.ways.map((w) => ({ ...w, id: seq * 1_000_000 + w.id })) } }
       this.walk.set(key, own)
       first = Math.min(first, this.data.addRecord(own).firstWay)

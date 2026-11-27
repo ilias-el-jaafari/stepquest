@@ -373,7 +373,7 @@ Budgets are measured with the benchmark harness of `design.md` ("Frame performan
 
 Related: requirements 19, 20 and 21 (the streamed world and its tiles; 21.7 is amended here), 22.3 (far-zoom lamps), 24 (performance budgets, which this requirement keeps), [routing](../routing/requirements.md) requirement 12 (A → B finish), `.kiro/steering/osm-etiquette.md`.
 
-Terms: the **hero** is the walker in a quest, else the start point of the planner. **R** is the detail radius, 9 km by default (`DEFAULT_LOD_RADIUS_M`), 2 to 15 km when set with `?lod=<km>`. A **level of detail (LOD) tile** is one z14 vector tile reduced to what the far zooms draw (streets by class, street names, simplified building footprints, parks and water).
+Terms: the **hero** is the walker in a quest, else the start point of the planner. **R** is the detail radius, 10 km by default (9 km before requirement 26) (`DEFAULT_LOD_RADIUS_M`), 2 to 15 km when set with `?lod=<km>`. A **level of detail (LOD) tile** is one z14 vector tile reduced to what the far zooms draw (streets by class, street names, simplified building footprints, parks and water).
 
 #### Acceptance Criteria
 
@@ -388,3 +388,22 @@ Terms: the **hero** is the walker in a quest, else the start point of the planne
 9. THE SYSTEM SHALL cache each LOD tile in IndexedDB (`lod<codec>:z/x/y`, 7 days, at most `MAX_LOD_ENTRIES` 320) next to the full tiles, read it before any request, and rely on the browser's HTTP cache for the raw tile (the CDN allows years), so a tile that is also needed as detail art is downloaded once. A damaged entry is a miss.
 10. THE SYSTEM SHALL NOT ask for z13 coarse tiles for a cell that the LOD layer covers (every z14 tile of the cell within R and none of them failed), and SHALL ask for them again for a cell with a failed LOD tile, so a failing connection still shows the coarse map. Readiness (`data-map-ready`) at far zoom SHALL count a covered cell as ready only when its LOD tiles are loaded.
 11. THE SYSTEM SHALL keep every golden frame unchanged (they are at detail zoom or far zoom without a LOD layer), and the LOD layer SHALL be off under Vitest unless a test turns it on, like streaming (requirement 19).
+
+### Requirement 26 (task 81): The far pick: the camera and the detail follow the view
+
+**User Story:** As a walker who plans an A → B walk, I want to move the map to a street 8 to 10 km from where I stand, in the planner and during a quest, and tap it, so that I can choose a real destination across the city and not only one near me.
+
+Related: requirement 25 (the LOD layer, whose radius and prefetch this extends), requirements 19 to 21 (the streamed frame), 24 (budgets), [routing](../routing/requirements.md) requirement 14 (the streets along the way), `.kiro/steering/osm-etiquette.md`.
+
+Terms: the **hero** is as in requirement 25. **R_far** is `R_FAR_M`, 10 km. The **reach** is `PAN_REACH_M`, 12 km. A **focus point** is the A → B finish, or a place the view rested at beyond the hero's rings.
+
+#### Acceptance Criteria
+
+1. WHILE the map is a streamed world that follows the view (streaming on, not the self-playing demo), THE SYSTEM SHALL let the camera pan and zoom freely within the reach (12 km) of the hero, so that it can be R_far or more away from the hero in the planner and in a quest; the camera SHALL NOT be clamped to the streamed frame. A map that does not follow the view keeps the old limit (half a screen past the loaded area).
+2. THE SYSTEM SHALL move the streamed frame to the view centre when the view has rested outside it (0.4 s), in the planner as well as with a route or a quest, keeping the data, the walking graph and the planner's start and finish; and SHALL NOT replace the map or move the start when the player only looks elsewhere. Until the frame has moved, the part of the map outside it is drawn in the ground colour (never black) and, at far zoom, in the LOD look where the LOD layer reaches.
+3. THE SYSTEM SHALL draw every z14 tile within `FOCUS_RADIUS_M` (2.5 km) of a focus point in its LOD look at the far zooms, as for the hero's radius (25.1 to 25.5), keeping the finish and the two newest rested view places. A view place becomes a focus point only when it rests beyond the hero's rings (R minus half the focus radius) and no focus point lies within half the focus radius of it.
+4. THE SYSTEM SHALL load the focus tiles after the tiles the view shows and before the hero's rings, nearest the focus point first, the finish first, in the same lane as the rings (at most 2 downloads at once, 4 in all, the 60 starts a minute, none before the view rests, none offline or while hidden, none on save-data or 2g), and SHALL count them against their own session cap `FOCUS_MAX_TILES` (120) instead of the ring cap of 25.8. The default detail radius R is 10 km (`DEFAULT_LOD_RADIUS_M`), so that every street the hero's rings meet reaches R_far.
+5. WHEN the player taps a street within R_far of the hero in A → B mode and the LOD tiles there are loaded, THE SYSTEM SHALL snap the finish to it (25.7) at every far zoom (0.5 to `FAR_ZOOM`), and the status line SHALL say "Finish: Calle X" ("Meta: Calle X").
+6. THE SYSTEM SHALL keep the cost of the far zooms where requirement 24 puts it: the LOD bitmaps are painted when the page is idle (`requestIdleCallback`, at most 150 ms late; without it, one slice every 8 ms), the scene is redrawn for finished bitmaps at most every 120 ms while a backlog is painted, a street label that cannot lie in the scene window is not laid out, the rail stamps of a line are made only for the segments near the screen (the sleepers keep their places along the line), and the voice phrases that are rendered ahead are synthesized in slices of at most 6 ms. Every golden frame SHALL stay unchanged.
+    - _Requirements: 26.1 to 26.6_
+

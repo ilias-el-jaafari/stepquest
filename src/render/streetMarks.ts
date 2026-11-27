@@ -40,7 +40,9 @@ export function drawRails(ctx: CanvasRenderingContext2D, v: View, rails: readonl
   for (const line of rails) {
     if (!touchesScreen(v, line, margin, 0.5)) continue
     // Stamps off screen are dropped before the five passes below.
-    const stamps = railStamps(toScreen(v, line, 0.5), unit, gap).filter((s) => s.x > -margin && s.y > -margin && s.x < v.w + margin && s.y < v.h + margin)
+    // Segments wholly off screen are walked along, not stamped (the sleepers keep their places along the line).
+    const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.max(a.x, b.x) > -margin && Math.max(a.y, b.y) > -margin && Math.min(a.x, b.x) < v.w + margin && Math.min(a.y, b.y) < v.h + margin
+    const stamps = railStamps(toScreen(v, line, 0.5), unit, gap, near).filter((s) => s.x > -margin && s.y > -margin && s.x < v.w + margin && s.y < v.h + margin)
     ctx.fillStyle = P.railBed
     for (const s of stamps) ctx.fillRect(snap(s.x) - Math.round(bed / 2), snap(s.y) - Math.round(bed / 2), bed, bed)
     ctx.fillStyle = P.railSleeper

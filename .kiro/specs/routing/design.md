@@ -190,3 +190,30 @@ Costs and limits: 9 tiles for a 10,000-step loop (about 4 MB decoded; cached per
 Fixture: `src/vector/__fixtures__/valencia-z14.json` (177 KB, four z14 tiles around a corner, walkable lines within 1 km, rebuilt by `scripts/build-tile-fixture.ts`): 2,858 lines to 179 km, 99.0 % in the main component, 18 components, a loop and an A → B walk across the seam within ±5 % (`walkNet.test.ts`).
 
 Where it lives: `vector/walkNet.ts` (pure network), `world/walkArea.ts` (tile scheduling, ≤ 4 in flight, retries, deadline, progress; Overpass enrichment), `world/enrich.ts` (matching), `LiveWorld.addWalkNet` and `enrich`, `app/useArea.ts` (`ensureWalk`, prefetch), `app/usePlanner.ts`.
+
+## A → B across the city (requirement 14, task 82)
+
+`areaForWalk(start, target, end)` is a box around the midpoint with a radius capped at 2.85 km, so the cap (36 km² for the Overpass size limit, which the tile loader inherits) cuts off the finish of any walk longer than about 5 km: the plan found no street at the far end. For a start-finish distance above 4 km `ensureWalk` now asks `world/corridor.ts`:
+
+- `corridorCells(start, end, target)`: samples the line every 150 m and keeps every 0.01° cell within `corridorHalfM` of a sample (1 km; up to 2 km when the goal is much longer than the direct way, from the ellipse with the two ends as foci), nearest the start first.
+- The cells missing from the graph are loaded with the existing `liveGrow` (`loadWalkRecords`: the z14 tiles that meet them, cache first, 4 at once, two retries, one deadline), now 40 s plus 1.5 s per tile above 16. Their records go into the world on screen with `addWalkNet`, which keeps cells outside the frame (they are never painted, and `evict` only drops graph records, not walking ones).
+- The prefetch of 12.2 runs when the finish is tapped, so the plan button usually finds the corridor loaded. The progress line and Retry are the ones of 12.2 and 12.4. Planning, weights, the ±5 % search and the infeasible answer are unchanged.
+
+### Measured (28 November 2026, this sandbox, real OpenFreeMap tiles, planet `20261122_124456_pt`)
+
+València 39.4697, -0.3774 to a finish 9 km to the north-west (39.527, -0.451; straight 8,971 m; goal 14,353 steps), a throwaway probe (not kept), 4 downloads at once:
+
+| | |
+| --- | --- |
+| Corridor | 40 cells, 25 z14 tiles (the box around the two points would be about 70 cells) |
+| Wire | 5.84 MB |
+| Download, decode, join into one network, cut into cells | 1.6 to 1.8 s |
+| Adding the records and building the graph | 1.3 s (main thread; about 4 times that on a phone) |
+| Plan (A*, safe weights, day) | 45 ms: 11,045 m for a 10,765 m goal (2.6 %) |
+
+Tile cache: 25 tiles is under half of `MAX_TILE_ENTRIES` (60), so a corridor does not push out the tiles the map draws from.
+
+### Testing
+
+`world/corridor.test.ts` (the tile set of a 9 km walk, every point near the line is in a cell, any bearing, a synthetic city of 25 tiles planned within ±5 % across a world whose frame holds only the start, and no route when the middle is missing); `AppPlanLive.test.tsx` "A → B to a street 8.5 km away" (tiles asked for along the whole line and none twice, "Too short" with the nearest feasible number, then a route within 5 %; it times out on the code before this task).
+

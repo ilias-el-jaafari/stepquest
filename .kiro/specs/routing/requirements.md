@@ -130,3 +130,18 @@ Related: [map-rendering](../map-rendering/requirements.md) requirement 23, [safe
 3. THE SYSTEM SHALL keep the safety and night weights as they are: a way from tiles has no `safety` flags until enrichment, which is the same as an Overpass way without `lit`, `sidewalk` or `service` tags.
 4. THE SYSTEM SHALL use Overpass only to enrich that graph (requirement 23.5), never to decide whether planning can start.
 5. THE SYSTEM SHALL plan on the graph of the cells that cover the walk (`areaForWalk` for a loop, the start-to-finish box for A → B); cells already in the graph (the bundled extract included) are not loaded again.
+
+### Requirement 14 (task 82): An A → B walk across the city
+
+**User Story:** As a walker who taps a street 8 to 10 km away as the finish and presses "Plan quest", I want the app to load the streets along the way and plan across them, so that a far finish is as plannable as a near one.
+
+Related: requirements 12 and 13 (the answer, the walking graph from tiles), [map-rendering](../map-rendering/requirements.md) requirement 26 (the far pick), [safety-night](../safety-night/requirements.md) (weights unchanged), `.kiro/steering/osm-etiquette.md`.
+
+#### Acceptance Criteria
+
+1. WHEN the straight distance from start to finish is more than `CORRIDOR_FROM_M` (4 km), THE SYSTEM SHALL load the walking graph of the cells along the straight line between them (the corridor: every cell within half the corridor width of the line, 1 km, up to 2 km for a goal much longer than the direct way) instead of the box of `areaForWalk`, whose 36 km² cap cannot hold such a walk; a walk of 4 km or less keeps `areaForWalk`.
+2. THE SYSTEM SHALL load only the cells of the corridor that are not in the graph yet, from the z14 tiles that meet them (cache first, at most 4 at once, two retries, as in 13.1 and `osm-etiquette.md`), into the world on screen, wherever its frame is; the walking records of cells outside the frame are kept (they are never painted) and are not dropped when the frame moves.
+3. THE SYSTEM SHALL give the load of a corridor 40 s plus 1.5 s for every tile above 16, show the progress "Loading streets… n of m" and, on failure or timeout, the Retry message of 12.4; the load starts when the finish is tapped (the prefetch of 12.2), so the plan button usually finds the streets.
+4. THE SYSTEM SHALL plan on that graph exactly as before (same A* weights, same ±5 % search, same infeasible answer with the nearest feasible number of steps), and SHALL keep the safety and night weights unchanged: a way from tiles has no safety flags until enrichment, which uses Overpass cells near the loaded cells only.
+    - _Requirements: 14.1 to 14.4_
+

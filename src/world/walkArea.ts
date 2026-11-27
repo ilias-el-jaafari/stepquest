@@ -17,6 +17,9 @@ import { sliceToCells } from './slice.ts'
 
 /** The whole load ends after this long, whatever the tiles do (requirement 23.2). */
 export const WALK_DEADLINE_MS = 40_000
+/** A corridor of more than this many tiles gets this much more time for each extra tile (routing requirement 14). */
+export const WALK_DEADLINE_FREE_TILES = 16
+export const WALK_DEADLINE_PER_TILE_MS = 1_500
 /** A tile that failed is asked again this many times, after `RETRY_MS[k]` (±25 %). */
 export const TILE_RETRIES = 2
 export const RETRY_MS = [1_000, 2_000]
@@ -77,7 +80,7 @@ export async function loadWalkRecords(cells: readonly CellId[], tiles: WalkTileS
   const deadline = setTimeout(() => {
     timedOut = true
     controller.abort()
-  }, opts.deadlineMs ?? WALK_DEADLINE_MS)
+  }, opts.deadlineMs ?? WALK_DEADLINE_MS + Math.max(0, total - WALK_DEADLINE_FREE_TILES) * WALK_DEADLINE_PER_TILE_MS)
   const onAbort = () => controller.abort()
   opts.signal?.addEventListener('abort', onAbort)
   if (opts.signal?.aborted) controller.abort()

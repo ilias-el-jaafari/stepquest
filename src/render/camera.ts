@@ -12,6 +12,9 @@ export const FAR_ZOOM = 1.5
 
 export type Pt = { x: number; y: number }
 
+/** A rectangle in tile units the camera centre may not leave. */
+export type PanLimit = { x0: number; y0: number; x1: number; y1: number }
+
 /** The next ladder level above (`1`) or below (`-1`) `zoom`, which may lie between two levels. Stays at the ends. */
 export function nextZoom(zoom: number, direction: 1 | -1): number {
   const eps = 1e-9
@@ -34,6 +37,11 @@ export class Camera {
   zoom = 16
   /** Lowest zoom the view may reach (0: no floor). The quest raises it so the view stays coverable. */
   minZoom = 0
+  /**
+   * The box the camera centre must stay in. A streamed world sets it around the hero (map-rendering requirement 26.1), so the camera
+   * is not tied to the streamed frame, which follows the view; without one the camera may go half a screen past the loaded area.
+   */
+  limit: PanLimit | undefined = undefined
   /** Screen size in CSS px (set by the renderer from the canvas). */
   width = 0
   height = 0
@@ -61,8 +69,14 @@ export class Camera {
     return { x: this.width / 2 + (tx - this.x) * this.zoom, y: this.height / 2 + (ty - this.y) * this.zoom }
   }
 
-  /** The camera may go half a screen past the loaded area, so the map can offer loading the next one. */
+  /** The camera may go half a screen past the loaded area, or anywhere in `limit` when one is set. */
   clamp(): void {
+    const l = this.limit
+    if (l) {
+      this.x = Math.max(l.x0, Math.min(l.x1, this.x))
+      this.y = Math.max(l.y0, Math.min(l.y1, this.y))
+      return
+    }
     const mx = this.width / 2 / this.zoom
     const my = this.height / 2 / this.zoom
     this.x = Math.max(-mx, Math.min(this.cols + mx, this.x))

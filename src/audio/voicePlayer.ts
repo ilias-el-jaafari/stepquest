@@ -3,7 +3,7 @@ import { fadeTo } from './automation.ts'
 import { duckMusic, release, type Graph } from './graph.ts'
 import { bubbleDurationMs, type SpokenPhrase } from './speechBubble.ts'
 import { limitSpokenText } from './voice/text.ts'
-import { renderText } from './voice/synth.ts'
+import { renderText, renderTextSliced } from './voice/synth.ts'
 import { monotonicNow, VoiceQueue, type QueuedPhrase } from './voiceQueue.ts'
 
 /**
@@ -24,6 +24,8 @@ export const VOICE_RATE = 22050
 export const CACHE_BYTES = 8 * 1024 * 1024
 /** A source that has not reported its end this long after it should have is given up. */
 export const WATCHDOG_MS = 1500
+/** A pre-rendered phrase works at most this long before it lets the page run (requirement 7e: no single task above this on the main thread). */
+export const RENDER_SLICE_MS = 6
 /** Fade-out of a phrase that is cut in or muted. */
 export const FADE_S = 0.015
 
@@ -48,9 +50,11 @@ export class VoicePlayer {
   private cacheBytes = 0
   private warmList: { text: string; locale: Locale }[] = []
   private warmTimer: ReturnType<typeof setTimeout> | undefined
+  /** The phrase being rendered in slices, with the generator that holds its state. */
+  private warming: { key: string; run: Generator<void, Float32Array, void> } | undefined
   private readonly deps: VoiceDeps
   /** Counters for tests and tuning. */
-  readonly stats = { rendered: 0, failures: 0, watchdog: 0 }
+  readonly stats = { rendered: 0, failures: 0, watchdog: 0, slices: 0 }
 
   constructor(deps: VoiceDeps) {
     this.deps = deps
@@ -116,6 +120,7 @@ export class VoicePlayer {
     clearTimeout(this.warmTimer)
     this.warmTimer = undefined
     this.warmList = []
+    this.warming = undefined
   }
 
   // ---- playing ----
@@ -215,6 +220,11 @@ export class VoicePlayer {
     }
     samples = renderText(text, locale, { sampleRate: VOICE_RATE })
     this.stats.rendered++
+    this.remember(key, samples)
+    return samples
+  }
+
+  private remember(key: string, samples: Float32Array): void {
     this.cache.set(key, samples)
     this.cacheBytes += samples.byteLength
     for (const [k, v] of this.cache) {
@@ -222,7 +232,6 @@ export class VoicePlayer {
       this.cache.delete(k)
       this.cacheBytes -= v.byteLength
     }
-    return samples
   }
 
   private scheduleWarm(delay: number): void {
@@ -234,12 +243,33 @@ export class VoicePlayer {
         this.scheduleWarm(250)
         return
       }
-      const next = this.warmList.shift()
+      const next = this.warmList[0]
       if (next) {
+        const key = `${next.locale}|${next.text}`
+        if (this.warming && this.warming.key !== key) this.warming = undefined // the list was trimmed under it
+        this.warming ??= { key, run: renderTextSliced(next.text, next.locale, { sampleRate: VOICE_RATE }) }
         try {
-          this.samplesFor(next.text, next.locale)
+          // A few milliseconds of synthesis, then the page runs again; the phrase is finished over the next slots.
+          const t0 = this.now()
+          for (;;) {
+            const step = this.warming.run.next()
+            if (step.done) {
+              this.warmList.shift()
+              this.warming = undefined
+              // The phrase may have been spoken (and so rendered) meanwhile: keep that one.
+              if (!this.cache.has(key)) {
+                this.stats.rendered++
+                this.remember(key, step.value)
+              }
+              break
+            }
+            if (this.now() - t0 >= RENDER_SLICE_MS) break
+          }
+          this.stats.slices++
         } catch {
           this.stats.failures++
+          this.warmList.shift()
+          this.warming = undefined
         }
       }
       this.scheduleWarm(30)

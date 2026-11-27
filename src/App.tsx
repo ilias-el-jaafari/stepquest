@@ -61,7 +61,7 @@ export default function App() {
   const runner = useQuestRunner(reroute, { persist: !demo })
   const questActive = !!runner.quest
   const keep = runner.quest?.route.points ?? (state.result?.ok ? state.result.route.points : undefined)
-  const { world, live, ensureWalk, locateMe, loadLiveAround, loadView, backToDemo, retryBoot, onViewBox, load, lod } = useArea({ state, latest, dispatch, beginQuest: runner.begin, questActive, keep, online, demo, hero: runner.quest?.player ?? state.start })
+  const { world, live, ensureWalk, locateMe, loadLiveAround, loadView, backToDemo, retryBoot, onViewBox, load, lod, roam } = useArea({ state, latest, dispatch, beginQuest: runner.begin, questActive, keep, online, demo, hero: runner.quest?.player ?? state.start })
   const planner = usePlanner({
     world,
     ensureWalk: demo ? undefined : ensureWalk,
@@ -181,6 +181,7 @@ export default function App() {
         map={world.live ?? world.grid}
         onViewBox={onViewBox}
         lod={lod.layer}
+        roam={roam}
         load={load}
         quest={runner.quest}
         pickup={runner.pickup}
@@ -222,6 +223,7 @@ export default function App() {
                 focusKey={focusKey}
                 onTap={onTap}
                 lod={lod.layer}
+                roam={roam}
                 home={start}
                 avoided={avoidedLines}
                 onLocate={onLocate}

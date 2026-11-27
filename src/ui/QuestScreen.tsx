@@ -28,6 +28,8 @@ type Props = {
   onViewBox?: (box: BBox, centre: LatLon, zoom?: number) => void
   /** The level-of-detail layer around the hero (requirement 25); absent when it is off. */
   lod?: LodLayer
+  /** The camera may roam far from the hero while the map follows the view (map-rendering requirement 26.1). */
+  roam?: boolean
   /** What the map shows now (read-only state on the map element). */
   load?: MapLoad
   quest: QuestState
@@ -72,7 +74,7 @@ function seedOf(id: string): number {
 /** The HUD sits 10 px above the screen edge; the stack's own bottom margin is 8 px, plus a little air. */
 const HUD_GAP = 6
 
-export function QuestScreen({ map, onViewBox, lod, load, quest, pickup, error, wakeActive, resumed, walker, onEnd, onUseSim, demo = false }: Props) {
+export function QuestScreen({ map, onViewBox, lod, roam, load, quest, pickup, error, wakeActive, resumed, walker, onEnd, onUseSim, demo = false }: Props) {
   const { t, locale } = useI18n()
   const { engine, status, settings: sound, phrase } = useAudio()
   const [now, setNow] = useState(() => Date.now())
@@ -233,6 +235,7 @@ export function QuestScreen({ map, onViewBox, lod, load, quest, pickup, error, w
                 map={map}
                 onViewBox={onViewBox}
                 lod={lod}
+                roam={roam}
                 load={load}
                 route={quest.route}
                 markers={markers}
