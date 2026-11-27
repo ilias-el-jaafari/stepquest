@@ -856,3 +856,91 @@ Inclusive time of `render` in the zoom phase: 6.5 s to 1.65 s; `paintChunk` 5.1 
 ### Testing
 
 `sceneCache.test.ts` (no scene draw for 60 frames of a walking hero, pan inside and beyond the margin, zoom and clock redraw, route/walker/bubble/pickup do not, ratio cap on a 3× phone, camera glide), `walkerMotion.test.ts` (fast-check: per-frame step 0.55 to 1.6 times speed × dt for fix gaps of 0.2 to 2.5 s, latency up to 40 ms and three frame rates; frame-rate independence; no standing at ×1; settle; jump; turn), `camera.test.ts` (ratio cap), `AppShell.test.tsx` (tab switch keeps the canvas element and size; the stylesheet rule), `AppDemo.test.tsx` (no badge), `atlas`/chunk goldens (pixel copy equals draw).
+
+## Full detail around the hero (requirement 25, task 80)
+
+Field report (preview build, after planning an A → B walk): large dark areas with only lamp dots, and only part of the view in detail (`stepquest-submission/shots/plan-prev-ab-after.png`). A 10,000-step walk reaches 8 to 10 km, but at zoom 1.5 and under the map used the z13 coarse layer everywhere, and the coarse cells that had not arrived were ground with night lamp dots on it. Street names were not on the map at all, and a tap placed the finish on the raw point.
+
+### Why not a bigger raster frame
+
+The streamed frame is 9 × 9 cells (about 10 km square, 3.1 M tiles, 15.6 MB of arrays plus 12 MB of town overview). A radius of 9 km is 17 × 17 cells, 14 M tiles: about 70 MB of arrays plus 56 MB of overview, on a phone, to draw one pixel per tile. The tile art is not needed there. So the far look is a **vector LOD layer** beside the frame: it draws from z14 data directly, in its own bitmaps, and does not depend on the frame (the frame still follows the view as before).
+
+### Architecture
+
+```
+src/lod/
+  config.ts    DEFAULT_LOD_RADIUS_M (9 km), lodRadiusFrom(search): ?lod=<km>, clamped 2 to 15 km
+  select.ts    lodLook(distanceM, zoom, R): 'art' | 'blocks' | 'coarse'; bitmapLevel(devPx); tilesWithin(hero, R): ring order; labelMinZoom(class)
+  tile.ts      LodTile (typed arrays), tileToLod(mvt bytes, tile), validLod, byteSize; runs in the tile worker
+  paint.ts     LodPainter: paints a LodTile into a canvas of 256 / 512 / 1024 px in slices of at most LOD_SLICE_MS
+  store.ts     LodStore: resident LodTiles, state per tile (pending, ready, failed), bitmaps per tile and level (LRU by bytes), paint queue
+  layer.ts     LodLayer: draws bitmaps into the scene (placeholder, other-level stand-in), draws labels, snap, notifies the renderer
+  labels.ts    candidates per tile, layout in screen px (priority, no overlap, per-name spacing), cached with the scene
+  snap.ts      nearest walkable street point and its name
+  prefetch.ts  LodPrefetcher: view first, then rings from the hero; caps; connection policy
+src/app/useLod.ts   builds store, layer and prefetcher around the tile client; hero and view in, onTap snap out
+```
+
+**Look by distance (25.1).** `lodLook` is a pure function. Zoom above `FAR_ZOOM`: `art` (the chunks and the town overview, as before). At or below it: `blocks` when the tile's nearest point is within R of the hero, else `coarse`. The far zoom of the scene draws, in this order: ground, the far overview of the frame (coarse cells and whatever raster is there), the loading stipple and frontier fog, then the LOD bitmaps of the `blocks` tiles over them (each bitmap is opaque over its whole tile, so the stipple and the fog never show inside a loaded tile), then rails, the day tint, the night lights and the labels. A `blocks` tile that is not ready yet gets the placeholder: the ground colour of the overview (`P.overview.ground`) filled over its rectangle before the tint, so day and night treat it as loaded empty ground and it never goes black.
+
+**Data (25.2, 25.9).** A LOD tile is made from the raw MVT in the worker (no `OsmData` in between, which would double the work and keep 70 000 building points): `transportation` lines by class with the flags that decide walkability (`foot=no`, `access`, ramps), `transportation_name` lines with their text and class, `building` rings simplified with Douglas-Peucker at 3 m and dropped under 12 m², `landcover`, `park`, `landuse` and `water` rings simplified at 4 m, `waterway` lines. Coordinates stay in tile units (Int16, 0 to 4096 plus the tile's 64-unit buffer), so a street cut at the seam is drawn by both tiles and meets exactly. It is saved in IndexedDB as structured-clone typed arrays (`lod<codec>:z/x/y`) next to the full tiles; its size is measured below.
+
+**Bitmaps (25.4, 25.5).** One canvas per tile and level, `bitmapLevel(devPx)` picks 256, 384, 512, 768 or 1024 px (a z14 tile is 378 tiles of 5 m; at zoom 0.5 on a 2× phone it is 378 device px, at 1.5 it is 1134). A bitmap is painted by `LodPainter` in steps: areas by 80 polygons, buildings by 120 footprints in one path each, streets by class in batches of 150 lines (casings, then fills). After each step the clock is read and the next step starts only if the slowest recent step would still end inside `LOD_SLICE_MS`, so a task ends inside the budget, not one step after it. The store keeps painted bitmaps in an LRU bounded by bytes (48 MB: 12 tiles at 1024 px, 48 at 512 px), draws another level of the same tile scaled (smoothed, so thin streets survive) while the right one is not ready, and tells the renderer when a bitmap is done so the scene is drawn again (one dirty mark per bitmap, not per slice).
+
+**Street widths (25.2).** Device px at level 256, scaled by level/256: motorway 6, trunk 5, primary 5, secondary 4, tertiary 3, minor 2, service 1, path 1, track 1; casing 1 px wider on each side from tertiary up.
+
+**Labels (25.6).** Each tile yields candidates once (name, class rank, polyline in tile units, length). A layout takes the candidates of the tiles in the scene window and the zoom, sorts by rank, then by length, and places each label (text width = characters × 8 px × scale, pixel font Press Start 2P, `FONT_PX` 8 CSS px) at the point of its polyline where the street is flattest (horizontal) or, when the street is steeper than 45° everywhere, rotated 90°. A label must fit inside the visible length of its street, must not overlap a placed one (2 CSS px gap, spatial hash), and must be 160 CSS px away from the same name. Drawn with a 1 px light halo so it reads over any ground; at night the halo and text colours are the sign colours (no tint). The layout is part of the cached scene, so it costs nothing in a frame that only moves the walker.
+
+**Tap (25.7).** `snapStreet(tiles, point, maxM)` over the LOD tiles near the tap: for each walkable line (and each named line) it finds the nearest point (equirectangular metres around the tap), takes the nearest; a named line within 12 m of that distance wins. The result `{ point, name?, distanceM }` replaces the tapped point in the reducer for the A → B finish (`point` action with `street`); a status line over the map says "Finish: Calle X". The existing planner then snaps the point to the walking graph as before.
+
+**Prefetch (25.8).** `LodPrefetcher.setView(box, centre, zoom, hero)` plans the list: view tiles by distance to the view centre, then `tilesWithin(hero, R)` by distance to the hero. Tiles already known (resident, cached) are skipped; cache reads are local and run first, at once. Requests start only after `SETTLE_MS` of rest and go through the shared `VectorTileClient` (which refuses a fifth slot with `busy`; the prefetcher waits 250 ms then). View tiles use up to 4 slots; ring tiles at most 2, so a pan never waits for the rings. A start log keeps the ring lane under 60 per minute. `connectionPolicy({saveData, effectiveType})` gives `{ rings, parallel, radiusM }`: save-data and `2g` stop the rings, `3g` runs one at a time up to 5 km, the rest runs as configured. `PREFETCH_MAX_TILES` and `PREFETCH_MAX_BYTES` end the rings for the session. A failed tile waits the streamer's back-off (2 s doubling to 60 s, ±25 %), a 429 pauses the lane for 30 s.
+
+**Coarse switched off where LOD covers (25.10).** `Streamer` takes `lodCovers(cell)`. At far zoom it does not ask for coarse tiles of a covered cell, and the cell does not count as lacking unless its LOD tiles are missing (`ready` is then `loading`). A failed LOD tile makes `lodCovers` false for the cells it meets, so the coarse tile is asked for.
+
+### Data volume (honest numbers)
+
+A z14 tile is 1.89 km wide at València (latitude 39.5°) and 1.22 km at 60°. The circle of 9 km radius meets about 100 tiles at València and about 190 at 60° north: not 150 to 250 everywhere. Raw tiles over dense city centres are 230 to 300 KB on the wire (gzip), under 50 KB over the outskirts and countryside; the browser's HTTP cache keeps them. Measured numbers are in "Results" below.
+
+### Alternatives rejected
+
+| Option | Why not |
+| --- | --- |
+| Grow the raster frame to R | 70 MB of arrays and 56 MB of overview on a phone for 1 px per tile (above). |
+| Draw the LOD map live with `Path2D` every frame | 20 000 building vertices per tile, several tiles, every pan frame: breaks requirement 24.1. Bitmaps are built once. |
+| Convert tiles to `OsmData` and rasterize | The raster is what is too big; the conversion keeps 70 000 points per tile. |
+| Labels from the Overpass names | Overpass is at capacity at peak hours (requirement 21); `transportation_name` ships with the tile. |
+| Rotate labels along curves | Rotated pixel fonts at odd angles are unreadable; horizontal or 90° only. |
+| Prefetch the whole R at once | 4 slots and `SETTLE_MS` keep it polite; rings are capped and paused on save-data. |
+
+### Failure modes
+
+| Failure | Behaviour |
+| --- | --- |
+| LOD tile fails | placeholder ground, back-off, coarse tile for its cells (25.10), retry |
+| IndexedDB full or stuck | a write that fails is "not cached"; a read stuck 2 s is a miss |
+| Offline | cached LOD tiles draw; nothing is requested |
+| Tile without data (204, 404) | an empty LOD tile: ground only |
+| Name with glyphs the pixel font lacks | the browser's fallback font draws it; the width estimate may be off by a few px (the gap absorbs it) |
+| Many tiles ready at once | one bitmap per task, the scene is drawn again at most once per frame |
+
+### Testing
+
+`lod/select.test.ts` (look by distance, levels, tiles within R in ring order and count), `lod/tile.test.ts` (classes, names, simplification, walkable flag, seam, size), `lod/paint.test.ts` (slices end within the budget on a heavy tile, every class draws), `lod/store.test.ts` (LRU by bytes, stand-in level, no rebuild on zoom within a level), `lod/labels.test.ts` (no overlap, gap, same-name spacing, fit, rotation, cap, determinism; fast-check), `lod/snap.test.ts` (nearest, named preferred, walkable only, none in reach), `lod/prefetch.test.ts` (view before rings, ring order, at most 4 in flight and 2 for rings, save-data, 3g, caps, offline, hidden), `lod/coverage.test.ts` (every pixel of a far view within R is not the empty ground after the tiles are in, placeholder before), `world/streamer.test.ts` (coarse skipped where LOD covers, asked again after a failure), `app/appState.test.ts` (finish with a street name).
+
+### Results (task 80, 27 November 2026, this sandbox, planet `20261122_124456_pt`)
+
+Real z14 tiles of València through `tileToLod` (Node):
+
+| Tile | Wire (gzip) | Decoded | LOD tile | Convert | Streets / names / buildings |
+| --- | --- | --- | --- | --- | --- |
+| Benicalap | 227 KB | 362 KB | 186 KB | 35 to 45 ms | 1500 / 469 / 4485 |
+| Centre (Ayuntamiento) | 574 KB | 903 KB | 438 KB | 50 ms | 3023 / 858 / 13 280 |
+| Ruzafa | 422 KB | 687 KB | 300 KB | 25 ms | 2258 / 496 / 8626 |
+| Paterna (edge) | 72 KB | 112 KB | 73 KB | 5 ms | 601 / 342 / 1614 |
+| Albufera (rural) | 3 KB | 4 KB | 1 KB | 0 ms | 11 / 0 / 2 |
+
+Bitmap painting on a real canvas (headless Chrome, CPU throttled 4×, real tiles above): 6 to 31 ms per tile in 1 to 5 runs, worst run 7.5 to 8.5 ms (`LOD_SLICE_MS` 8). With batches of 300 to 500 shapes the worst run had been 10 to 17 ms, hence 80, 120 and 150. Label layout over a window of 9 tiles: 0.5 to 2.4 ms.
+
+Cold run of the built app (390 × 844 at ratio 2, Benicalap as hero, 9 km): 92 tile requests for the whole radius (60 in the first minute, the rest after, because of the ring cap of 60 starts a minute), at most 2 at once while the rings ran (view tiles first, up to 4), 8 MB on the wire, 6.3 MB in browser storage afterwards. The circle of 9 km meets about 100 tiles at València, so the rings are quick to fill but the bytes depend on the city: the centre tiles are 400 to 570 KB each. Night frame at the furthest zoom: no flat or dark area, streets by class, blocks, parks, water, names, lamp dots on top. One long task of about 50 ms during the whole run (a scene redraw), none from painting. The performance numbers of "Frame performance" are unchanged in code paths without a LOD layer (every golden and `sceneCache` test is unchanged); the layer draws inside the cached scene, so a frame that only moves the walker is still one blit.
+
+Known limits: a street label needs a stretch of street as long as its text (8 CSS px per character), so at 0.5 to 1.5 mainly long streets are named and more names appear as the player zooms in; the radius is measured from the hero, and the camera still cannot leave the streamed frame (about 5 km from its centre); the full-tile z14 art (houses, gardens) is still drawn only above `FAR_ZOOM`.

@@ -52,6 +52,8 @@ export type AppState = {
   plannerOpen: boolean
   pickingAvoid: boolean
   pickNote: { ok: boolean; name?: string } | undefined
+  /** The street the A → B finish was snapped to (requirement 25.7); valid while `end` is still `at`. */
+  finishNote: { name?: string; at: LatLon } | undefined
   isDemo: boolean
   liveBox: BBox | undefined
   askHere: boolean
@@ -73,7 +75,7 @@ export type AppAction =
   | { type: 'mode'; mode: RouteMode }
   | { type: 'avoid'; list: readonly string[] }
   | { type: 'place'; which: 'start' | 'end' }
-  | { type: 'point'; p: LatLon }
+  | { type: 'point'; p: LatLon; street?: { name?: string } }
   | { type: 'pickStreet'; name: string | undefined }
   | { type: 'pickMode'; on: boolean }
   | { type: 'pickCancel' }
@@ -123,6 +125,7 @@ export function initialAppState(): AppState {
     plannerOpen: false,
     pickingAvoid: false,
     pickNote: undefined,
+    finishNote: undefined,
     isDemo: true,
     liveBox: undefined,
     askHere: false,
@@ -178,7 +181,7 @@ export function appReducer(s: AppState, a: AppAction): AppState {
     case 'place':
       return s.placing === a.which ? s : { ...s, placing: a.which }
     case 'point':
-      return clearPlan(s.settings.mode === 'oneway' && s.placing === 'end' ? { ...s, end: a.p } : { ...s, start: a.p })
+      return clearPlan(s.settings.mode === 'oneway' && s.placing === 'end' ? { ...s, end: a.p, finishNote: a.street ? { ...a.street, at: a.p } : undefined } : { ...s, start: a.p, finishNote: undefined })
     case 'pickStreet': {
       if (!a.name) return { ...s, pickNote: { ok: false } }
       return clearPlan({ ...s, pickNote: { ok: true, name: a.name }, pickingAvoid: false, tab: 'bag', avoid: addAvoid(s.avoid, a.name) })

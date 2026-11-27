@@ -73,6 +73,8 @@ export const en = {
   'safety.pick': 'Pick on map',
   'safety.picking': 'Tap a street on the map…',
   'safety.cancel': 'Cancel',
+  'map.finish': 'Finish: {name}',
+  'map.finishStreet': 'Finish: street',
   'safety.noStreet': 'No named street there. Tap right on a street.',
   'safety.added': 'Added {name}.',
   'safety.remove': 'Stop avoiding {name}',

@@ -22,6 +22,7 @@ import {
   UNIT_WATCHDOG_MS,
   wantsDetail,
   type GraphClient,
+  type LodCoverage,
   type MapLoad,
 } from './streamer.ts'
 import { makeRecord } from './testing.ts'
@@ -366,6 +367,81 @@ describe('readiness counts whole cells only (requirement 21.14, field check of f
     await settle(5_000)
     expect(roadAt()).toBe(before)
     expect(world.world().data.ways).toHaveLength(1)
+    s.dispose()
+  })
+})
+
+/** A fake LOD layer whose coverage the test sets. */
+function fakeLod(initial: 'no' | 'loading' | 'ready') {
+  let state = initial
+  const listeners = new Set<() => void>()
+  const lod: LodCoverage = {
+    coverage: () => state,
+    subscribe: (fn) => {
+      listeners.add(fn)
+      return () => void listeners.delete(fn)
+    },
+  }
+  return {
+    lod,
+    set: (s: typeof state) => {
+      state = s
+      for (const fn of listeners) fn()
+    },
+  }
+}
+
+describe('streamer with the LOD layer (requirement 25.10)', () => {
+  it('asks for no coarse tile for cells the LOD layer covers at far zoom, and is ready when its tiles are in', async () => {
+    const srv = tileServer()
+    const world = new LiveWorld(C)
+    const loads: MapLoad[] = []
+    const f = fakeLod('ready')
+    const s = new Streamer({ tiles: srv.source, world, online: () => true, lod: f.lod, onLoad: (l) => loads.push(l) })
+    s.setView(shrink(around(1)), centreOf(C), FAR)
+    await settle(30_000)
+    expect(srv.log).toHaveLength(0)
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
+  })
+
+  it('while the LOD tiles are loading the view is loading, not stippled, and no coarse tile is asked for; it is ready when they arrive', async () => {
+    const srv = tileServer()
+    const world = new LiveWorld(C)
+    const f = fakeLod('loading')
+    const s = new Streamer({ tiles: srv.source, world, online: () => true, lod: f.lod })
+    s.setView(shrink(around(1)), centreOf(C), FAR)
+    await settle(30_000)
+    expect(srv.log).toHaveLength(0)
+    expect(s.status().ready).toBe('loading')
+    expect(s.status().pending).toBeGreaterThan(0)
+    expect(world.loading()).toHaveLength(0)
+    f.set('ready')
+    expect(s.status()).toEqual({ ready: 'full', pending: 0 })
+  })
+
+  it('cells whose LOD tile failed go back to the coarse layer, also after the view has settled', async () => {
+    const srv = tileServer()
+    const world = new LiveWorld(C)
+    const f = fakeLod('loading')
+    const s = new Streamer({ tiles: srv.source, world, online: () => true, lod: f.lod })
+    s.setView(shrink(around(1)), centreOf(C), FAR)
+    await settle(30_000)
+    expect(srv.log).toHaveLength(0)
+    f.set('no')
+    await settle(30_000)
+    expect(srv.log.length).toBeGreaterThan(0)
+    expect(srv.log.every((l) => l.t.z === COARSE_Z)).toBe(true)
+    expect(s.status().ready).not.toBe('loading')
+  })
+
+  it('above FAR_ZOOM the LOD layer is ignored: the tile art needs its detail tiles as before', async () => {
+    const srv = tileServer()
+    const world = new LiveWorld(C)
+    const f = fakeLod('ready')
+    const s = new Streamer({ tiles: srv.source, world, online: () => true, lod: f.lod })
+    s.setView(shrink(around(1)), centreOf(C), DETAIL)
+    await settle(30_000)
+    expect(srv.log.some((l) => l.t.z === DETAIL_Z)).toBe(true)
     s.dispose()
   })
 })

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryCache } from '../osm/cache.ts'
-import { MAX_TILES_IN_FLIGHT, TILE_DEADLINE_MS, TILEJSON_TTL_MS, TILEJSON_URL, tileCacheKey, VectorTileClient } from './client.ts'
+import { lodCacheKey, MAX_TILES_IN_FLIGHT, TILE_DEADLINE_MS, TILEJSON_TTL_MS, TILEJSON_URL, tileCacheKey, VectorTileClient } from './client.ts'
 import { MAX_TILE_CONCURRENT } from '../world/streamer.ts'
 import { encodeMvt } from './testing.ts'
 
@@ -107,5 +107,81 @@ describe('vector tile client (requirements 21.2 and 21.8)', () => {
     await vi.advanceTimersByTimeAsync(3000)
     expect((await run).ways).toHaveLength(1)
     expect(calls).toHaveLength(2)
+  })
+})
+
+describe('LOD tiles from the same client (requirement 25.9)', () => {
+  const lodBody = (): ArrayBuffer =>
+    encodeMvt([
+      { name: 'transportation', features: [{ type: 2, props: { class: 'minor' }, geometry: [[[10, 10], [500, 10]]] }] },
+      { name: 'transportation_name', features: [{ type: 2, props: { class: 'minor', name: 'Calle Mayor' }, geometry: [[[10, 10], [500, 10]]] }] },
+    ]).slice().buffer as ArrayBuffer
+
+  it('downloads the raw tile once, converts it, keeps the street name, and counts the bytes received', async () => {
+    const { calls, fetch } = net({ tile: async () => new Response(lodBody(), { status: 200 }) })
+    const c = new VectorTileClient({ cache: new MemoryCache(), fetch })
+    const t = await c.loadLod(T)
+    expect(t.names.text).toEqual(['Calle Mayor'])
+    expect(t.streets.kind.length).toBe(1)
+    expect(calls).toEqual([TILEJSON_URL, 'https://tiles.example/planet/20261122_124456_pt/14/8174/6232.pbf'])
+    expect(c.lodDownloads).toBe(1)
+    expect(c.lodWireBytes).toBe(lodBody().byteLength)
+  })
+
+  it('saves it in IndexedDB under its own key and serves it to a new session with no request', async () => {
+    const cache = new MemoryCache()
+    const first = net({ tile: async () => new Response(lodBody(), { status: 200 }) })
+    const c1 = new VectorTileClient({ cache, fetch: first.fetch })
+    await c1.loadLod(T)
+    await c1.settled()
+    expect(await cache.get(lodCacheKey(T))).toBeDefined()
+    expect(await cache.get(tileCacheKey(T))).toBeUndefined()
+    const second = net()
+    const c2 = new VectorTileClient({ cache, fetch: second.fetch })
+    expect((await c2.cachedLod(T))?.names.text).toEqual(['Calle Mayor'])
+    expect((await c2.loadLod(T)).names.text).toEqual(['Calle Mayor'])
+    expect(second.calls).toEqual([])
+    expect(c2.lodDownloads).toBe(0)
+  })
+
+  it('treats a damaged or expired entry as a miss and deletes the damaged one', async () => {
+    const cache = new MemoryCache()
+    await cache.set(lodCacheKey(T), { savedAt: Date.now(), data: { nonsense: true } as never })
+    const c = new VectorTileClient({ cache, fetch: net({ tile: async () => new Response(lodBody(), { status: 200 }) }).fetch })
+    expect(await c.cachedLod(T)).toBeUndefined()
+    expect(await cache.get(lodCacheKey(T))).toBeUndefined()
+    await cache.set(lodCacheKey(T), { savedAt: Date.now() - 8 * 24 * 3600 * 1000, data: (await c.loadLod(T)) as never })
+    expect(await c.cachedLod(T)).toBeUndefined()
+  })
+
+  it('shares the four slots with the other tiles: a fifth download of either kind is refused as busy', async () => {
+    const releases: (() => void)[] = []
+    const c = new VectorTileClient({ cache: new MemoryCache(), fetch: net({ tile: () => new Promise((r) => releases.push(() => r(new Response(lodBody(), { status: 200 })))) }).fetch })
+    await c.template()
+    const running = [
+      c.loadLod({ ...T, x: T.x }),
+      c.loadTile({ ...T, x: T.x + 1 }),
+      c.loadLod({ ...T, x: T.x + 2 }),
+      c.loadTile({ ...T, x: T.x + 3 }),
+    ]
+    await vi.waitFor(() => expect(releases).toHaveLength(4))
+    expect(c.busy).toBe(true)
+    await expect(c.loadLod({ ...T, x: T.x + 9 })).rejects.toMatchObject({ code: 'busy' })
+    releases.forEach((r) => r())
+    await Promise.all(running)
+    expect(c.running).toBe(0)
+  })
+
+  it('reads 404 as an empty tile, 429 as rateLimited, and frees its slot at the deadline', async () => {
+    const empty = new VectorTileClient({ cache: new MemoryCache(), fetch: net({ tile: async () => new Response(null, { status: 404 }) }).fetch })
+    expect((await empty.loadLod(T)).streets.kind.length).toBe(0)
+    const limited = new VectorTileClient({ cache: new MemoryCache(), fetch: net({ tile: async () => new Response('', { status: 429 }) }).fetch })
+    await expect(limited.loadLod(T)).rejects.toMatchObject({ code: 'rateLimited' })
+    vi.useFakeTimers()
+    const stuck = new VectorTileClient({ cache: new MemoryCache(), fetch: net({ tile: () => new Promise<never>(() => undefined) }).fetch })
+    const run = stuck.loadLod(T).catch((e: unknown) => e)
+    await vi.advanceTimersByTimeAsync(TILE_DEADLINE_MS + 10)
+    expect(await run).toMatchObject({ code: 'network' })
+    expect(stuck.running).toBe(0)
   })
 })

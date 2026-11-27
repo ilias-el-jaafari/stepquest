@@ -236,3 +236,23 @@ Part of the StepQuest specs; see [../README.md](../README.md). Task numbers are 
   - [x] 79.9 Tests: scene cache, glide property, ratio cap, tab switch, demo badge; goldens unchanged; before and after numbers in the design
     - _Requirements: 24.1 to 24.11_
   - [ ] 79.10 Follow-ups (not needed for the budgets): cache rail stamps per zoom; render voice phrases in a worker
+
+## Full detail around the hero (task 80, requirement 25)
+
+- [x] 80. Level of detail by distance from the hero: z14 within R at every far zoom, street names, tap-to-street finish
+  - [x] 80.1 Spec: requirement 25, design "Level of detail around the hero", `osm-etiquette.md`, specs README
+    - _Requirements: 25.1 to 25.11_
+  - [x] 80.2 `lod/select.ts`, `lod/config.ts`: LOD choice by distance and zoom, bitmap level, tiles within R in ring order, radius from `?lod=`; tests
+    - _Requirements: 25.1, 25.4, 25.8_
+  - [x] 80.3 `lod/tile.ts`, worker and `VectorTileClient.loadLod`: MVT to LOD tile (streets by class, names, simplified footprints, parks, water), cache `lod<codec>:` in IndexedDB; tests
+    - _Requirements: 25.5, 25.9_
+  - [x] 80.4 `lod/paint.ts`, `lod/store.ts`, `lod/layer.ts`: sliced bitmap painter, LRU bitmaps per level, placeholder, `MapRenderer.setLod`; tests (coverage at far zoom within R, slice time)
+    - _Requirements: 25.2 to 25.5_
+  - [x] 80.5 `lod/labels.ts`: candidates per tile, de-cluttered layout cached with the scene; tests
+    - _Requirements: 25.6_
+  - [x] 80.6 `lod/snap.ts`, reducer, `MapBanners`/`MapView` status line, i18n EN/ES; tests
+    - _Requirements: 25.7_
+  - [x] 80.7 `lod/prefetch.ts`, connection policy, `useLod`, streamer `lodCovers`; tests (ring order, concurrency cap, save-data)
+    - _Requirements: 25.8, 25.10_
+  - [x] 80.8 Benchmarks and numbers in `design.md`; `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`
+    - _Requirements: 25.5, 25.11_

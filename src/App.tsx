@@ -61,7 +61,7 @@ export default function App() {
   const runner = useQuestRunner(reroute, { persist: !demo })
   const questActive = !!runner.quest
   const keep = runner.quest?.route.points ?? (state.result?.ok ? state.result.route.points : undefined)
-  const { world, live, ensureWalk, locateMe, loadLiveAround, loadView, backToDemo, retryBoot, onViewBox, load } = useArea({ state, latest, dispatch, beginQuest: runner.begin, questActive, keep, online, demo })
+  const { world, live, ensureWalk, locateMe, loadLiveAround, loadView, backToDemo, retryBoot, onViewBox, load, lod } = useArea({ state, latest, dispatch, beginQuest: runner.begin, questActive, keep, online, demo, hero: runner.quest?.player ?? state.start })
   const planner = usePlanner({
     world,
     ensureWalk: demo ? undefined : ensureWalk,
@@ -109,12 +109,19 @@ export default function App() {
   const streets = useMemo(() => (world ? streetNames(world.data) : []), [world])
   const avoidedLines = useMemo(() => (world ? avoidedPolylines(world.data, state.avoid) : []), [world, state.avoid])
 
+  const snapAt = lod.snapAt
   const onTap = useCallback(
-    (p: LatLon) => {
-      if (latest.current.pickingAvoid) dispatch({ type: 'pickStreet', name: world ? nearestStreet(world.data, p) : undefined })
-      else dispatch({ type: 'point', p })
+    (p: LatLon, zoom: number) => {
+      const s = latest.current
+      if (s.pickingAvoid) return dispatch({ type: 'pickStreet', name: world ? nearestStreet(world.data, p) : undefined })
+      // Placing the A → B finish: it snaps to the street under the tap, at any zoom (requirement 25.7).
+      if (s.settings.mode === 'oneway' && s.placing === 'end') {
+        const hit = snapAt(p, zoom, world?.grid.metresPerTile ?? 5)
+        if (hit) return dispatch({ type: 'point', p: hit.point, street: { name: hit.name } })
+      }
+      dispatch({ type: 'point', p })
     },
-    [latest, dispatch, world],
+    [latest, dispatch, world, snapAt],
   )
   const onLocate = useCallback(() => void locateMe(), [locateMe])
   const onView = useCallback((centre: LatLon) => dispatch({ type: 'view', centre }), [dispatch])
@@ -173,6 +180,7 @@ export default function App() {
         key={runner.quest.id}
         map={world.live ?? world.grid}
         onViewBox={onViewBox}
+        lod={lod.layer}
         load={load}
         quest={runner.quest}
         pickup={runner.pickup}
@@ -213,6 +221,7 @@ export default function App() {
                 focus={focus}
                 focusKey={focusKey}
                 onTap={onTap}
+                lod={lod.layer}
                 home={start}
                 avoided={avoidedLines}
                 onLocate={onLocate}
@@ -241,6 +250,7 @@ export default function App() {
               noStreet={state.pickNote?.ok === false}
               loading={loading}
               outsideView={outsideView}
+              finish={settings.mode === 'oneway' && state.finishNote && end && state.finishNote.at.lat === end.lat && state.finishNote.at.lon === end.lon ? state.finishNote : undefined}
               askHere={state.askHere}
               errorCode={live.status.state === 'error' ? live.status.code : undefined}
               onCancelPick={() => dispatch({ type: 'pickCancel' })}

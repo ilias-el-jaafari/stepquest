@@ -5,6 +5,7 @@ import type { FetchLike } from '../osm/download.ts'
 import type { OsmData } from '../osm/types.ts'
 import { DETAIL_Z } from './assemble.ts'
 import { fetchTileBytes, TileError, TILE_TIMEOUT_MS } from './fetchTile.ts'
+import { isLodTile, tileToLod, type LodTile } from '../lod/tile.ts'
 import { tileToOsm } from './omt.ts'
 import { tileKey, type TileId } from './tileMath.ts'
 
@@ -23,8 +24,13 @@ export const TILE_DEADLINE_MS = 25_000
 /** Tiles kept in IndexedDB; oldest saved go first. A dense z14 tile is 0.4 to 0.9 MB in the compact form (measured over València), so about 50 MB at most. */
 export const MAX_TILE_ENTRIES = 60
 const TILE_INDEX_KEY = 'stepquest.tileIndex'
+/** LOD tiles kept in IndexedDB (requirement 25.9); one is about 100 KB, so 320 are about 30 MB at most. */
+export const MAX_LOD_ENTRIES = 320
+const LOD_INDEX_KEY = 'stepquest.lodIndex'
 
 export const tileCacheKey = (t: TileId): string => `v${CODEC_VERSION}:mvt:${tileKey(t)}`
+export const lodPrefix = `lod${CODEC_VERSION}:`
+export const lodCacheKey = (t: TileId): string => `${lodPrefix}${tileKey(t)}`
 
 /** Tiles below the detail zoom are kept to their coarse layer (requirement 21.4). */
 export const isCoarseTile = (t: TileId): boolean => t.z < DETAIL_Z
@@ -41,6 +47,8 @@ export type TileClientOptions = {
 
 /** What the streamer needs from a tile source. */
 export type TileSource = Pick<VectorTileClient, 'loadTile' | 'cachedTile' | 'busy'>
+/** What the LOD prefetcher needs from the tile client (requirement 25.8). */
+export type LodSource = Pick<VectorTileClient, 'loadLod' | 'cachedLod' | 'busy' | 'running' | 'lodWireBytes'>
 
 /**
  * Vector tiles from OpenFreeMap (requirement 21): cache first (IndexedDB, 7 days, plus the browser's
@@ -58,11 +66,14 @@ export class VectorTileClient {
   private inFlight = 0
   private worker: Worker | undefined
   private nextId = 1
-  private readonly waiting = new Map<number, { resolve: (d: CompactOsm) => void; reject: (e: unknown) => void }>()
+  private readonly waiting = new Map<number, { resolve: (d: never) => void; reject: (e: unknown) => void }>()
   private tail: Promise<void> = Promise.resolve()
   private readonly writes = new Set<Promise<void>>()
-  /** Tiles downloaded and bytes received (diagnostics and tests). */
+  /** Tiles downloaded (diagnostics and tests). */
   downloads = 0
+  /** LOD tiles downloaded, and the raw tile bytes they came in (requirement 25.8 caps the rings by these). */
+  lodDownloads = 0
+  lodWireBytes = 0
 
   constructor(options: TileClientOptions) {
     this.cache = options.cache
@@ -158,6 +169,74 @@ export class VectorTileClient {
     }
   }
 
+  /** A cached LOD tile, or undefined (missing, expired, damaged: a damaged entry is deleted). Local only. */
+  async cachedLod(t: TileId): Promise<LodTile | undefined> {
+    const key = lodCacheKey(t)
+    const entry = await within(this.cache.get(key), CACHE_READ_TIMEOUT_MS, undefined)
+    if (!entry || !isFresh(entry.savedAt, this.now())) return undefined
+    const data = entry.data as unknown
+    if (isLodTile(data)) return data
+    await this.cache.delete?.(key).catch(() => undefined)
+    return undefined
+  }
+
+  /** Load a LOD tile: device cache first, then one download of the raw tile (browser HTTP cache first), refused as `busy` when every slot is taken. Throws `TileError`. */
+  async loadLod(t: TileId): Promise<LodTile> {
+    const hit = await this.cachedLod(t)
+    if (hit) return hit
+    if (this.busy) throw new TileError('busy', 'Every tile slot is taken')
+    this.inFlight++
+    let deadline: ReturnType<typeof setTimeout> | undefined
+    try {
+      const tj = await this.template()
+      if (t.z > tj.maxzoom || t.z < 0) throw new TileError('badResponse', 'No such zoom')
+      const url = tj.tiles.replace('{z}', String(t.z)).replace('{x}', String(t.x)).replace('{y}', String(t.y))
+      const timedOut = new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => reject(new TileError('network', 'The tile took too long')), TILE_DEADLINE_MS)
+      })
+      const got = await Promise.race([this.downloadLod(url, t), timedOut])
+      this.lodDownloads++
+      this.lodWireBytes += got.bytes
+      this.laterLod(t, got.tile)
+      return got.tile
+    } catch (error) {
+      if (error instanceof TileError) throw error
+      throw new TileError('network', error instanceof Error ? error.message : String(error))
+    } finally {
+      clearTimeout(deadline)
+      this.inFlight--
+    }
+  }
+
+  private downloadLod(url: string, t: TileId): Promise<{ tile: LodTile; bytes: number }> {
+    if (this.fetchFn || typeof Worker === 'undefined') {
+      const fetchFn = this.fetchFn ?? ((input: string, init?: RequestInit) => fetch(input, init))
+      return fetchTileBytes(url, fetchFn, { timeoutMs: TILE_TIMEOUT_MS }).then((bytes) => ({ tile: tileToLod(bytes, t), bytes: bytes.length }))
+    }
+    return new Promise((resolve, reject) => {
+      const id = this.nextId++
+      this.waiting.set(id, { resolve: (d: { tile: LodTile; bytes: number }) => resolve(d) as never, reject })
+      this.workerOnce().postMessage({ type: 'lod', id, url, tile: t } satisfies WorkerRequest)
+    })
+  }
+
+  /** Save a LOD tile after it was handed over, in the same one-job-at-a-time line as the full tiles. */
+  private laterLod(t: TileId, tile: LodTile): void {
+    const key = lodCacheKey(t)
+    const savedAt = this.now()
+    const p = this.tail
+      .then(async () => {
+        const ok = await within(this.cache.set(key, { savedAt, data: tile as unknown as CompactOsm }).then(() => true), CACHE_WRITE_TIMEOUT_MS, false)
+        if (!ok) return
+        const index: IndexEntry[] = [...readEntryIndex(LOD_INDEX_KEY).filter((e) => e.key !== key), { key, savedAt }]
+        await pruneEntries(this.cache, LOD_INDEX_KEY, MAX_LOD_ENTRIES, index, this.now(), lodPrefix)
+      })
+      .catch(() => undefined)
+    this.tail = p
+    this.writes.add(p)
+    void p.finally(() => this.writes.delete(p))
+  }
+
   private download(url: string, t: TileId): Promise<CompactOsm> {
     const coarse = isCoarseTile(t)
     if (this.fetchFn || typeof Worker === 'undefined') {
@@ -166,7 +245,7 @@ export class VectorTileClient {
     }
     return new Promise((resolve, reject) => {
       const id = this.nextId++
-      this.waiting.set(id, { resolve, reject })
+      this.waiting.set(id, { resolve: resolve as (d: never) => void, reject })
       this.workerOnce().postMessage({ type: 'tile', id, url, tile: t, coarse } satisfies WorkerRequest)
     })
   }
@@ -177,11 +256,12 @@ export class VectorTileClient {
     const w = new Worker(new URL('../osm/download.worker.ts', import.meta.url), { type: 'module' })
     w.onmessage = (e: MessageEvent<WorkerMessage>) => {
       const m = e.data
-      if (m.type !== 'tile' && m.type !== 'tileError') return
+      if (m.type !== 'tile' && m.type !== 'tileError' && m.type !== 'lod') return
       const job = this.waiting.get(m.id)
       if (!job) return
       this.waiting.delete(m.id)
-      if (m.type === 'tile') job.resolve(m.data)
+      if (m.type === 'tile') job.resolve(m.data as never)
+      else if (m.type === 'lod') job.resolve({ tile: m.data, bytes: m.bytes } as never)
       else job.reject(new TileError(m.code, m.message))
     }
     w.onerror = (e) => {

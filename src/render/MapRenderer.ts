@@ -14,6 +14,7 @@ import { FrameScheduler } from './frameScheduler.ts'
 import { P } from './palette.ts'
 import type { Facing, Sprite } from './sprites.ts'
 import { drawRails } from './streetMarks.ts'
+import type { LodLayer } from '../lod/layer.ts'
 import { makeCanvas, nowMs, releaseCanvas } from './env.ts'
 import { backingRatio, backingSize, MAX_PIXELS, watchPixelRatio } from './viewport.ts'
 import type { View } from './view.ts'
@@ -80,6 +81,9 @@ export class MapRenderer {
   /** Camera follows the displayed walker every frame (set by `follow`, cleared by `stopFollow` and by a pan). */
   private following = false
   private shot: Shot | undefined
+  /** The level-of-detail layer around the hero (requirement 25), or none (tests, the bundled demo). */
+  private lod: LodLayer | undefined
+  private stopLod: (() => void) | undefined
   /** Frames drawn and scene redraws, for tests and diagnostics. */
   readonly stats = { frames: 0, sceneDraws: 0 }
   private readonly view: View = { w: 0, h: 0, dpr: 1, zoom: 16, cssW: 0, cssH: 0, scale: 16, originX: 0, originY: 0, camX: 0, camY: 0, detail: true }
@@ -170,6 +174,19 @@ export class MapRenderer {
   get cssHeight(): number {
     this.syncSize()
     return this.camera.height
+  }
+
+  /** Draw the far zooms from z14 data around the hero and name the streets (requirement 25). */
+  setLod(layer: LodLayer | undefined): void {
+    if (layer === this.lod) return
+    this.stopLod?.()
+    this.lod = layer
+    this.stopLod = layer?.subscribe(() => {
+      this.sceneDirty = true
+      this.requestRender()
+    })
+    this.sceneDirty = true
+    this.requestRender()
   }
 
   setRoute(route: RouteShape | undefined): void {
@@ -370,6 +387,7 @@ export class MapRenderer {
     this.scheduler.cancel()
     this.stopPixelRatio()
     this.stopSource()
+    this.stopLod?.()
     this.viewListener = undefined
     this.lightingLayer.dispose()
     this.chunks.dispose()
@@ -512,6 +530,8 @@ export class MapRenderer {
     if (loading.length) drawLoading(ctx, v, loading)
     const edges = current ? this.source.frontier?.() : undefined
     if (edges?.length) drawFrontier(ctx, v, edges)
+    // Far out, the z14 tiles around the hero in their LOD look, over the coarse map, the stipple and the fog (each bitmap is opaque).
+    if (this.lod && v.zoom <= FAR_ZOOM) this.lod.drawBlocks(ctx, v, this.grid, this.grid.tileToLatLon(v.camX, v.camY))
 
     // Tram, metro and train tracks above ground.
     if (this.grid.rails.length) drawRails(ctx, v, this.grid.rails, this.grid.cols, this.grid.rows)
@@ -523,6 +543,8 @@ export class MapRenderer {
       if (frame) this.lightingLayer.drawNightLights(ctx, v, frame.plan, frame.painted, light)
       else this.lightingLayer.drawNightDots(ctx, v, light)
     } else this.lightingLayer.idle()
+    // Street names last: they are signs, not part of the lit map.
+    this.lod?.drawLabels(ctx, v, this.grid)
     return frame?.pending ?? false
   }
 

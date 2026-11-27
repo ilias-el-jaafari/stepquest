@@ -74,6 +74,8 @@ export const es: Record<MessageKey, string> = {
   'safety.pick': 'Elegir en el mapa',
   'safety.picking': 'Toca una calle en el mapa…',
   'safety.cancel': 'Cancelar',
+  'map.finish': 'Meta: {name}',
+  'map.finishStreet': 'Meta: calle',
   'safety.noStreet': 'Ahí no hay ninguna calle con nombre. Toca justo encima de una calle.',
   'safety.added': 'Calle añadida: {name}.',
   'safety.remove': 'Dejar de evitar {name}',

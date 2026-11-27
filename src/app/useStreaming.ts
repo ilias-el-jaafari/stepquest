@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { BBox, LatLon } from '../geo/geo.ts'
 import type { TileSource } from '../vector/client.ts'
-import type { GraphClient, MapLoad } from '../world/streamer.ts'
+import type { GraphClient, LodCoverage, MapLoad } from '../world/streamer.ts'
 import { IDLE_LOAD, Streamer } from '../world/streamer.ts'
 import type { World } from '../world/liveWorld.ts'
 
@@ -24,6 +24,8 @@ type Args = {
   onLoad?: (load: MapLoad) => void
   /** The frame may follow the view (a route is planned or a quest runs; requirement 20.17). */
   reanchor?: boolean
+  /** The level-of-detail layer: far cells it covers need no coarse tiles (requirement 25.10). */
+  lod?: LodCoverage
 }
 
 /**
@@ -31,7 +33,7 @@ type Args = {
  * the vector tiles under it load, and each arrival hands the app a new snapshot of the same world (same grid,
  * so the map view and an active quest are not rebuilt). Returns the callback for the map's view.
  */
-export function useStreaming({ world, tiles, graph, onWorld, keep, online, enabled = STREAMING_ENABLED, onLoad, reanchor = false }: Args) {
+export function useStreaming({ world, tiles, graph, onWorld, keep, online, enabled = STREAMING_ENABLED, onLoad, reanchor = false, lod }: Args) {
   const live = world?.live
   const streamer = useRef<Streamer | undefined>(undefined)
   const keepRef = useRef(keep)
@@ -47,7 +49,7 @@ export function useStreaming({ world, tiles, graph, onWorld, keep, online, enabl
 
   useEffect(() => {
     if (!live || !enabled) return
-    const s = new Streamer({ tiles, graph, world: live, keep: () => keepRef.current ?? [], onChange: () => onWorldRef.current(live.world()), onLoad: (l) => onLoadRef.current?.(l), reanchor: () => reanchorRef.current })
+    const s = new Streamer({ tiles, graph, world: live, keep: () => keepRef.current ?? [], onChange: () => onWorldRef.current(live.world()), onLoad: (l) => onLoadRef.current?.(l), reanchor: () => reanchorRef.current, lod })
     streamer.current = s
     return () => {
       s.dispose()
@@ -55,7 +57,7 @@ export function useStreaming({ world, tiles, graph, onWorld, keep, online, enabl
       live.setLoading([])
       onLoadRef.current?.(IDLE_LOAD)
     }
-  }, [live, tiles, graph, enabled])
+  }, [live, tiles, graph, enabled, lod])
 
   useEffect(() => {
     if (online) streamer.current?.retry()

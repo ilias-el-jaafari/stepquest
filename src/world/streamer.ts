@@ -39,6 +39,15 @@ export const UNIT_WATCHDOG_MS = 40_000
 /** A view this zoomed out asks for nothing beyond the frame anyway; this caps the list per view. */
 const MAX_VIEW_CELLS = 81
 
+/**
+ * The level-of-detail layer as the streamer sees it (requirement 25.10): at far zooms a cell it covers is drawn from z14 data, so
+ * the coarse tiles are not asked for; a cell with a failed tile is not covered, so the coarse layer draws it.
+ */
+export type LodCoverage = {
+  coverage(cell: CellId, centre: LatLon): 'no' | 'loading' | 'ready'
+  subscribe(fn: () => void): () => void
+}
+
 /** What the map shows now (requirement 20.15, unchanged by 21). */
 export type MapLoad = {
   /** `full`: every cell in view has what this zoom needs; `coarse`: every cell has at least the coarse layer; `loading`: some cell has nothing. */
@@ -76,6 +85,8 @@ export type StreamerOptions = {
   reanchor?: () => boolean
   /** The frame moved (the grid object changed). */
   onFrame?: () => void
+  /** The level-of-detail layer around the hero (requirement 25.10); absent: the coarse layer draws every far cell. */
+  lod?: LodCoverage
 }
 
 /** Back-off after `failures` failures in a row, before jitter. */
@@ -126,7 +137,7 @@ const codeOf = (error: unknown): OverpassErrorCode | TileErrorCode => (error ins
  * so no frame carries more than one cell of work.
  */
 export class Streamer {
-  private readonly o: Required<Omit<StreamerOptions, 'onError' | 'onChange' | 'keep' | 'onLoad' | 'onFrame' | 'graph'>> & Pick<StreamerOptions, 'onError' | 'onChange' | 'keep' | 'onLoad' | 'onFrame' | 'graph'>
+  private readonly o: Required<Omit<StreamerOptions, 'onError' | 'onChange' | 'keep' | 'onLoad' | 'onFrame' | 'graph' | 'lod'>> & Pick<StreamerOptions, 'onError' | 'onChange' | 'keep' | 'onLoad' | 'onFrame' | 'graph' | 'lod'>
   /** Cells of the view inside the frame. */
   private viewCells: CellId[] = []
   /** Every cell the camera shows, in the frame or not: what readiness is measured against. */
@@ -140,6 +151,7 @@ export class Streamer {
   private pumping = false
   private again = false
   private disposed = false
+  private stopLod: (() => void) | undefined
   private settledAt = 0
   private activeTiles = 0
   private activeGraph = 0
@@ -163,6 +175,13 @@ export class Streamer {
       reanchor: () => false,
       ...options,
     }
+    this.stopLod = this.o.lod?.subscribe(() => {
+      if (this.disposed) return
+      this.showLoading()
+      this.publish()
+      // A failed LOD tile hands its cells back to the coarse layer.
+      this.scheduleIn(0)
+    })
   }
 
   /** The load state now. */
@@ -196,6 +215,7 @@ export class Streamer {
 
   dispose(): void {
     this.disposed = true
+    this.stopLod?.()
     clearTimeout(this.timer)
     this.timer = undefined
     this.store.clear()
@@ -217,15 +237,24 @@ export class Streamer {
     return wantsDetail(this.zoom)
   }
 
+  /** How the LOD layer stands with a cell at this zoom: only at far zooms (above `FAR_ZOOM` the tile art draws it). */
+  private lodState(c: CellId): 'no' | 'loading' | 'ready' {
+    if (!this.o.lod || !this.centre || this.detailWanted()) return 'no'
+    return this.o.lod.coverage(c, this.centre)
+  }
+
   /** A cell in view lacks what this zoom needs. */
   private lacking(c: CellId): boolean {
     const { world } = this.o
+    const lod = this.lodState(c)
+    if (lod !== 'no') return lod === 'loading'
     return !world.hasAny(c) || (this.detailWanted() && world.needs(c))
   }
 
   private showLoading(): void {
     const { world } = this.o
-    world.setLoading(this.viewCells.filter((c) => !world.hasAny(c)))
+    // A cell the LOD layer covers shows its own placeholder, not the stipple.
+    world.setLoading(this.viewCells.filter((c) => !world.hasAny(c) && this.lodState(c) === 'no'))
   }
 
   private publish(): void {
@@ -351,7 +380,10 @@ export class Streamer {
     const out: { cell: CellId; detail: boolean }[] = []
     // At far zooms every visible cell is drawn from its coarse tiles (one look, requirement 21.7).
     const wide = !this.detailWanted()
-    for (const c of this.viewCells) if (wide ? !world.hasCoarse(c) : world.needsCoarse(c)) out.push({ cell: c, detail: false })
+    for (const c of this.viewCells) {
+      if (wide && this.lodState(c) !== 'no') continue
+      if (wide ? !world.hasCoarse(c) : world.needsCoarse(c)) out.push({ cell: c, detail: false })
+    }
     if (this.detailWanted()) {
       for (const c of this.viewCells) if (world.needs(c)) out.push({ cell: c, detail: true })
       const inView = new Set(this.viewCells.map(cellKey))

@@ -116,4 +116,16 @@ export const P = {
     plaza: '#e6dcc4',
     lot: '#b4dc84',
   },
+  /** The level-of-detail look of the far zooms (requirement 25): streets with casings, simplified building blocks. */
+  lod: {
+    building: '#c98a6e',
+    street: '#f4f0e0',
+    streetCasing: '#a79fa0',
+    major: '#ffd86b',
+    majorCasing: '#b2813a',
+    path: '#e3bd86',
+    rail: '#6b6b7e',
+    label: '#2c2438',
+    labelHalo: '#fdfbf0',
+  },
 } as const

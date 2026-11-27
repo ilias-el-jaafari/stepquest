@@ -16,6 +16,7 @@ import { prefersReducedMotion } from '../render/env.ts'
 import { useAudio } from '../audio/useAudio.ts'
 import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { DialogueBox } from './DialogueBox.tsx'
+import type { LodLayer } from '../lod/layer.ts'
 import { MapView } from './MapView.tsx'
 import { SummaryScreen } from './SummaryScreen.tsx'
 import { SoundMenu } from './SoundMenu.tsx'
@@ -25,6 +26,8 @@ type Props = {
   map: TileGrid | MapSource
   /** Where the view is, for streaming the cells around it (new cells only add drawing). */
   onViewBox?: (box: BBox, centre: LatLon, zoom?: number) => void
+  /** The level-of-detail layer around the hero (requirement 25); absent when it is off. */
+  lod?: LodLayer
   /** What the map shows now (read-only state on the map element). */
   load?: MapLoad
   quest: QuestState
@@ -69,7 +72,7 @@ function seedOf(id: string): number {
 /** The HUD sits 10 px above the screen edge; the stack's own bottom margin is 8 px, plus a little air. */
 const HUD_GAP = 6
 
-export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeActive, resumed, walker, onEnd, onUseSim, demo = false }: Props) {
+export function QuestScreen({ map, onViewBox, lod, load, quest, pickup, error, wakeActive, resumed, walker, onEnd, onUseSim, demo = false }: Props) {
   const { t, locale } = useI18n()
   const { engine, status, settings: sound, phrase } = useAudio()
   const [now, setNow] = useState(() => Date.now())
@@ -229,6 +232,7 @@ export function QuestScreen({ map, onViewBox, load, quest, pickup, error, wakeAc
               <MapView
                 map={map}
                 onViewBox={onViewBox}
+                lod={lod}
                 load={load}
                 route={quest.route}
                 markers={markers}

@@ -8,6 +8,8 @@ type Props = {
   /** Map pieces in, of all, while the streets of an area load. */
   loading: { done: number; total: number } | undefined
   outsideView: boolean
+  /** The street the A → B finish snapped to (requirement 25.7): its name, or none for a street without one. */
+  finish?: { name?: string }
   askHere: boolean
   errorCode: OverpassErrorCode | undefined
   onCancelPick: () => void
@@ -23,6 +25,11 @@ export function MapBanners(p: Props) {
   const areaBanner = !p.picking && !p.noStreet && (p.loading !== undefined || p.outsideView || p.askHere)
   return (
     <>
+      {p.finish && !pickBanner && !areaBanner && (
+        <div className="map-banner finish-note" role="status" data-testid="finish-note">
+          <span>{p.finish.name ? t('map.finish', { name: p.finish.name }) : t('map.finishStreet')}</span>
+        </div>
+      )}
       {pickBanner && (
         <div className="map-banner" role="status">
           <span>{p.picking ? t('safety.picking') : t('safety.noStreet')}</span>

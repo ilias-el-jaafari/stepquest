@@ -16,6 +16,7 @@ import type { CellRecord } from '../world/slice.ts'
 import type { AppAction, AppState } from './appState.ts'
 import { VectorTileClient } from '../vector/client.ts'
 import { IDLE_LOAD, type MapLoad } from '../world/streamer.ts'
+import { useLod } from './useLod.ts'
 import { STREAMING_ENABLED, useStreaming } from './useStreaming.ts'
 
 /** A start that rests this long (a tap, a fix) starts loading its streets. */
@@ -37,6 +38,8 @@ type Args = {
   online?: boolean
   /** The self-playing demo: the bundled area only, no saved quest, no location, no downloads. */
   demo?: boolean
+  /** The centre of the detail radius (requirement 25): the walker in a quest, else the planner's start. */
+  hero?: LatLon
 }
 
 /** A world built from the bundled extract, not from a live download. */
@@ -72,7 +75,7 @@ async function withRouteCells(w: World, route: readonly LatLon[], cached: (c: { 
  * quest), live downloads around a point, "use my location", and loading the area the map was
  * moved to. Every function reads the newest state from `latest`, so none of them goes stale.
  */
-export function useArea({ state, latest, dispatch, beginQuest, questActive, keep, online = true, demo = false }: Args) {
+export function useArea({ state, latest, dispatch, beginQuest, questActive, keep, online = true, demo = false, hero }: Args) {
   const [world, setWorldState] = useState<World>()
   const worldRef = useRef<World>(undefined)
   const setWorld = useCallback((w: World) => {
@@ -96,7 +99,16 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
   // With a route planned or a quest running the frame follows the view; otherwise a view that rests
   // outside it gets the "load this area" behaviour below (requirement 20.17).
   const reanchor = !!state.result?.ok || questActive
-  const onViewBox = useStreaming({ world, tiles, graph: client, onWorld: onStreamed, keep, online, onLoad: setLoad, reanchor, enabled: demo ? false : undefined })
+  const lod = useLod({ tiles, hero, online, enabled: demo ? false : undefined })
+  const streamView = useStreaming({ world, tiles, graph: client, onWorld: onStreamed, keep, online, onLoad: setLoad, reanchor, enabled: demo ? false : undefined, lod: lod.layer })
+  const lodView = lod.onView
+  const onViewBox = useCallback(
+    (box: BBox, centre: LatLon, zoom?: number) => {
+      streamView(box, centre, zoom)
+      lodView(box, centre)
+    },
+    [streamView, lodView],
+  )
 
   /** Overpass adds lit, sidewalk and name tags to the streets of the cells, from the device first (requirement 23.5). Never waited for. */
   const enrichAround = useCallback(
@@ -292,5 +304,5 @@ export function useArea({ state, latest, dispatch, beginQuest, questActive, keep
     return () => clearTimeout(timer)
   }, [demo, ready, online, start, end, mode, targetSteps, strideM, ensureWalk, needNow])
 
-  return { world, live, ensureWalk, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot, onViewBox, load }
+  return { world, live, ensureWalk, locateMe, loadLiveAround, loadView, backToDemo, retryBoot: boot, onViewBox, load, lod }
 }

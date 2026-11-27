@@ -190,3 +190,26 @@ describe('planning that always answers (routing requirement 12)', () => {
     expect(wider.plan).toEqual(s.plan)
   })
 })
+
+describe('A → B finish snapped to a street (requirement 25.7)', () => {
+  const oneway = () => appReducer(initialAppState(), { type: 'mode', mode: 'oneway' })
+
+  it('keeps the street the finish was snapped to, tied to that point', () => {
+    const s = appReducer(oneway(), { type: 'point', p, street: { name: 'Calle Mayor' } })
+    expect(s.end).toEqual(p)
+    expect(s.finishNote).toEqual({ name: 'Calle Mayor', at: p })
+  })
+
+  it('a street without a name is noted without one; a tap with no street clears the note', () => {
+    const s1 = appReducer(oneway(), { type: 'point', p, street: {} })
+    expect(s1.finishNote).toEqual({ at: p })
+    const s2 = appReducer(s1, { type: 'point', p: { lat: 39.5, lon: -0.4 } })
+    expect(s2.finishNote).toBeUndefined()
+  })
+
+  it('setting the start (a loop, or the start in A → B) leaves no street note', () => {
+    const s = appReducer(oneway(), { type: 'point', p, street: { name: 'X' } })
+    const loop = appReducer(appReducer(s, { type: 'mode', mode: 'loop' }), { type: 'point', p, street: { name: 'Y' } })
+    expect(loop.finishNote).toBeUndefined()
+  })
+})

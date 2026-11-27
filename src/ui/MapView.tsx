@@ -10,6 +10,7 @@ import type { MapLoad } from '../world/streamer.ts'
 import type { TileGrid } from '../tiles/grid.ts'
 import { walkerFor } from '../hero/look.ts'
 import { useLook } from '../hero/useLook.ts'
+import type { LodLayer } from '../lod/layer.ts'
 import { attachMapInput } from './mapInput.ts'
 import { planStack, type StackId } from './mapStack.ts'
 
@@ -21,7 +22,10 @@ type Props = {
   /** Points to frame when they change (route or markers). */
   focus: LatLon[]
   focusKey: string
-  onTap: (p: LatLon) => void
+  /** A tap on the map: the point and the zoom it was made at (the reach of a street snap depends on it). */
+  onTap: (p: LatLon, zoom: number) => void
+  /** The level-of-detail layer around the hero; absent when it is off. */
+  lod?: LodLayer
   /** Where the walker stands (start point), for the "go to start" button. */
   home: LatLon | undefined
   /** Active quest overlay (walker position, progress). */
@@ -57,7 +61,7 @@ type Props = {
  * Memoised on purpose: the screen around it re-renders on every keystroke and every clock tick,
  * and the map only needs to follow its own props (callers pass stable callbacks and objects).
  */
-export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve, onViewBox, load, clockAt, shot }: Props) {
+export const MapView = memo(function MapView({ map, route, markers, focus, focusKey, onTap, lod, home, quest, follow, pickup, onUserPan, avoided, onLocate, locating, onView, bubble, bottomReserve, onViewBox, load, clockAt, shot }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<HTMLDivElement>(null)
@@ -103,7 +107,7 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
     observer?.observe(canvas)
 
     const detach = attachMapInput(canvas, renderer, () => ({
-      tap: (p) => onTapRef.current(p),
+      tap: (p) => onTapRef.current(p, renderer.zoom),
       userPan: () => onUserPanRef.current?.(),
       view: (c) => onViewRef.current?.(c),
     }))
@@ -115,6 +119,10 @@ export const MapView = memo(function MapView({ map, route, markers, focus, focus
       rendererRef.current = undefined
     }
   }, [map, frame])
+
+  useEffect(() => {
+    rendererRef.current?.setLod(lod)
+  }, [lod, map, frame])
 
   useEffect(() => {
     rendererRef.current?.setRoute(route)
