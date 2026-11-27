@@ -2621,3 +2621,27 @@ select {
     animation: none;
   }
 }
+
+/* Mischief in errors (error-copy spec): Wisp's face sticks on the corner of an error box */
+.msg.ghost-note {
+  position: relative;
+  margin-top: 18px;
+}
+
+.ghost-note-face {
+  position: absolute;
+  top: -12px;
+  left: 6px;
+  padding: 0 2px;
+  line-height: 0;
+  background: var(--paper);
+}
+
+.ghost-note-face svg {
+  display: block;
+}
+
+.crash-ghost {
+  display: block;
+  margin: 0 0 8px;
+}

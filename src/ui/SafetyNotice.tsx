@@ -1,4 +1,5 @@
 import { useI18n } from '../i18n/index.ts'
+import { GhostNote } from './GhostNote.tsx'
 import type { SafePlan } from '../routing/safePlanner.ts'
 
 export function SafetyNotice({ plan, usingNormal, onUseNormal }: { plan: SafePlan; usingNormal: boolean; onUseNormal: () => void }) {
@@ -18,11 +19,15 @@ export function SafetyNotice({ plan, usingNormal, onUseNormal }: { plan: SafePla
   if (lines.length === 0) return null
   return (
     <div className="box safety-notice" aria-live="polite" data-testid="safety-notice">
-      {lines.map((l) => (
-        <p key={l.text} className={l.ok ? 'hint' : 'msg bad'}>
-          {l.text}
-        </p>
-      ))}
+      {lines.map((l) =>
+        l.ok ? (
+          <p key={l.text} className="hint">
+            {l.text}
+          </p>
+        ) : (
+          <GhostNote key={l.text}>{l.text}</GhostNote>
+        ),
+      )}
       {plan.normal && !usingNormal && (
         <div className="actions">
           <button type="button" className="pix-btn" onClick={onUseNormal}>

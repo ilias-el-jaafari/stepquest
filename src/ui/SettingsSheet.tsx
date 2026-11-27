@@ -2,6 +2,7 @@ import { DEMO_AREA } from '../osm/demoArea.ts'
 import { formatCoord } from '../geo/coords.ts'
 import type { LatLon } from '../geo/geo.ts'
 import { useI18n, type Locale } from '../i18n/index.ts'
+import { GhostNote } from './GhostNote.tsx'
 import { InfoMenu } from './InfoMenu.tsx'
 import { SoundControls } from './SoundMenu.tsx'
 import type { LiveStatus } from './useMapData.ts'
@@ -70,12 +71,10 @@ export function SettingsContent(p: Props) {
           )}
         </div>
         {p.coordsError && (
-          <p className="msg bad" role="alert">
-            {t('data.badCoords')}
-          </p>
+          <GhostNote role="alert">{t('data.badCoords')}</GhostNote>
         )}
         {p.liveStatus.state === 'done' && <p className="hint">{t(p.liveStatus.fromCache ? 'data.fromCache' : 'data.fetched')}</p>}
-        {p.liveStatus.state === 'error' && <p className="msg bad">{t(`data.err.${p.liveStatus.code}`)}</p>}
+        {p.liveStatus.state === 'error' && <GhostNote>{t(`data.err.${p.liveStatus.code}`)}</GhostNote>}
       </div>
       <p className="footer">
         {t('app.contestLine')} · {t('app.phase')}

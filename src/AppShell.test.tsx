@@ -5,6 +5,7 @@ import App from './App.tsx'
 import css from './index.css?raw'
 import { AudioEngine, setAudioEngineForTests } from './audio/engine.ts'
 import { loadAudioSettings } from './audio/settings.ts'
+import { en } from './i18n/en.ts'
 import { I18nProvider } from './i18n/index.ts'
 import { DEMO_AREA } from './osm/demoArea.ts'
 import { loadDemoOsm } from './osm/demo.ts'
@@ -114,7 +115,7 @@ describe('planning', () => {
     vi.spyOn(PlanClient.prototype, 'plan').mockRejectedValue(new Error('worker crashed'))
     await act(async () => button('Plan quest')!.click())
     await waitFor(() => !!button('Plan quest') && !button('Plan quest')!.disabled)
-    expect(host.querySelector('[data-testid="plan-error"]')?.textContent).toMatch(/could not plan/i)
+    expect(host.querySelector('[data-testid="plan-error"]')?.textContent).toContain(en['error.planFailed'])
     expect(host.textContent).not.toContain('worker crashed')
   })
 
@@ -323,7 +324,7 @@ describe('network and updates', () => {
     expect(host.querySelector('[data-testid="offline"]')).toBeNull()
     const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
     await act(async () => void window.dispatchEvent(new Event('offline')))
-    expect(host.querySelector('[data-testid="offline"]')?.textContent).toContain('offline')
+    expect(host.querySelector('[data-testid="offline"]')?.textContent).toContain(en['net.offline'])
     online.mockReturnValue(true)
     await act(async () => void window.dispatchEvent(new Event('online')))
     expect(host.querySelector('[data-testid="offline"]')).toBeNull()

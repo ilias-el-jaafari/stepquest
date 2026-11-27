@@ -5,6 +5,7 @@ import App from './App.tsx'
 import { AudioEngine, setAudioEngineForTests } from './audio/engine.ts'
 import { loadAudioSettings } from './audio/settings.ts'
 import { I18nProvider } from './i18n/index.ts'
+import { en } from './i18n/en.ts'
 import { DEMO_AREA } from './osm/demoArea.ts'
 import { loadDemoOsm } from './osm/demo.ts'
 import { createQuest } from './quest/quest.ts'
@@ -256,12 +257,12 @@ describe('active quest UI', () => {
     })
     await act(async () => root.render(<I18nProvider><App /></I18nProvider>))
     await waitFor(() => !!host.querySelector('[data-testid="hud"]') && !!emit)
-    expect(host.textContent).toContain('Signal lost')
+    expect(host.textContent).toContain(en['quest.lost'])
     expect(clearWatch).not.toHaveBeenCalled()
     await act(async () => emit!({ coords: { latitude: finish.point.lat, longitude: finish.point.lon, accuracy: 5 }, timestamp: Date.now() }))
     await waitFor(() => !!host.querySelector('[data-testid="dialog-finish"]'))
     expect(clearWatch).toHaveBeenCalledWith(7)
-    expect(host.textContent).not.toContain('Signal lost')
+    expect(host.textContent).not.toContain(en['quest.lost'])
     expect(host.textContent).not.toContain('Weak GPS')
     expect(host.querySelector('.hud-msg.warn, .hud-msg.bad')).toBeNull()
     // A late fix after the end changes nothing.
@@ -273,7 +274,7 @@ describe('active quest UI', () => {
       return !!host.querySelector('[data-testid="complete"]')
     })
     expect(host.querySelector('.hud-msg.warn, .hud-msg.bad')).toBeNull()
-    expect(host.textContent).not.toContain('Signal lost')
+    expect(host.textContent).not.toContain(en['quest.lost'])
     // Back to planning: the real walk counts towards today's steps in the header.
     await act(async () => button('Plan another quest')!.click())
     await waitFor(() => !!host.querySelector('[data-testid="steps-today"]'))
@@ -312,7 +313,7 @@ describe('active quest UI', () => {
     await waitFor(() => !!button('Use my location'))
     await act(async () => button('Use my location')!.click())
     await waitFor(() => !!host.querySelector('[data-testid="locate-error"]'))
-    expect(host.textContent).toContain('Location permission was denied')
+    expect(host.textContent).toContain(en['loc.err.denied'])
   })
 
   it('sets the start from a good GPS fix inside the demo area', async () => {

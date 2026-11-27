@@ -25,6 +25,7 @@ Each folder holds `requirements.md`, `design.md` and `tasks.md`. Requirement ids
 | [retro-ui](retro-ui/requirements.md) | planner and app frame, console buttons, dialogue box, hero, i18n EN/ES and plurals, engineering rules, submission | 5, 5b, 5c, 8, 15 | 1, 2, 9, 21a, 28, 29, 49, 49e, 52, 53, 55, 57, 65, 67, 69 |
 | [quest](quest/requirements.md) | GPS and filter, snapping, gems, quest state, persistence, wake lock, simulation, finish | 6, 6b, 6c, 6d, 6e, 6f, 6g | 11 to 21, 30, 49c, 64, 69, 75, 78 |
 | [ghost-guide](ghost-guide/requirements.md) | Wisp the ghost guide: first-run intro, gem comments, finish celebration, friendly night scare, ghost pacer and its HUD status | G1 to G8 | 84 to 87 |
+| [error-copy](error-copy/requirements.md) | mischief in errors: every error, empty, offline, permission and loading-failure line in Wisp's voice with a clear next tap, Wisp's face on error boxes, checked by a test | E1 to E8 | 88 |
 | [demo-mode](demo-mode/requirements.md) | self-playing `?demo=1` run for the video: auto plan and walk, camera script, dusk-to-night clock, summary | D1 to D8 | 77 |
 
 Where a requirement touches another spec (for example the speech bubble is voice behaviour drawn by the map renderer), the owning spec holds it and the others link to it.

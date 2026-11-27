@@ -62,3 +62,4 @@ StepQuest gets a small original pixel ghost, **Wisp**. It hosts the first-run in
 
 1. THE SYSTEM SHALL write every ghost line in the voice set in `copy-voice.md` ("Wisp"), in English and Spanish with the same keys (`ghost.*`, `result.ghostPace*`, `summary.ghost`), game-pitch tone, no development talk.
 2. THE SYSTEM SHALL keep all ghost text in `src/i18n`.
+3. THE SYSTEM SHALL give every error, empty, offline, permission and loading-failure line the same voice (a joke, then what to tap), as set by [error-copy](../error-copy/requirements.md).

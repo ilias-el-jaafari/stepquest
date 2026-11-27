@@ -1,7 +1,10 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { en } from '../i18n/en.ts'
 import { es } from '../i18n/es.ts'
+import { ghostSprite } from '../ghost/art.ts'
 import { detectLocale } from '../i18n/locale.ts'
+
+import { PixelSvg } from './PixelIcons.tsx'
 
 const MESSAGES = { en, es }
 
@@ -32,6 +35,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div className="crash" role="alert" data-testid="crash">
         <div className="crash-box">
+          <PixelSvg art={ghostSprite('boo')} size={32} className="crash-ghost" />
           <h1 className="crash-title">{m['crash.title']}</h1>
           <p>{m['crash.body']}</p>
           <div className="crash-actions">

@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Check error copy voice",
+      "description": "After src/i18n/en.ts or es.ts is saved, check new or changed error strings against copy-voice 'Mischief in errors' and EN/ES parity.",
+      "trigger": "PostFileSave",
+      "matcher": "src/i18n/(en|es)\\.ts$",
+      "action": {
+        "type": "agent",
+        "prompt": "src/i18n/en.ts or src/i18n/es.ts was just saved. Find the error, empty, offline, permission and loading-failure strings that are new or changed (git diff; the keys are listed in ERROR_KEYS in src/i18n/errorCopy.test.ts and in .kiro/specs/error-copy/requirements.md). Check each against the section 'Mischief in errors' in .kiro/steering/copy-voice.md: (1) a short joke in Wisp's voice, then what to tap; (2) an action verb from the lists, and any quoted button label matches a real label in the dictionary; (3) at most two lines on a 390 px phone (78 characters with placeholders filled in); (4) no blame and no development talk; (5) every placeholder and plural form the plain line carried is still there; (6) English and Spanish have the same keys and placeholders, and Spanish is its own joke in 'tú' with ¡ ¿. A new error key must also be added to ERROR_KEYS and to the tables of the spec. Fix what is wrong in the file that was not just edited, rewrite weak lines in place, then run `npx vitest run src/i18n`. Report what you changed. If everything is fine, reply with one line."
+      }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { en } from '../i18n/en.ts'
 import { I18nProvider } from '../i18n/index.ts'
 import { AvoidStreetsBox } from './AvoidStreetsBox.tsx'
 
@@ -65,7 +66,7 @@ describe('AvoidStreetsBox', () => {
     await act(async () => button('Avoid Calle de Burjassot')!.click())
     expect(p.onAvoid).toHaveBeenCalledWith('Calle de Burjassot')
     await type(search, 'nowhere')
-    expect(host.textContent).toContain('No street with that name')
+    expect(host.textContent).toContain(en['safety.noMatch'])
   })
   it('lists avoided streets with remove buttons and a plural count', async () => {
     const p = await render({ avoid: ['Calle de Burjassot', 'Camino Lejano'] })
@@ -84,7 +85,7 @@ describe('AvoidStreetsBox', () => {
     expect(p.onPick).toHaveBeenCalledWith(true)
     await render({ picking: true, pickNote: { ok: false } })
     expect(host.textContent).toContain('Tap a street on the map')
-    expect(host.textContent).toContain('No named street there')
+    expect(host.textContent).toContain(en['safety.noStreet'])
   })
   it('speaks Spanish', async () => {
     localStorage.setItem('stepquest.locale', 'es')

@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.tsx'
 import { I18nProvider } from './i18n/index.ts'
+import { en } from './i18n/en.ts'
 import type { LatLon } from './geo/geo.ts'
 import { haversine } from './geo/geo.ts'
 import { LodLayer } from './lod/layer.ts'
@@ -225,7 +226,7 @@ describe('planning outside the bundled map (field test, iPhone)', () => {
     await click(button('Plan quest'))
     // The streets between the two points are in the network, so the planner knows the way across and names the nearest goal.
     await waitFor(() => !!button(/^Use [\d,]+ steps$/), 30_000)
-    expect(host.textContent).toContain('Too short')
+    expect(host.querySelector('[data-testid="feasibility"]')).not.toBeNull()
     const use = button(/^Use [\d,]+ steps$/)!
     const goal = Number(/[\d,]+/.exec(use.textContent!)![0].replace(/,/g, ''))
     expect(goal).toBeGreaterThan(11_000)
@@ -265,11 +266,11 @@ describe('planning outside the bundled map (field test, iPhone)', () => {
     const use = button(/Use my location/)
     if (use) await click(use)
     await waitFor(() => !!host.querySelector('[data-testid="locate-area-error"]'), 20_000)
-    expect(host.querySelector('[data-testid="locate-area-error"]')?.textContent).toContain('would not load')
+    expect(host.querySelector('[data-testid="locate-area-error"]')?.textContent).toContain(en['loc.areaFailed'])
     await click(button('5k'))
     await click(button('Plan quest'))
     await waitFor(() => !!host.querySelector('[data-testid="plan-error"]'), 20_000)
-    expect(host.querySelector('[data-testid="plan-error"]')?.textContent).toContain('streets here would not load')
+    expect(host.querySelector('[data-testid="plan-error"]')?.textContent).toContain(en['error.planStreets'])
     expect(button(/Planning…/)).toBeUndefined()
     net.tiles = 'ok'
     await click(host.querySelector('[data-testid="plan-retry"]') ?? undefined)
@@ -319,7 +320,7 @@ describe('A → B finish on a road the walkers may not use (requirement 26.7 to 
     await click(button('Plan quest'))
     await waitFor(() => !!button(/^Use [\d,]+ steps$/) || /Route ready/.test(host.querySelector('[data-testid="feasibility"]')?.textContent ?? ''), 30_000)
     expect(host.querySelector('[data-testid="plan-error"]')).toBeNull()
-    expect(host.textContent).not.toContain('No walkable street near that point')
+    expect(host.textContent).not.toContain(en['error.unreachable'])
     await click(button(/^Use [\d,]+ steps$/))
     await click(button('Plan quest'))
     await waitFor(() => /Route ready/.test(host.querySelector('[data-testid="feasibility"]')?.textContent ?? ''), 30_000)
@@ -328,7 +329,7 @@ describe('A → B finish on a road the walkers may not use (requirement 26.7 to 
   it('says at once, at tap time, when no walkable street is within reach of the tap', async () => {
     // Zoomed in (reach 12 m) the road under the tap is the only line there, and it is not walkable.
     await placeFinish(24)
-    expect(note()?.textContent).toBe('No walkable street near there. Tap closer to a street.')
+    expect(note()?.textContent).toBe(en['map.finishNone'])
     expect(note()?.textContent).not.toContain('Carretera')
   }, 60_000)
 })

@@ -21,6 +21,8 @@ import { AppHeader } from './ui/AppHeader.tsx'
 import { BagContent, type SimOptions } from './ui/BagSheet.tsx'
 import { HeroContent } from './ui/HeroSheet.tsx'
 import { MapBanners } from './ui/MapBanners.tsx'
+import { PixelSvg } from './ui/PixelIcons.tsx'
+import { ghostSprite } from './ghost/art.ts'
 import { PlannerPanel } from './ui/PlannerPanel.tsx'
 import { SettingsContent } from './ui/SettingsSheet.tsx'
 import { UpdateBanner } from './ui/UpdateBanner.tsx'
@@ -235,6 +237,7 @@ export default function App() {
               />
             ) : state.mapStatus === 'failed' ? (
               <div className="map map-loading map-error" data-testid="map-error">
+                <PixelSvg art={ghostSprite('boo')} size={32} />
                 <p role="alert">{t('map.error')}</p>
                 <button type="button" className="pix-btn" data-testid="map-retry" onClick={() => void retryBoot()}>
                   {t('map.retry')}

@@ -1,6 +1,8 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { en } from '../i18n/en.ts'
+import { es } from '../i18n/es.ts'
 import { I18nProvider } from '../i18n/index.ts'
 import { MapBanners } from './MapBanners.tsx'
 
@@ -64,8 +66,8 @@ describe('finish street note (requirement 25.7)', () => {
   })
 
   it('says at once when no walkable street is in reach, in both languages, with no street name (requirement 26.8)', async () => {
-    expect(await show('en', { none: true }, 9_000)).toBe('No walkable street near there. Tap closer to a street.')
-    expect(await show('es', { none: true }, 9_000)).toBe('No hay ninguna calle transitable cerca. Toca más cerca de una calle.')
+    expect(await show('en', { none: true }, 9_000)).toBe(en['map.finishNone'])
+    expect(await show('es', { none: true }, 9_000)).toBe(es['map.finishNone'])
     expect(host.querySelector('[data-testid="finish-note"]')?.getAttribute('data-finish-m')).toBe('9000')
   })
 

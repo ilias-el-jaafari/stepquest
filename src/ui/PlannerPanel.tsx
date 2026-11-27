@@ -9,6 +9,7 @@ import { useI18n } from '../i18n/index.ts'
 import type { PlanResult, RouteMode } from '../routing/planner.ts'
 import { FieldNote } from './FieldNote.tsx'
 import { feasibility } from './feasibility.ts'
+import { GhostNote } from './GhostNote.tsx'
 import { LocateMessage } from './LocateMessage.tsx'
 import { SLIDER_MAX, SLIDER_MIN, SLIDER_STEP, liveSteps, sliderValue } from './numberInput.ts'
 import type { Settings } from './settings.ts'
@@ -140,22 +141,22 @@ export function PlannerPanel(p: Props) {
         </p>
       )}
       {p.planFailed && (
-        <div className="msg bad" role="alert" data-testid="plan-error">
+        <GhostNote role="alert" testId="plan-error">
           <p>{t(p.planError === 'streets' ? 'error.planStreets' : p.planError === 'timeout' ? 'error.planTimeout' : 'error.planFailed')}</p>
           <button type="button" className="pix-btn small-text" data-testid="plan-retry" onClick={() => p.onPlan(false)}>
             {t('action.retry')}
           </button>
-        </div>
+        </GhostNote>
       )}
       {note && !note.ok && (
-        <div className="msg bad" role="status" data-testid="plan-note">
+        <GhostNote role="status" testId="plan-note">
           <p>{note.text}</p>
           {note.suggest ? (
             <button type="button" className="pix-btn small-text" onClick={() => p.onUseSteps(note.suggest!)}>
               {t('action.useSteps', { steps: format(note.suggest) })}
             </button>
           ) : null}
-        </div>
+        </GhostNote>
       )}
       {result?.ok && (
         <button type="button" className="pix-btn primary big start-btn" onClick={p.onStart}>

@@ -1,6 +1,8 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { en } from '../i18n/en.ts'
+import { es } from '../i18n/es.ts'
 import { ErrorBoundary } from './ErrorBoundary.tsx'
 
 declare global {
@@ -40,7 +42,7 @@ describe('ErrorBoundary', () => {
     await show()
     const crash = host.querySelector('[data-testid="crash"]')!
     expect(crash.getAttribute('role')).toBe('alert')
-    expect(crash.textContent).toContain('The game froze')
+    expect(crash.textContent).toContain(en['crash.title'])
     expect(crash.textContent).toContain('saved quest and settings are safe')
     expect(crash.textContent).not.toContain('secret internal detail')
   })
@@ -48,7 +50,7 @@ describe('ErrorBoundary', () => {
   it('speaks Spanish when the language is Spanish', async () => {
     localStorage.setItem('stepquest.locale', 'es')
     await show()
-    expect(host.textContent).toContain('El juego se ha colgado')
+    expect(host.textContent).toContain(es['crash.title'])
     expect(host.textContent).toContain('Recargar')
   })
 

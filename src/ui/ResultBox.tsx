@@ -4,6 +4,7 @@ import { STEPS_PER_CHECKPOINT } from '../routing/checkpoints.ts'
 import type { PlanResult } from '../routing/planner.ts'
 import { WALK_KMH } from '../app/constants.ts'
 import { feasibility } from './feasibility.ts'
+import { GhostNote } from './GhostNote.tsx'
 
 /** The quest log: distance, steps, checkpoints and time of the route, or why none fits. */
 export function ResultBox({ result, onUseSteps }: { result: PlanResult | undefined; onUseSteps: (steps: number) => void }) {
@@ -38,12 +39,17 @@ export function ResultBox({ result, onUseSteps }: { result: PlanResult | undefin
           </div>
         </dl>
       )}
-      {message && (
-        <p className={`msg ${message.ok ? 'good' : 'bad'}`} data-testid="feasibility">
-          {message.text}
-          {!message.ok && route && <> {t('error.preview')}</>}
-        </p>
-      )}
+      {message &&
+        (message.ok ? (
+          <p className="msg good" data-testid="feasibility">
+            {message.text}
+          </p>
+        ) : (
+          <GhostNote testId="feasibility">
+            {message.text}
+            {route && <> {t('error.preview')}</>}
+          </GhostNote>
+        ))}
       {message?.suggest ? (
         <button type="button" className="pix-btn" onClick={() => onUseSteps(message.suggest!)}>
           {t('action.useSteps', { steps: n(message.suggest) })}
