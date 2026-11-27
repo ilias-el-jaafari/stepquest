@@ -456,8 +456,54 @@ function onPlate(kind: SightKind, body: readonly string[]): string[] {
 /** One sprite per kind: day colours, ink outline and paving plate included. */
 export const SIGHT_SPRITES: Record<SightKind, Sprite> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, { rows: onPlate(k, SIGHT_BODIES[k]), colors: colorsOf(k) }])) as Record<SightKind, Sprite>
 
-/** The building alone, without its plate, for the crown of a main building on the map (task 92). */
-export const SIGHT_CROWNS: Record<SightKind, Sprite> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, { rows: SIGHT_BODIES[k], colors: colorsOf(k) }])) as Record<SightKind, Sprite>
+/**
+ * A tall clock tower for the town hall crown (task 93): spire with a gold ball, a belfry, a big clock face of
+ * window glass (it lights at night) and a shaft. The façade under it is made of tiles, so the tower is only the
+ * part that rises above the roof. 36 px wide, about 90 tall.
+ */
+function townHallTower(): string[] {
+  const g = new Grid(36, 86)
+  const cx = 17
+  g.rect(cx, 0, 2, 3, 'G').rect(cx, 2, 2, 1, 'g')
+  g.tri(cx, 3, 13, 2, 1, 'B')
+  g.rect(cx + 1, 3, 1, 13, 'b')
+  g.rect(3, 16, 30, 2, 'l').rect(3, 18, 30, 1, 's')
+  // Belfry with three dark openings.
+  g.rect(5, 19, 26, 13, 'W').rect(30, 19, 1, 13, 'w')
+  for (const x of [8, 16, 24]) g.rect(x, 21, 4, 9, 'K').rect(x + 1, 20, 2, 1, 'K')
+  g.rect(3, 32, 30, 2, 'S').rect(3, 34, 30, 1, 's')
+  // Clock stage: a gold ring, glass face (lit at night), hands and four ticks.
+  g.rect(6, 35, 24, 26, 'W').rect(29, 35, 1, 26, 'w')
+  disc(g, 18, 48, 11, 'g')
+  disc(g, 18, 48, 10, 'G')
+  disc(g, 18, 48, 8, 'V')
+  g.rect(18, 41, 1, 8, 'K').rect(18, 48, 6, 1, 'K')
+  g.rect(18, 40, 1, 1, 'K').rect(18, 56, 1, 1, 'K').rect(10, 48, 1, 1, 'K').rect(26, 48, 1, 1, 'K')
+  g.rect(3, 61, 30, 2, 'l').rect(3, 63, 30, 1, 's')
+  // Shaft with two slits, then a plinth.
+  g.rect(6, 64, 24, 14, 'W').rect(29, 64, 1, 14, 'w')
+  g.rect(10, 66, 3, 8, 'V').rect(23, 66, 3, 8, 'V')
+  g.rect(3, 78, 30, 3, 'S').rect(1, 81, 34, 2, 'l').rect(0, 83, 36, 3, 's')
+  return outlined(g)
+}
+
+/** Share of a sight's sprite (from the top) kept as the crown: the tower, dome, minaret, not the doors (task 93). */
+const CROWN_KEEP: Partial<Record<SightKind, number>> = { university: 0.58, school: 0.5, hospital: 0.42, church: 0.62, mosque: 0.6, synagogue: 0.42, temple: 0.55 }
+
+/** The crown: the top of the sight's body (or the town hall's tower) with a closing outline row, standing on the roof behind the façade tiles. */
+function crownRows(kind: SightKind): string[] {
+  if (kind === 'townHall') return townHallTower()
+  const body = SIGHT_BODIES[kind]
+  const keep = CROWN_KEEP[kind]
+  if (!keep) return body
+  const rows = body.slice(0, Math.max(8, Math.round(body.length * keep)))
+  const last = rows[rows.length - 1] ?? ''
+  rows.push(last.replace(/[^.]/g, 'K'))
+  return rows
+}
+
+/** The crown of a main building on the map (tasks 92, 93). */
+export const SIGHT_CROWNS: Record<SightKind, Sprite> = Object.fromEntries(SIGHT_KINDS.map((k) => [k, { rows: crownRows(k), colors: colorsOf(k) }])) as Record<SightKind, Sprite>
 
 /** The night overlay of a sprite: only its window glass, in warm light (drawn after the tint). */
 export function litOverlay(s: Sprite): Sprite {

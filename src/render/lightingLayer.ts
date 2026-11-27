@@ -127,7 +127,7 @@ export class LightingLayer {
    * Warm window light and street lamp pools over the tinted map (detail zoom only). Only chunks that
    * are really painted get light: a stand-in is the blurry town map and must not grow windows.
    */
-  drawNightLights(ctx: CanvasRenderingContext2D, view: View, plan: ChunkPlan, painted: ReadonlySet<number>, light: Lighting): void {
+  drawNightLights(ctx: CanvasRenderingContext2D, view: View, plan: ChunkPlan, painted: ReadonlySet<number>, light: Lighting, covered?: ReadonlySet<number>): void {
     const { originX, originY, scale } = view
     const px = scale / TILE_PX // device px per art pixel
     this.scheduleFlicker(false, false)
@@ -143,6 +143,8 @@ export class LightingLayer {
         for (const h of entry.houses) {
           if (this.seen.get(h) === stamp) continue
           this.seen.set(h, stamp)
+          // A house replaced by a special building has no windows of its own.
+          if (covered?.has((h.y + (h.h >> 1)) * this.grid.cols + h.x + (h.w >> 1))) continue
           const bx = originX + h.x * scale
           const by = originY + h.y * scale
           for (const r of litHouseWindows(h)) {
@@ -152,6 +154,7 @@ export class LightingLayer {
         for (const l of entry.landmarks) {
           if (this.seen.get(l) === stamp) continue
           this.seen.set(l, stamp)
+          if (covered?.has((l.y + (l.h >> 1)) * this.grid.cols + l.x + (l.w >> 1))) continue
           const bx = originX + l.x * scale
           const by = originY + l.y * scale
           for (const r of litLandmarkWindows(l)) {

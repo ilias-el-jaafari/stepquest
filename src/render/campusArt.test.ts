@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { SIGHT_CROWNS } from '../sights/art.ts'
 import { Role } from '../sights/campus.ts'
 import { SIGHT_KINDS } from '../sights/types.ts'
-import { CAMPUS_STYLE, MASK, tileVariant, windowRects } from './campusArt.ts'
+import artSrc from './campusArt.ts?raw'
+import layerSrc from './sightLayer.ts?raw'
+import { CAMPUS_STYLE, MASK, OUTLINE_PX, styleFor, tileVariant, VARIANTS, windowRects } from './campusArt.ts'
 
 const BUILDINGS = ['university', 'school', 'hospital', 'church', 'mosque', 'synagogue', 'temple', 'townHall'] as const
 const HOUSE_COLOURS = ['#f1e3c4', '#d6c39b']
@@ -45,5 +47,32 @@ describe('campus art', () => {
     expect(tileVariant(3, 4)).toBe(tileVariant(3, 4))
     expect(Role.roof).not.toBe(Role.wall)
     expect(MASK.N | MASK.E | MASK.S | MASK.W).toBe(15)
+  })
+
+  it('has at least four variants for the kinds with grounds, and every variant looks different', () => {
+    for (const k of ['university', 'school', 'hospital'] as const) {
+      expect(VARIANTS[k].length, k).toBeGreaterThanOrEqual(4)
+      const sig = (i: number) => {
+        const s = styleFor(k, i)
+        return `${s.pattern}|${s.roof}|${s.wall}|${s.roofKind}`
+      }
+      expect(new Set(VARIANTS[k].map((_, i) => sig(i))).size, k).toBe(VARIANTS[k].length)
+    }
+    for (const k of BUILDINGS) expect(VARIANTS[k].length, k).toBeGreaterThanOrEqual(3)
+  })
+
+  it('uses roof kinds pitched, flat and terrace across the university variants, none with a house colour', () => {
+    const kinds = new Set(VARIANTS.university.map((_, i) => styleFor('university', i).roofKind))
+    expect([...kinds].sort()).toEqual(['flat', 'pitched', 'terrace'])
+    for (const k of BUILDINGS) for (let i = 0; i < VARIANTS[k].length; i++) for (const h of HOUSE_COLOURS) expect(styleFor(k, i).wall.toLowerCase()).not.toBe(h)
+  })
+
+  it('wraps a variant index and draws a 2 px outline', () => {
+    expect(styleFor('church', VARIANTS.church.length)).toEqual(styleFor('church', 0))
+    expect(OUTLINE_PX).toBe(2)
+  })
+
+  it('writes no text on the map: no text calls in the sight painters', () => {
+    for (const src of [artSrc, layerSrc]) expect(src).not.toMatch(/fillText|strokeText/)
   })
 })

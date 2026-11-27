@@ -1,10 +1,10 @@
 import { SIGHT_CROWN_LIT, SIGHT_CROWNS, SIGHT_LIT_SPRITES, SIGHT_SPRITES, sightAtlasLayout, type SightAtlasLayout } from '../sights/art.ts'
-import { buildCampus, isBuildingRole, Role, roleAt, type Campus } from '../sights/campus.ts'
+import { buildCampus, isBlockedRole, isBuildingRole, Role, roleAt, type Campus } from '../sights/campus.ts'
 import { placeSights, type PlacedSight } from '../sights/place.ts'
 import { SIGHT_KINDS, type SightMark } from '../sights/types.ts'
 import { TILE_PX, type TileGrid } from '../tiles/grid.ts'
 import type { House } from '../town/types.ts'
-import { campusTile, haloSprite, MASK } from './campusArt.ts'
+import { campusTile, haloSprite, MASK, paintProp, paintShade } from './campusArt.ts'
 import { CHUNK } from './chunkLayer.ts'
 import { chunkKey } from './chunkPlan.ts'
 import type { Lighting } from './daylight.ts'
@@ -81,6 +81,7 @@ export class SightLayer {
   private campuses: Campus[] = []
   private chunkList: { cx: number; cy: number }[] = []
   private blocked: ReadonlySet<number> = new Set()
+  private area: ReadonlySet<number> = new Set()
   private bitmaps = new Map<number, ChunkBitmaps>()
   private stale = true
   private readonly grid: TileGrid
@@ -135,7 +136,7 @@ export class SightLayer {
     const campuses: Campus[] = []
     const fallback: SightMark[] = []
     for (const m of this.marks) {
-      const c = m.area ? buildCampus(this.grid, this.town.houseAt, m) : undefined
+      const c = m.area ? buildCampus(this.grid, this.town.houseAt, m, this.keep) : undefined
       if (c) campuses.push(c)
       if (!c || c.buildings.length === 0) fallback.push(m)
     }
@@ -143,12 +144,18 @@ export class SightLayer {
     this.placed = placeSights(fallback, this.grid, this.keep)
     const chunks = new Map<number, { cx: number; cy: number }>()
     const blocked = new Set<number>()
+    const area = new Set<number>()
     for (const c of campuses) {
       for (let cy = Math.floor(c.y0 / CHUNK); cy <= Math.floor((c.y0 + c.h - 1) / CHUNK); cy++) for (let cx = Math.floor(c.x0 / CHUNK); cx <= Math.floor((c.x0 + c.w - 1) / CHUNK); cx++) chunks.set(chunkKey(cx, cy), { cx, cy })
-      for (let y = 0; y < c.h; y++) for (let x = 0; x < c.w; x++) if (isBuildingRole(c.roles[y * c.w + x]!)) blocked.add((c.y0 + y) * this.grid.cols + c.x0 + x)
+      for (let y = 0; y < c.h; y++) for (let x = 0; x < c.w; x++) {
+        const r = c.roles[y * c.w + x]!
+        if (r !== Role.none) area.add((c.y0 + y) * this.grid.cols + c.x0 + x)
+        if (isBlockedRole(r)) blocked.add((c.y0 + y) * this.grid.cols + c.x0 + x)
+      }
     }
     this.chunkList = [...chunks.values()]
     this.blocked = blocked
+    this.area = area
     this.stats.placed = this.placed.length
     this.stats.campuses = campuses.length
   }
@@ -169,6 +176,12 @@ export class SightLayer {
   blockedTiles(): ReadonlySet<number> {
     if (this.stale) this.rebuild()
     return this.blocked
+  }
+
+  /** Every tile the special areas cover (buildings, courts, ground, steps): the town's own house windows stay dark there at night. */
+  areaTiles(): ReadonlySet<number> {
+    if (this.stale) this.rebuild()
+    return this.area
   }
 
   private visible(v: View): boolean {
@@ -228,17 +241,36 @@ export class SightLayer {
               if (isBuildingRole(roleAt(c, gx, gy + 1))) mask |= MASK.S
               if (isBuildingRole(roleAt(c, gx - 1, gy))) mask |= MASK.W
             }
-            const t = campusTile(c.kind, role, mask, gx, gy)
+            const k = (gy - c.y0) * c.w + (gx - c.x0)
+            const variant = c.buildings[c.group[k]!]?.variant ?? 0
+            const storeys = c.buildings[c.group[k]!]?.storeys ?? 1
+            const f = c.feat[k]!
+            const t = campusTile(c.kind, variant, role, mask, f, gx, gy, storeys)
             if (t) {
               gd.drawImage(t, (gx - X) * TILE_PX, (gy - Y) * TILE_PX)
               any = true
             }
-            const l = campusTile(c.kind, role, mask, gx, gy, true)
+            const l = campusTile(c.kind, variant, role, mask, f, gx, gy, storeys, true)
             if (l) {
               gl.drawImage(l, (gx - X) * TILE_PX, (gy - Y) * TILE_PX)
               anyLit = true
             }
           }
+        }
+        // Drop shadows on free tiles east and south of buildings, then the vertical parts over everything.
+        for (let gy = Math.max(Y, c.y0); gy < Math.min(Y + CHUNK, c.y0 + c.h); gy++) {
+          for (let gx = Math.max(X, c.x0); gx < Math.min(X + CHUNK, c.x0 + c.w); gx++) {
+            const bits = c.shade[(gy - c.y0) * c.w + (gx - c.x0)]!
+            if (!bits) continue
+            paintShade(gd, bits, (gx - X) * TILE_PX, (gy - Y) * TILE_PX)
+            any = true
+          }
+        }
+        for (const p of c.props) {
+          // A part reaches up to four tiles above its foot.
+          if (p.y < Y || p.y > Y + CHUNK + 4 || p.x < X - 1 || p.x > X + CHUNK + 1) continue
+          paintProp(gd, c.kind, p, Math.round((p.x - X) * TILE_PX), Math.round((p.y - Y) * TILE_PX))
+          any = true
         }
       }
       if (any) out.day = day
@@ -310,8 +342,9 @@ export class SightLayer {
     const h = haloSprite()
     // Halos first (additive), then the windows on top.
     ctx.globalCompositeOperation = 'lighter'
-    ctx.globalAlpha = 0.7 * strength
     for (const c of this.campuses) {
+      // The town hall glows more than the rest (L14.2).
+      ctx.globalAlpha = (c.kind === 'townHall' ? 1 : 0.7) * strength
       for (const b of c.buildings) {
         if (b.tiles < 3) continue
         const bw = (b.x1 - b.x0 + 1) * v.scale

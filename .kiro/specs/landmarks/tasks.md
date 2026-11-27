@@ -56,3 +56,16 @@
   - _Requirements: all_
 
 Verification (task 92.7): ES 390×844 @2x in `shots/I4-campus-es-390x844-{day,night}.png` (Campus dels Tarongers, loop from 39.4790, -0.3420) and `I4-townhall-es-390x844-{day,night}.png` (Plaça de l'Ajuntament).
+
+## Visual pass from the I4 review (task 93)
+
+- [x] 93.1 Spec: requirements L12 to L15, design "Visual pass", `visual-style.md` landmark section
+  - _Requirements: L12 to L15_
+- [x] 93.2 Tests first: `campus.test.ts` (variants, entrance side, town hall minimum and free tiles, props, shade, no building roles outside), `campusArt.test.ts` (variants differ, iconic features per kind, no text)
+  - _Requirements: L15_
+- [x] 93.3 `sights/campus.ts`: growth, courtyards, variants, entrances, features, props, shade
+  - _Requirements: L12, L14.1_
+- [x] 93.4 `render/campusArt.ts`, `render/sightLayer.ts`, `sights/art.ts` (town hall tower): variants, thick outline, shadow, props, entrances, iconic parts, night
+  - _Requirements: L13, L14_
+- [x] 93.5 Goldens, `npm test`, `npx tsc -b`, `npm run lint`, `npm run build`; ES 390×844 shots `I5-campus-es-390x844-{day,night}.png`, `I5-townhall-es-390x844-{day,night}.png`; benchmark twice
+  - _Requirements: all_

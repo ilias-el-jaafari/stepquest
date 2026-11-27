@@ -636,7 +636,7 @@ export class MapRenderer {
     // gems and walker are drawn afterwards, so they keep their full colours.
     if (light.darkness > 0.005) {
       this.lightingLayer.drawTint(ctx, v, light)
-      if (frame) this.lightingLayer.drawNightLights(ctx, v, frame.plan, frame.painted, light)
+      if (frame) this.lightingLayer.drawNightLights(ctx, v, frame.plan, frame.painted, light, this.sights.hasMarks ? this.sights.areaTiles() : undefined)
       else this.lightingLayer.drawNightDots(ctx, v, light)
       if (frame) this.decor.drawNight(ctx, v, light)
       if (frame) this.sights.drawNight(ctx, v, light, frame.painted)
